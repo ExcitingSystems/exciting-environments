@@ -34,7 +34,7 @@ jobs:
 #       run: |
 #         if [[ "$PY_VER" = "3.7" ]]; then pytest --cov=gym_electric_motor tests/; else pytest; fi
 #         if [[ "$PY_VER" = "3.7" ]]; then bash <(curl -s https://codecov.io/bash); fi # code coverage report upload
-  build-doc:
+  build:
     runs-on: ubuntu-latest
     steps:
     - name: Install dependencies
