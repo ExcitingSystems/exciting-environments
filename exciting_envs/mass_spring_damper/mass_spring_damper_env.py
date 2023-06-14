@@ -5,7 +5,7 @@ from gymnasium import vector
 class MassSpringDamper:
     """
     Description:
-        Environment to simulate a simple Pendulum
+        Environment to simulate a Mass-Spring-Damper System.
 
     State Variables:
         ``['deflection' , 'velocity']''``
