@@ -54,7 +54,7 @@ jobs:
         python -m pip install .
     - uses: actions/checkout@v3
     - name: Build Sphinx documentation
-      uses: ammaraskar/sphinx-action@master
+      uses: ammaraskar/sphinx-action@main
       with:
         pre-build-command: "python -m pip install sphinx m2r2 sphinx_rtd_theme && python -m pip install -r requirements.txt & python -m pip install ."
         docs-folder: "docs/"
@@ -73,7 +73,7 @@ jobs:
         # The above command will fail if no changes were present, so we ignore
         # that.
     - name: Push changes
-      uses: ad-m/github-push-action@master
+      uses: ad-m/github-push-action@main
       with:
         branch: gh-pages
         directory: gh-pages
