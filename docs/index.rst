@@ -8,7 +8,8 @@ Welcome to Exciting Environments's documentation!
 .. toctree::
    :maxdepth: 1
    :caption: Exciting Environment Readme:
-
+   
+   parts/readme
 
 .. toctree::
    :maxdepth: 4
