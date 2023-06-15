@@ -14,10 +14,10 @@ class MassSpringDamper:
         ``['force']''``
         
     Observation Space (State Space):
-        batch_space(Box(low=np.array([-1.0, -1.0]), high=np.array([1.0, 1.0]),shape=(2,) ,dtype=np.float32), n=batch_size)    
+        Box(low=[-1, -1], high=[1, 1])    
         
     Action Space:
-        Box(low=-1.0, high=1.0, shape=(self.batch_size,1), dtype=np.float32)
+        Box(low=-1, high=1)
 
     Initial State:
         Unless chosen otherwise, deflection and velocity is set to zero.
