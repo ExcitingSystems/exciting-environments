@@ -1,6 +1,6 @@
 Pendulum
 ================
 
-.. autoclass:: exciting_envs.pendulum.pendulum_env.Pendulum
+.. automodule:: exciting_envs.pendulum.pendulum_env
    :members:
    :inherited-members:

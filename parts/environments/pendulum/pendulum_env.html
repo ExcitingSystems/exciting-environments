@@ -1,21 +1,18 @@
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" >
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pendulum &mdash; Exciting Environments 1.0.0 documentation</title>
-      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <title>Pendulum &mdash; Exciting Environments 1.0.0 documentation</title><link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
   <!--[if lt IE 9]>
     <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
-  
+  <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
         <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/underscore.js"></script>
         <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/language_data.js"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -42,11 +39,11 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Exciting Environment Readme:</span></p>
+              <p class="caption"><span class="caption-text">Exciting Environment Readme:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../readme.html">Readme File</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Exciting Environment Contents:</span></p>
+<p class="caption"><span class="caption-text">Exciting Environment Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="../environment.html">Environments</a><ul class="current">
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Pendulum</a></li>
@@ -80,61 +77,9 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="pendulum">
-<h1>Pendulum<a class="headerlink" href="#pendulum" title="Permalink to this heading"></a></h1>
-<dl class="py class">
-<dt class="sig sig-object py" id="exciting_envs.pendulum.pendulum_env.Pendulum">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exciting_envs.pendulum.pendulum_env.</span></span><span class="sig-name descname"><span class="pre">Pendulum</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_torque</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reward_func</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">9.81</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraints</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[10]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/pendulum/pendulum_env.html#Pendulum"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_envs.pendulum.pendulum_env.Pendulum" title="Permalink to this definition"></a></dt>
-<dd><dl class="simple">
-<dt>Description:</dt><dd><p>Environment to simulate a simple Pendulum</p>
-</dd>
-<dt>State Variables:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['theta'</span> <span class="pre">,</span> <span class="pre">'omega']''</span></code></p>
-</dd>
-<dt>Action Variable:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['torque']''</span></code></p>
-</dd>
-<dt>Observation Space (State Space):</dt><dd><p>Box(low=[-1, -1], high=[1, 1])</p>
-</dd>
-<dt>Action Space:</dt><dd><p>Box(low=-1, high=1)</p>
-</dd>
-<dt>Initial State:</dt><dd><p>Unless chosen otherwise, theta equals 1(normalized to pi) and omega is set to zero.</p>
-</dd>
-</dl>
-<p class="rubric">Example</p>
-<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1">#TODO</span>
-</pre></div>
+  <div class="section" id="pendulum">
+<h1>Pendulum<a class="headerlink" href="#pendulum" title="Permalink to this headline"></a></h1>
 </div>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
-<li><p><strong>l</strong> (<em>float</em>) – Length of the pendulum. Default: 1</p></li>
-<li><p><strong>m</strong> (<em>float</em>) – Mass of the pendulum tip. Default: 1</p></li>
-<li><p><strong>max_torque</strong> (<em>float</em>) – Maximum torque that can be applied to the system as action. Default: 20</p></li>
-<li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters.
-Default: None (default_reward_func from class)</p></li>
-<li><p><strong>g</strong> (<em>float</em>) – Gravitational acceleration. Default: 9.81</p></li>
-<li><p><strong>tau</strong> (<em>float</em>) – Duration of one control step in seconds. Default: 1e-4.</p></li>
-<li><p><strong>constraints</strong> (<em>array</em>) – Constraints for state [‘omega’] (array with length 1). Default: [10]</p></li>
-<li><p><strong>parameters.</strong> (<em>This class is then initialized with its default</em>) – </p></li>
-<li><p><strong>documentation.</strong> (<em>The available strings can be looked up in the</em>) – </p></li>
-</ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="exciting_envs.pendulum.pendulum_env.Pendulum.get_action_description">
-<span class="sig-name descname"><span class="pre">get_action_description</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/pendulum/pendulum_env.html#Pendulum.get_action_description"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_envs.pendulum.pendulum_env.Pendulum.get_action_description" title="Permalink to this definition"></a></dt>
-<dd><p>Return the type of action</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="exciting_envs.pendulum.pendulum_env.Pendulum.reset">
-<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">random_initial_values</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">initial_values</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/pendulum/pendulum_env.html#Pendulum.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_envs.pendulum.pendulum_env.Pendulum.reset" title="Permalink to this definition"></a></dt>
-<dd><p>Reset the environment, return initial observation vector</p>
-</dd></dl>
-
-</dd></dl>
-
-</section>
 
 
            </div>
