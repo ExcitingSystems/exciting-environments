@@ -102,6 +102,22 @@
 <div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1">#TODO</span>
 </pre></div>
 </div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
+<li><p><strong>d</strong> (<em>float</em>) – Damping constant. Default: 1</p></li>
+<li><p><strong>k</strong> (<em>float</em>) – Spring constant. Default: 100</p></li>
+<li><p><strong>m</strong> (<em>float</em>) – Mass of the oscillating object. Default: 1</p></li>
+<li><p><strong>max_force</strong> (<em>float</em>) – Maximum force that can be applied to the system as action. Default: 20</p></li>
+<li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class)</p></li>
+<li><p><strong>tau</strong> (<em>float</em>) – Duration of one control step in seconds. Default: 1e-4.</p></li>
+<li><p><strong>constraints</strong> (<em>array</em>) – Constraints for states [‘deflection’,’velocity’] (array with length 2). Default: [1000,10]</p></li>
+<li><p><strong>parameters.</strong> (<em>This class is then initialized with its default</em>) – </p></li>
+<li><p><strong>documentation.</strong> (<em>The available strings can be looked up in the</em>) – </p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="exciting_envs.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.reset">
 <span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">random_initial_values</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">initial_values</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_envs.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.reset" title="Permalink to this definition"></a></dt>

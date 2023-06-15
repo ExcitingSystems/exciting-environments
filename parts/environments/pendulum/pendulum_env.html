@@ -80,8 +80,8 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="module-exciting_envs.pendulum.pendulum_env">
-<span id="pendulum"></span><h1>Pendulum<a class="headerlink" href="#module-exciting_envs.pendulum.pendulum_env" title="Permalink to this heading"></a></h1>
+  <section id="pendulum">
+<h1>Pendulum<a class="headerlink" href="#pendulum" title="Permalink to this heading"></a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="exciting_envs.pendulum.pendulum_env.Pendulum">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exciting_envs.pendulum.pendulum_env.</span></span><span class="sig-name descname"><span class="pre">Pendulum</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_torque</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reward_func</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">g</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">9.81</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraints</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[10]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/pendulum/pendulum_env.html#Pendulum"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_envs.pendulum.pendulum_env.Pendulum" title="Permalink to this definition"></a></dt>
@@ -103,6 +103,29 @@
 <div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1">#TODO</span>
 </pre></div>
 </div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
+<li><p><strong>l</strong> (<em>float</em>) – Length of the pendulum. Default: 1</p></li>
+<li><p><strong>m</strong> (<em>float</em>) – Mass of the pendulum tip. Default: 1</p></li>
+<li><p><strong>max_torque</strong> (<em>float</em>) – Maximum torque that can be applied to the system as action. Default: 20</p></li>
+<li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters.
+Default: None (default_reward_func from class)</p></li>
+<li><p><strong>g</strong> (<em>float</em>) – Gravitational acceleration. Default: 9.81</p></li>
+<li><p><strong>tau</strong> (<em>float</em>) – Duration of one control step in seconds. Default: 1e-4.</p></li>
+<li><p><strong>constraints</strong> (<em>array</em>) – Constraints for state [‘omega’] (array with length 1). Default: [10]</p></li>
+<li><p><strong>parameters.</strong> (<em>This class is then initialized with its default</em>) – </p></li>
+<li><p><strong>documentation.</strong> (<em>The available strings can be looked up in the</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="exciting_envs.pendulum.pendulum_env.Pendulum.get_action_description">
+<span class="sig-name descname"><span class="pre">get_action_description</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/pendulum/pendulum_env.html#Pendulum.get_action_description"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_envs.pendulum.pendulum_env.Pendulum.get_action_description" title="Permalink to this definition"></a></dt>
+<dd><p>Return the type of action</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="exciting_envs.pendulum.pendulum_env.Pendulum.reset">
 <span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">random_initial_values</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">initial_values</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/pendulum/pendulum_env.html#Pendulum.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_envs.pendulum.pendulum_env.Pendulum.reset" title="Permalink to this definition"></a></dt>

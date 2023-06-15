@@ -111,7 +111,8 @@
 <span class="sd">            l(float): Length of the pendulum. Default: 1</span>
 <span class="sd">            m(float): Mass of the pendulum tip. Default: 1</span>
 <span class="sd">            max_torque(float): Maximum torque that can be applied to the system as action. Default: 20</span>
-<span class="sd">            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) </span>
+<span class="sd">            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. </span>
+<span class="sd">                                    Default: None (default_reward_func from class) </span>
 <span class="sd">            g(float): Gravitational acceleration. Default: 9.81</span>
 <span class="sd">            tau(float): Duration of one control step in seconds. Default: 1e-4.</span>
 <span class="sd">            constraints(array): Constraints for state [&#39;omega&#39;] (array with length 1). Default: [10]</span>
@@ -218,8 +219,9 @@
     <span class="k">def</span> <span class="nf">get_states_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;theta&quot;</span><span class="p">,</span><span class="s2">&quot;omega&quot;</span><span class="p">])</span>
     
-    <span class="k">def</span> <span class="nf">get_action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;torque&quot;</span><span class="p">])</span>
+<div class="viewcode-block" id="Pendulum.get_action_description"><a class="viewcode-back" href="../../../parts/environments/pendulum/pendulum_env.html#exciting_envs.pendulum.pendulum_env.Pendulum.get_action_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the type of action&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;torque&quot;</span><span class="p">])</span></div>
     
     <span class="k">def</span> <span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">torque_norm</span><span class="p">):</span>
         <span class="c1">#TODO Totzeit hinzufügen</span>
