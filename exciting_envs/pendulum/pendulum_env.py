@@ -36,7 +36,8 @@ class Pendulum:
             l(float): Length of the pendulum. Default: 1
             m(float): Mass of the pendulum tip. Default: 1
             max_torque(float): Maximum torque that can be applied to the system as action. Default: 20
-            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) 
+            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. 
+                                    Default: None (default_reward_func from class) 
             g(float): Gravitational acceleration. Default: 9.81
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for state ['omega'] (array with length 1). Default: [10]
@@ -144,6 +145,7 @@ class Pendulum:
         return np.array(["theta","omega"])
     
     def get_action_description(self):
+        """Return the type of action"""
         return np.array(["torque"])
     
     def step(self, torque_norm):
