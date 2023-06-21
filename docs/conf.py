@@ -26,11 +26,13 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',
     'sphinx_rtd_theme',
-    'm2r2'
+    #'m2r2'
 ]
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+autoclass_content = 'both'
 
 source_suffix = ['.rst', '.md']
 
