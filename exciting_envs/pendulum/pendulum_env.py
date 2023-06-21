@@ -42,8 +42,6 @@ class Pendulum:
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for state ['omega'] (array with length 1). Default: [10]
 
-            This class is then initialized with its default parameters.
-            The available strings can be looked up in the documentation.
         """
 
         

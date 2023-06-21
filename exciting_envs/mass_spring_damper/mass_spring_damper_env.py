@@ -41,8 +41,7 @@ class MassSpringDamper:
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for states ['deflection','velocity'] (array with length 2). Default: [1000,10]
 
-            This class is then initialized with its default parameters.
-            The available strings can be looked up in the documentation.
+
         """
 
         
