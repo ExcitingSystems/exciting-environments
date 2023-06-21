@@ -9,6 +9,7 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
+sys.setrecursionlimit(1500)
 
 project = 'Exciting Environments'
 copyright = '2023, Oliver Schweins'
@@ -31,6 +32,7 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+pygments_style = 'sphinx'
 
 master_doc = 'index'
 
