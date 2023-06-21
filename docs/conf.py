@@ -32,6 +32,9 @@ extensions = [
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
+master_doc = 'index'
+
+# show constructor documentation
 autoclass_content = 'both'
 
 source_suffix = ['.rst', '.md']
