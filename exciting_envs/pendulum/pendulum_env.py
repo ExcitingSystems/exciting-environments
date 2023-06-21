@@ -5,7 +5,7 @@ from gymnasium import vector
 class Pendulum:
     """
     Description:
-        Environment to simulate a simple Pendulum
+        Environment to simulate a simple Pendulum.
 
     State Variables:
         ``['theta' , 'omega']''``
