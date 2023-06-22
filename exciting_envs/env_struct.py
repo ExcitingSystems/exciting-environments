@@ -102,14 +102,19 @@ class CoreEnvironment:
 
         Returns:
             observation(ndarray(float)):
-                Observation/State Matrix: (shape=(batch_size,states)).
+                Observation/State Matrix (shape=(batch_size,states)).
+
             reward(ndarray(float)):
-                Amount of reward received for the last step: (shape=(batch_size,1)).
+                Amount of reward received for the last step (shape=(batch_size,1)).
+
             terminated(bool): 
                 Flag, indicating if Agent has reached the terminal state.
+
             truncated(ndarray(bool)): 
-                Flag, indicating if state has gone out of bounds: (shape=(batch_size,states)).
-            {}: An empty dictionary for consistency with the OpenAi Gym interface.
+                Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
+
+            {}:
+                An empty dictionary for consistency with the OpenAi Gym interface.
         """
         return
 
