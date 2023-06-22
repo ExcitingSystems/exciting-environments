@@ -111,10 +111,7 @@
       
 
 <div class="viewcode-block" id="CoreEnvironment.get_def_reward_function"><a class="viewcode-back" href="../../parts/environments/environment.html#exciting_envs.env_struct.CoreEnvironment.get_def_reward_function">[docs]</a>    <span class="k">def</span> <span class="nf">get_def_reward_function</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns:</span>
-<span class="sd">             RewardFunction: The default RewardFunction of the environment.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="sd">&quot;&quot;&quot;Returns the default RewardFunction of the environment.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_reward_func</span></div>
 
 
@@ -139,7 +136,7 @@
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">physical_paras</span><span class="p">,</span> <span class="n">max_action</span><span class="p">,</span> <span class="n">reward_func</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tau</span> <span class="o">=</span> <span class="mf">1e-4</span> <span class="p">,</span> <span class="n">constraints</span><span class="o">=</span> <span class="p">[]):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Args:</span>
-<span class="sd">            batch_size(int): Number of training examples utilized in one iteration. Default: 8</span>
+<span class="sd">            batch_size(int): Number of training examples utilized in one iteration.</span>
 <span class="sd">            physical_paras: Depending on environment there are multiple parameter for the physical system.</span>
 <span class="sd">            max_action(float): Maximum action that can be applied to the system.</span>
 <span class="sd">            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) </span>
