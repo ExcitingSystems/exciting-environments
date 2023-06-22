@@ -38,10 +38,7 @@ class CoreEnvironment:
       
 
     def get_def_reward_function(self):
-        """
-        Returns:
-             RewardFunction: The default RewardFunction of the environment.
-        """
+        """Returns the default RewardFunction of the environment."""
         return self.default_reward_func
 
 
@@ -66,7 +63,7 @@ class CoreEnvironment:
     def __init__(self, batch_size, physical_paras, max_action, reward_func=None, tau = 1e-4 , constraints= []):
         """
         Args:
-            batch_size(int): Number of training examples utilized in one iteration. Default: 8
+            batch_size(int): Number of training examples utilized in one iteration.
             physical_paras: Depending on environment there are multiple parameter for the physical system.
             max_action(float): Maximum action that can be applied to the system.
             reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) 
