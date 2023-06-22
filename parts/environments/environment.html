@@ -85,6 +85,8 @@
 <li class="toctree-l1"><a class="reference internal" href="mass_spring_damper/mass_spring_damper_env.html">Mass Spring Damper</a></li>
 </ul>
 </div>
+<div class="section" id="environment-structur">
+<h2>Environment Structur<a class="headerlink" href="#environment-structur" title="Permalink to this headline"></a></h2>
 <dl class="class">
 <dt id="exciting_envs.env_struct.CoreEnvironment">
 <em class="property">class </em><code class="sig-prename descclassname">exciting_envs.env_struct.</code><code class="sig-name descname">CoreEnvironment</code><span class="sig-paren">(</span><em class="sig-param">batch_size</em>, <em class="sig-param">physical_paras</em>, <em class="sig-param">max_action</em>, <em class="sig-param">reward_func=None</em>, <em class="sig-param">tau=0.0001</em>, <em class="sig-param">constraints=[]</em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/exciting_envs/env_struct.html#CoreEnvironment"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#exciting_envs.env_struct.CoreEnvironment" title="Permalink to this definition"></a></dt>
@@ -195,26 +197,23 @@ Options:</p>
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>action</strong> – Action to play on the environment.</p>
 </dd>
-</dl>
-<p>Returns:
--observation(ndarray(float)):</p>
-<blockquote>
-<div><p>Observation/State Matrix (shape=(batch_size,states)).</p>
-</div></blockquote>
-<dl class="simple">
-<dt>-reward(ndarray(float)):</dt><dd><p>Amount of reward received for the last step (shape=(batch_size,1)).</p>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><p>Observation/State Matrix (shape=(batch_size,states)).</p>
+<p>reward(ndarray(float)):Amount of reward received for the last step (shape=(batch_size,1)).</p>
+<p>terminated(bool):Flag, indicating if Agent has reached the terminal state.</p>
+<p>truncated(ndarray(bool)):Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).</p>
+<p>{}:An empty dictionary for consistency with the OpenAi Gym interface.</p>
+</p>
 </dd>
-<dt>-terminated(bool):</dt><dd><p>Flag, indicating if Agent has reached the terminal state.</p>
-</dd>
-<dt>-truncated(ndarray(bool)):</dt><dd><p>Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).</p>
-</dd>
-<dt>-{}:</dt><dd><p>An empty dictionary for consistency with the OpenAi Gym interface.</p>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>observation(ndarray(float))</p>
 </dd>
 </dl>
 </dd></dl>
 
 </dd></dl>
 
+</div>
 </div>
 
 
