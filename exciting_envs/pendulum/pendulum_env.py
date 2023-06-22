@@ -143,7 +143,6 @@ class Pendulum:
         return np.array(["theta","omega"])
     
     def get_action_description(self):
-        """Return the type of action"""
         return np.array(["torque"])
     
     def step(self, torque_norm):
@@ -172,7 +171,6 @@ class Pendulum:
         raise NotImplementedError("To be implemented!")
     
     def reset(self,random_initial_values=False,initial_values:np.ndarray=None):
-        """Reset the environment, return initial observation vector """
         if random_initial_values:
             self.states=self.observation_space.sample()
         elif initial_values!=None:
