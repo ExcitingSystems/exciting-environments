@@ -196,11 +196,19 @@ Options:</p>
 <dd class="field-odd"><p><strong>action</strong> – Action to play on the environment.</p>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>Observation/State Matrix: (shape=(batch_size,states)).
-reward(ndarray(float)): Amount of reward received for the last step: (shape=(batch_size,1)).
-terminated(bool): Flag, indicating if Agent has reached the terminal state.
-truncated(ndarray(bool)): Flag, indicating if state has gone out of bounds: (shape=(batch_size,states)).
-{}: An empty dictionary for consistency with the OpenAi Gym interface.</p>
+<dd class="field-even"><p><p>Observation/State Matrix: (shape=(batch_size,states)).
+reward(ndarray(float)):</p>
+<blockquote>
+<div><p>Amount of reward received for the last step: (shape=(batch_size,1)).</p>
+</div></blockquote>
+<dl class="simple">
+<dt>terminated(bool):</dt><dd><p>Flag, indicating if Agent has reached the terminal state.</p>
+</dd>
+<dt>truncated(ndarray(bool)):</dt><dd><p>Flag, indicating if state has gone out of bounds: (shape=(batch_size,states)).</p>
+</dd>
+</dl>
+<p>{}: An empty dictionary for consistency with the OpenAi Gym interface.</p>
+</p>
 </dd>
 <dt class="field-odd">Return type</dt>
 <dd class="field-odd"><p>observation(ndarray(float))</p>
