@@ -101,6 +101,8 @@ class CoreEnvironment:
             action: Action to play on the environment.
 
         Returns:
+            ...
+            
             observation(ndarray(float)):
             Observation/State Matrix (shape=(batch_size,states)).
 
