@@ -195,8 +195,12 @@ Options:</p>
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>action</strong> – Action to play on the environment.</p>
 </dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p><p>Observation/State Matrix (shape=(batch_size,states)).</p>
+</dl>
+<p>Returns:
+-observation(ndarray(float)):</p>
+<blockquote>
+<div><p>Observation/State Matrix (shape=(batch_size,states)).</p>
+</div></blockquote>
 <dl class="simple">
 <dt>-reward(ndarray(float)):</dt><dd><p>Amount of reward received for the last step (shape=(batch_size,1)).</p>
 </dd>
@@ -205,12 +209,6 @@ Options:</p>
 <dt>-truncated(ndarray(bool)):</dt><dd><p>Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).</p>
 </dd>
 <dt>-{}:</dt><dd><p>An empty dictionary for consistency with the OpenAi Gym interface.</p>
-</dd>
-</dl>
-</p>
-</dd>
-<dt class="field-odd">Return type</dt>
-<dd class="field-odd"><p>-observation(ndarray(float))</p>
 </dd>
 </dl>
 </dd></dl>
