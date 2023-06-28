@@ -101,7 +101,7 @@ class CoreEnvironment:
             action: Action to play on the environment.
 
         Returns:
-            Multiple Outputs: bli
+            Multiple Outputs
             
             observation(ndarray(float)): Observation/State Matrix (shape=(batch_size,states)).
 
