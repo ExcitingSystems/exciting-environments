@@ -5,7 +5,7 @@ from gymnasium import vector
 class CartPole:
     """
     Description:
-        Environment to simulate a Mass-Spring-Damper System.
+        Environment to simulate a Cart Pole System.
 
     State Variables:
         ``['deflection' , 'velocity']''``
