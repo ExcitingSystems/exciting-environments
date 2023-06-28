@@ -100,16 +100,17 @@ class CoreEnvironment:
         Args:
             action: Action to play on the environment.
 
-            Returns:
-            observation(ndarray(float)):Observation/State Matrix (shape=(batch_size,states)).
+        Returns:
+            Multiple Outputs:
+                -observation(ndarray(float)):Observation/State Matrix (shape=(batch_size,states)).
 
-            reward(ndarray(float)):Amount of reward received for the last step (shape=(batch_size,1)).
+                -reward(ndarray(float)):Amount of reward received for the last step (shape=(batch_size,1)).
 
-            terminated(bool):Flag, indicating if Agent has reached the terminal state.
+                -terminated(bool):Flag, indicating if Agent has reached the terminal state.
 
-            truncated(ndarray(bool)):Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
+                -truncated(ndarray(bool)):Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
 
-            {}:An empty dictionary for consistency with the OpenAi Gym interface.
+                -{}:An empty dictionary for consistency with the OpenAi Gym interface.
         """
         return
 
