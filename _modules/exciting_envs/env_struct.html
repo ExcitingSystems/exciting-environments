@@ -109,10 +109,10 @@
 
 <span class="sd">    &quot;&quot;&quot;</span>
       
-
-<div class="viewcode-block" id="CoreEnvironment.get_def_reward_function"><a class="viewcode-back" href="../../parts/environments/environment.html#exciting_envs.env_struct.CoreEnvironment.get_def_reward_function">[docs]</a>    <span class="k">def</span> <span class="nf">get_def_reward_function</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="nd">@property</span> 
+    <span class="k">def</span> <span class="nf">def_reward_function</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Returns the default RewardFunction of the environment.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_reward_func</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_reward_func</span>
 
 
     <span class="nd">@property</span>
@@ -120,18 +120,20 @@
         <span class="sd">&quot;&quot;&quot;Returns the batch size of the environment setup.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_batch_size</span>
 
-
-<div class="viewcode-block" id="CoreEnvironment.get_obs_description"><a class="viewcode-back" href="../../parts/environments/environment.html#exciting_envs.env_struct.CoreEnvironment.get_obs_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_obs_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="nd">@property</span> 
+    <span class="k">def</span> <span class="nf">obs_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Returns a list of state names of all states in the observation (equal to state space).&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_states_description</span><span class="p">()</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">states_description</span>
     
-<div class="viewcode-block" id="CoreEnvironment.get_states_description"><a class="viewcode-back" href="../../parts/environments/environment.html#exciting_envs.env_struct.CoreEnvironment.get_states_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_states_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="nd">@property</span> 
+    <span class="k">def</span> <span class="nf">states_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Returns a list of state names of all states in the states space.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;state1_name&quot;</span><span class="p">,</span><span class="s2">&quot;...&quot;</span><span class="p">])</span></div>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;state1_name&quot;</span><span class="p">,</span><span class="s2">&quot;...&quot;</span><span class="p">])</span>
     
-<div class="viewcode-block" id="CoreEnvironment.get_action_description"><a class="viewcode-back" href="../../parts/environments/environment.html#exciting_envs.env_struct.CoreEnvironment.get_action_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="nd">@property</span> 
+    <span class="k">def</span> <span class="nf">action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Returns the name of the action.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;action_name&quot;</span><span class="p">])</span></div>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;action_name&quot;</span><span class="p">])</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">physical_paras</span><span class="p">,</span> <span class="n">max_action</span><span class="p">,</span> <span class="n">reward_func</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tau</span> <span class="o">=</span> <span class="mf">1e-4</span> <span class="p">,</span> <span class="n">constraints</span><span class="o">=</span> <span class="p">[]):</span>
         <span class="sd">&quot;&quot;&quot;</span>
