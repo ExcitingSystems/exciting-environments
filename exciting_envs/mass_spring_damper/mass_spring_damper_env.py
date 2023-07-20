@@ -128,20 +128,24 @@ class MassSpringDamper:
             self.states,
             #force,
         ))
-        
-    def get_def_reward_func(self):
+
+    @property   
+    def def_reward_func(self):
         return self.default_reward_func
     
     def default_reward_func(self,obs,action):
         return ((obs[:,0])**2 + 0.1*(obs[:,1])**2 + 0.1*(action[:,0])**2).reshape(-1,1)
     
-    def get_obs_description(self):
-        return self.get_states_description()
+    @property 
+    def obs_description(self):
+        return self.states_description
     
-    def get_states_description(self):
+    @property 
+    def states_description(self):
         return np.array(["deflection","velocity"])
     
-    def get_action_description(self):
+    @property 
+    def action_description(self):
         return np.array(["force"])
     
     def step(self, force_norm):
@@ -174,7 +178,7 @@ class MassSpringDamper:
             self.states=self.observation_space.sample()
         elif initial_values!=None:
             assert initial_values.shape[0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
-            assert initial_values.shape[1] == len(self.get_obs_description()), f"number of columns is expected to be amount obs_entries: {len(self.get_obs_description())}, got: {initial_values.shape[0]}"
+            assert initial_values.shape[1] == len(self.obs_description), f"number of columns is expected to be amount obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
             self.states=initial_values
         else:
             self.states[:,0:1]=np.zeros(self.batch_size).reshape(-1,1)
