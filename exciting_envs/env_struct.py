@@ -36,8 +36,8 @@ class CoreEnvironment:
 
     """
       
-
-    def get_def_reward_function(self):
+    @property 
+    def def_reward_function(self):
         """Returns the default RewardFunction of the environment."""
         return self.default_reward_func
 
@@ -47,16 +47,18 @@ class CoreEnvironment:
         """Returns the batch size of the environment setup."""
         return self._batch_size
 
-
-    def get_obs_description(self):
+    @property 
+    def obs_description(self):
         """Returns a list of state names of all states in the observation (equal to state space)."""
-        return self.get_states_description()
+        return self.states_description
     
-    def get_states_description(self):
+    @property 
+    def states_description(self):
         """Returns a list of state names of all states in the states space."""
         return np.array(["state1_name","..."])
     
-    def get_action_description(self):
+    @property 
+    def action_description(self):
         """Returns the name of the action."""
         return np.array(["action_name"])
 
