@@ -1,0 +1,17 @@
+[project]
+name = "exciting_environments"
+version = "0.0.1"
+authors = [
+  { name="Oliver Schweins", email="..." },
+]
+description = "Physical differential equations wrapped into Gymnasium environments"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://excitingsystems.github.io/exciting-environments/"
