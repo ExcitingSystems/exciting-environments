@@ -42,8 +42,8 @@ class MassSpringDamper:
             k(float): Spring constant. Default: 100
             m(float): Mass of the oscillating object. Default: 1
             max_force(float): Maximum force that can be applied to the system as action. Default: 20
-            Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.
-            
+                Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.
+
             reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) 
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for states ['deflection','velocity'] (array with length 2). Default: [1000,10]
