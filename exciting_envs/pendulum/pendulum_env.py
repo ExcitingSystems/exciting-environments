@@ -40,6 +40,8 @@ class Pendulum:
             l(float): Length of the pendulum. Default: 1
             m(float): Mass of the pendulum tip. Default: 1
             max_torque(float): Maximum torque that can be applied to the system as action. Default: 20
+            Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch.
+            
             reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. 
                                     Default: None (default_reward_func from class) 
             g(float): Gravitational acceleration. Default: 9.81
@@ -51,20 +53,17 @@ class Pendulum:
         
         self.g = g
         self.tau = tau
-        self.l_const = l
-        self.m_const = m
-        self.max_torque= max_torque
+        self.l_values = l
+        self.m_values = m
+        self.max_torque_values= max_torque
         self.batch_size = batch_size
         
         self.state_normalizer = jnp.concatenate((jnp.array([jnp.pi]),jnp.array(constraints)), axis=0)
         
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,1), dtype=jnp.float32)
         
-        #single_obs_space=spaces.Box(low=np.array([-1.0, -1.0, -1.0]), high=np.array([-1.0, 1.0 , 1.0]),shape=(3,) ,dtype=np.float32)
-        #single_obs_space=spaces.Box(low=np.array([-1.0, -1.0]), high=np.array([1.0 , 1.0]),shape=(2,), dtype=jnp.float32 )
-        #self.observation_space= vector.utils.batch_space(single_obs_space, n=batch_size)
         self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,2), dtype=jnp.float32)
-        #print(type(self.action_space))
+
         
         if reward_func:
             if self.test_rew_func(reward_func):
@@ -75,8 +74,24 @@ class Pendulum:
         
 
     def update_batch_dim(self):
-        self.l = jnp.full((self.batch_size,1), self.l_const)
-        self.m = jnp.full((self.batch_size,1), self.m_const)
+        if jnp.isscalar(self.l_values):
+            self.l = jnp.full((self.batch_size,1), self.l_values)
+        else:
+            assert len(self.l_values)==self.batch_size, f"l is expected to be a scalar or a list with len(list)=batch_size"
+            self.l= jnp.array(self.l_values).reshape(-1,1)
+            
+        if jnp.isscalar(self.m_values):
+            self.m = jnp.full((self.batch_size,1), self.m_values)
+        else:
+            assert len(self.m_values)==self.batch_size, f"m is expected to be a scalar or a list with len(list)=batch_size"
+            self.m= jnp.array(self.m_values).reshape(-1,1)
+        
+        if jnp.isscalar(self.max_torque_values):
+            self.max_torque = jnp.full((self.batch_size,1), self.max_torque_values)
+        else:
+            assert len(self.max_torque_values)==self.batch_size, f"max_torque is expected to be a scalar or a list with len(list)=batch_size"
+            self.max_torque= jnp.array(self.max_torque_values).reshape(-1,1)
+            
         theta = jnp.full((self.batch_size),1).reshape(-1,1)
         omega = jnp.zeros(self.batch_size).reshape(-1,1)
         self.states = jnp.hstack((

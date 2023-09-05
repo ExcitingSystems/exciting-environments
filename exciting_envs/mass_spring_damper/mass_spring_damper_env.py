@@ -42,6 +42,8 @@ class MassSpringDamper:
             k(float): Spring constant. Default: 100
             m(float): Mass of the oscillating object. Default: 1
             max_force(float): Maximum force that can be applied to the system as action. Default: 20
+            Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.
+            
             reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) 
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for states ['deflection','velocity'] (array with length 2). Default: [1000,10]
@@ -51,10 +53,10 @@ class MassSpringDamper:
 
         
         self.tau = tau
-        self.k_const = k
-        self.d_const = d
-        self.m_const = m
-        self.max_force= max_force
+        self.k_values = k
+        self.d_values = d
+        self.m_values = m
+        self.max_force_values= max_force
         self.batch_size = batch_size
         
         self.state_normalizer = jnp.array(constraints)
@@ -72,24 +74,30 @@ class MassSpringDamper:
         
 
     def update_batch_dim(self):
-        if jnp.isscalar(self.d_const):
-            self.d = jnp.full((self.batch_size,1), self.d_const)
+        if jnp.isscalar(self.d_values):
+            self.d = jnp.full((self.batch_size,1), self.d_values)
         else:
-            assert len(self.d_const)==self.batch_size, f"d is expected to be a scalar or a list with len(list)=batch_size"
-            self.d= jnp.array(self.d_const).reshape(-1,1)
+            assert len(self.d_values)==self.batch_size, f"d is expected to be a scalar or a list with len(list)=batch_size"
+            self.d= jnp.array(self.d_values).reshape(-1,1)
             
-        if jnp.isscalar(self.k_const):
-            self.k = jnp.full((self.batch_size,1), self.k_const)
+        if jnp.isscalar(self.k_values):
+            self.k = jnp.full((self.batch_size,1), self.k_values)
         else:
-            assert len(self.k_const)==self.batch_size, f"k is expected to be a scalar or a list with len(list)=batch_size"
-            self.k= jnp.array(self.k_const).reshape(-1,1)
+            assert len(self.k_values)==self.batch_size, f"k is expected to be a scalar or a list with len(list)=batch_size"
+            self.k= jnp.array(self.k_values).reshape(-1,1)
             
-        if jnp.isscalar(self.m_const):
-            self.m = jnp.full((self.batch_size,1), self.m_const)
+        if jnp.isscalar(self.m_values):
+            self.m = jnp.full((self.batch_size,1), self.m_values)
         else:
-            assert len(self.m_const)==self.batch_size, f"m is expected to be a scalar or a list with len(list)=batch_size"
-            self.m= jnp.array(self.m_const).reshape(-1,1)
-            
+            assert len(self.m_values)==self.batch_size, f"m is expected to be a scalar or a list with len(list)=batch_size"
+            self.m= jnp.array(self.m_values).reshape(-1,1)
+        
+        if jnp.isscalar(self.max_force_values):
+            self.max_torque = jnp.full((self.batch_size,1), self.max_force_values)
+        else:
+            assert len(self.max_force_values)==self.batch_size, f"max_force is expected to be a scalar or a list with len(list)=batch_size"
+            self.max_torque= jnp.array(self.max_force_values).reshape(-1,1)
+
         deflection = jnp.full((self.batch_size),1).reshape(-1,1)
         velocity = jnp.zeros(self.batch_size).reshape(-1,1)
         self.states = jnp.hstack((
