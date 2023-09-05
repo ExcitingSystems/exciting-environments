@@ -39,14 +39,14 @@ class Pendulum:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
             l(float): Length of the pendulum. Default: 1
             m(float): Mass of the pendulum tip. Default: 1
-            max_torque(float): Maximum torque that can be applied to the system as action. Default: 20
-                Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch.
+            max_torque(float): Maximum torque that can be applied to the system as action. Default: 20 
             reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. 
                                     Default: None (default_reward_func from class) 
             g(float): Gravitational acceleration. Default: 9.81
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for state ['omega'] (array with length 1). Default: [10]
 
+        Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch.
         """
 
         
