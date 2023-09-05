@@ -1,6 +1,10 @@
 import numpy as np
-from gymnasium import spaces
+import jax
+import jax.numpy as jnp
 from gymnasium import vector
+from exciting_envs import spaces
+from functools import partial
+import chex
 
 class Pendulum:
     """
@@ -52,13 +56,15 @@ class Pendulum:
         self.max_torque= max_torque
         self.batch_size = batch_size
         
-        self.state_normalizer = np.concatenate(([np.pi],constraints), axis=0)
+        self.state_normalizer = jnp.concatenate((jnp.array([jnp.pi]),jnp.array(constraints)), axis=0)
         
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,1), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,1), dtype=jnp.float32)
         
         #single_obs_space=spaces.Box(low=np.array([-1.0, -1.0, -1.0]), high=np.array([-1.0, 1.0 , 1.0]),shape=(3,) ,dtype=np.float32)
-        single_obs_space=spaces.Box(low=np.array([-1.0, -1.0]), high=np.array([1.0 , 1.0]),shape=(2,) ,dtype=np.float32)
-        self.observation_space= vector.utils.batch_space(single_obs_space, n=batch_size)
+        #single_obs_space=spaces.Box(low=np.array([-1.0, -1.0]), high=np.array([1.0 , 1.0]),shape=(2,), dtype=jnp.float32 )
+        #self.observation_space= vector.utils.batch_space(single_obs_space, n=batch_size)
+        self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,2), dtype=jnp.float32)
+        #print(type(self.action_space))
         
         if reward_func:
             if self.test_rew_func(reward_func):
@@ -69,18 +75,18 @@ class Pendulum:
         
 
     def update_batch_dim(self):
-        self.l = np.full((self.batch_size,1), self.l_const)
-        self.m = np.full((self.batch_size,1), self.m_const)
-        theta = np.full((self.batch_size),1).reshape(-1,1)
-        omega = np.zeros(self.batch_size).reshape(-1,1)
-        self.states = np.hstack((
+        self.l = jnp.full((self.batch_size,1), self.l_const)
+        self.m = jnp.full((self.batch_size,1), self.m_const)
+        theta = jnp.full((self.batch_size),1).reshape(-1,1)
+        omega = jnp.zeros(self.batch_size).reshape(-1,1)
+        self.states = jnp.hstack((
                     theta,
                     omega,
                 ))
         
     def test_rew_func(self,func):
         try:
-            out=func(np.zeros([self.batch_size,int(len(self.get_obs_description()))]))
+            out=func(jnp.zeros([self.batch_size,int(len(self.get_obs_description()))]))
         except:
             raise Exception("Reward function should be using obs matrix as only parameter")
         try:
@@ -89,8 +95,8 @@ class Pendulum:
         except:
             raise Exception("Reward function should be returning vector in shape (batch_size,1)")
         return True
-            
-
+   
+    @partial(jax.jit, static_argnums=0)
     def ode_exp_euler_step(self,states_norm,torque_norm):
         
         torque = torque_norm*self.max_torque
@@ -99,13 +105,13 @@ class Pendulum:
         omega = states[:,1].reshape(-1,1)
         
         dtheta = omega
-        domega = (torque+self.l*self.m*self.g*np.sin(theta))/(self.m *(self.l)**2)
+        domega = (torque+self.l*self.m*self.g*jnp.sin(theta))/(self.m *(self.l)**2)
         
         theta_k1 = theta + self.tau *dtheta  # explicit Euler
-        theta_k1 = ((theta_k1+np.pi) % (2*np.pi))-np.pi
+        theta_k1 = ((theta_k1+jnp.pi) % (2*jnp.pi))-jnp.pi
         omega_k1= omega + self.tau *domega # explicit Euler
         
-        states_k1 = np.hstack((
+        states_k1 = jnp.hstack((
                     theta_k1,
                     omega_k1,
                 ))
@@ -122,68 +128,75 @@ class Pendulum:
         # If batchsize change, update the corresponding dimension
         self._batch_size = batch_size
         self.update_batch_dim()
-        
-        
+         
     def generate_observation(self):
-        return np.hstack((
-            self.states,
-            #torque,
-        ))
-
-    @property 
-    def def_reward_func(self):
+#         return jnp.hstack((
+#             self.states,
+#             #torque,
+#         ))
+        return self.states
+    
+    @partial(jax.jit, static_argnums=0)
+    def static_generate_observation(self,states):
+        return states
+        
+    def get_def_reward_func(self):
         return self.default_reward_func
     
+    @partial(jax.jit, static_argnums=0)
     def default_reward_func(self,obs,action):
         return ((obs[:,0])**2 + 0.1*(obs[:,1])**2 + 0.1*(action[:,0])**2).reshape(-1,1)
     
-    @property
-    def obs_description(self):
-        return self.states_description
+    def get_obs_description(self):
+        return self.get_states_description()
     
-    @property 
-    def states_description(self):
+    def get_states_description(self):
         return np.array(["theta","omega"])
     
-    @property
-    def action_description(self):
+    def get_action_description(self):
         return np.array(["torque"])
     
     def step(self, torque_norm):
         #TODO Totzeit hinzufügen
         
+        obs,reward,terminated,truncated,self.states= self.step_static(self.states,torque_norm)
         
+        return obs, reward, terminated, truncated, {}
+
+    @partial(jax.jit, static_argnums=0)
+    def step_static(self,states,torque_norm):
         # ode step
-        self.states = self.ode_exp_euler_step(self.states,torque_norm)
+        states = self.ode_exp_euler_step(states,torque_norm)
 
         # observation
-        obs = self.generate_observation()
+        obs = self.static_generate_observation(states)
         
         # reward
         reward = self.reward_func(obs,torque_norm)
 
         #bound check
-        truncated = (np.abs(self.states)> 1)
+        truncated = (jnp.abs(states)> 1)
         terminated = reward == 0
         
-        return obs, reward, terminated, truncated, {}
-
+        return obs, reward, terminated, truncated ,states
+    
     def render(self):
         raise NotImplementedError("To be implemented!")
         
     def close(self):
         raise NotImplementedError("To be implemented!")
     
-    def reset(self,random_initial_values=False,initial_values:np.ndarray=None):
-        if random_initial_values:
-            self.states=self.observation_space.sample()
+    def reset(self,random_key:chex.PRNGKey=False,initial_values:jnp.ndarray=None):
+        if random_key:
+            self.states=self.observation_space.sample(random_key)
         elif initial_values!=None:
             assert initial_values.shape[0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
-            assert initial_values.shape[1] == len(self.obs_description), f"number of columns is expected to be amount obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
+            assert initial_values.shape[1] == len(self.get_obs_description()), f"number of columns is expected to be amount obs_entries: {len(self.get_obs_description())}, got: {initial_values.shape[0]}"
+            assert self.observation_space.contains(initial_values), f"values of initial states are out of bounds"
             self.states=initial_values
         else:
-            self.states[:,0:1]=np.full(self.batch_size,1).reshape(-1,1)
-            self.states[:,1:2]=np.zeros(self.batch_size).reshape(-1,1)
+            self.states=self.states.at[:,0:1].set(jnp.full(self.batch_size,1).reshape(-1,1))
+            self.states=self.states.at[:,1:2].set(jnp.zeros(self.batch_size).reshape(-1,1))
             
         obs = self.generate_observation()
 

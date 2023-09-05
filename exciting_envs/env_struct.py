@@ -2,6 +2,7 @@
 import numpy as np
 from gymnasium import spaces
 from gymnasium import vector
+import chex
 
 class CoreEnvironment:
     """
@@ -77,7 +78,7 @@ class CoreEnvironment:
         
 
             
-    def reset(self,random_initial_values=False,initial_values:np.ndarray=None):
+    def reset(self,random_key:chex.PRNGKey=False,initial_values:np.ndarray=None):
         """
             Reset the environment, return initial observation vector.
             Options:
