@@ -76,12 +76,9 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="mass-spring-damper">
-<h1>Mass Spring Damper<a class="headerlink" href="#mass-spring-damper" title="Permalink to this headline"></a></h1>
-<dl class="class">
-<dt id="exciting_envs.mass_spring_damper.mass_spring_damper_env.MassSpringDamper">
-<em class="property">class </em><code class="sig-prename descclassname">exciting_envs.mass_spring_damper.mass_spring_damper_env.</code><code class="sig-name descname">MassSpringDamper</code><span class="sig-paren">(</span><em class="sig-param">batch_size=8, d=1, k=100, m=1, max_force=20, reward_func=None, tau=0.0001, constraints=[10, 10]</em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#exciting_envs.mass_spring_damper.mass_spring_damper_env.MassSpringDamper" title="Permalink to this definition"></a></dt>
-<dd><dl class="simple">
+  <div class="section" id="module-exciting_envs.mass_spring_damper.mass_spring_damper_env.MassSpringDamper">
+<span id="mass-spring-damper"></span><h1>Mass Spring Damper<a class="headerlink" href="#module-exciting_envs.mass_spring_damper.mass_spring_damper_env.MassSpringDamper" title="Permalink to this headline"></a></h1>
+<dl class="simple">
 <dt>Description:</dt><dd><p>Environment to simulate a Mass-Spring-Damper System.</p>
 </dd>
 <dt>State Variables:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['deflection'</span> <span class="pre">,</span> <span class="pre">'velocity']''</span></code></p>
@@ -99,22 +96,6 @@
 <div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1">#TODO</span>
 </pre></div>
 </div>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
-<li><p><strong>d</strong> (<em>float</em>) – Damping constant. Default: 1</p></li>
-<li><p><strong>k</strong> (<em>float</em>) – Spring constant. Default: 100</p></li>
-<li><p><strong>m</strong> (<em>float</em>) – Mass of the oscillating object. Default: 1</p></li>
-<li><p><strong>max_force</strong> (<em>float</em>) – Maximum force that can be applied to the system as action. Default: 20</p></li>
-<li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class)</p></li>
-<li><p><strong>tau</strong> (<em>float</em>) – Duration of one control step in seconds. Default: 1e-4.</p></li>
-<li><p><strong>constraints</strong> (<em>array</em>) – Constraints for states [‘deflection’,’velocity’] (array with length 2). Default: [1000,10]</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
 </div>
 
 
