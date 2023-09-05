@@ -2,7 +2,7 @@
 name = "exciting_environments"
 version = "0.0.1"
 authors = [
-  { name="Oliver Schweins", email="..." },
+  { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
 ]
 description = "Physical differential equations wrapped into Gymnasium environments"
 readme = "README.md"
