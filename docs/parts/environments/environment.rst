@@ -14,5 +14,5 @@ Environments
 Environment Structur
 '''''''''''''''''''''''''''''''
 
-.. autoclass:: exciting_envs.env_struct.CoreEnvironment
+.. autoclass:: exciting_environments.env_struct.CoreEnvironment
    :members:
