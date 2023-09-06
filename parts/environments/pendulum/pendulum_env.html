@@ -80,45 +80,6 @@
              
   <div class="section" id="pendulum">
 <h1>Pendulum<a class="headerlink" href="#pendulum" title="Permalink to this headline"></a></h1>
-<dl class="class">
-<dt id="exciting_envs.pendulum.pendulum_env.Pendulum">
-<em class="property">class </em><code class="sig-prename descclassname">exciting_envs.pendulum.pendulum_env.</code><code class="sig-name descname">Pendulum</code><span class="sig-paren">(</span><em class="sig-param">batch_size=8, l=1, m=1, max_torque=20, reward_func=None, g=9.81, tau=0.0001, constraints=[10]</em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/pendulum/pendulum_env.html#Pendulum"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#exciting_envs.pendulum.pendulum_env.Pendulum" title="Permalink to this definition"></a></dt>
-<dd><dl class="simple">
-<dt>Description:</dt><dd><p>Environment to simulate a simple Pendulum.</p>
-</dd>
-<dt>State Variables:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['theta'</span> <span class="pre">,</span> <span class="pre">'omega']''</span></code></p>
-</dd>
-<dt>Action Variable:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['torque']''</span></code></p>
-</dd>
-<dt>Observation Space (State Space):</dt><dd><p>Box(low=[-1, -1], high=[1, 1])</p>
-</dd>
-<dt>Action Space:</dt><dd><p>Box(low=-1, high=1)</p>
-</dd>
-<dt>Initial State:</dt><dd><p>Unless chosen otherwise, theta equals 1(normalized to pi) and omega is set to zero.</p>
-</dd>
-</dl>
-<p class="rubric">Example</p>
-<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1">#TODO</span>
-</pre></div>
-</div>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
-<li><p><strong>l</strong> (<em>float</em>) – Length of the pendulum. Default: 1</p></li>
-<li><p><strong>m</strong> (<em>float</em>) – Mass of the pendulum tip. Default: 1</p></li>
-<li><p><strong>max_torque</strong> (<em>float</em>) – Maximum torque that can be applied to the system as action. Default: 20</p></li>
-<li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters.
-Default: None (default_reward_func from class)</p></li>
-<li><p><strong>g</strong> (<em>float</em>) – Gravitational acceleration. Default: 9.81</p></li>
-<li><p><strong>tau</strong> (<em>float</em>) – Duration of one control step in seconds. Default: 1e-4.</p></li>
-<li><p><strong>constraints</strong> (<em>array</em>) – Constraints for state [‘omega’] (array with length 1). Default: [10]</p></li>
-</ul>
-</dd>
-</dl>
-<p>Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch.</p>
-</dd></dl>
-
 </div>
 
 
