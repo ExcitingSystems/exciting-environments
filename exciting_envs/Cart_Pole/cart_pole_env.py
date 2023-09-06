@@ -13,7 +13,7 @@ class Cartpole:
         Environment to simulate a Cartpole System.
 
     State Variables:
-        ``['deflection' , 'velocity' , 'theta', 'omega']''``
+        ``['deflection' , 'velocity' , 'theta' , 'omega']''``
         
     Action Variable:
         ``['force']''``
