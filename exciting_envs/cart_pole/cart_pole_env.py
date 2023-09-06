@@ -7,7 +7,7 @@ from functools import partial
 import chex
 
 
-class Cartpole:
+class CartPole:
     """
     Description:
         Environment to simulate a Cartpole System.
