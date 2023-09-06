@@ -29,7 +29,7 @@ class MassSpringDamper:
 
     Example:
         >>> import jax
-        >>> from exciting-environments import MassSpringDamper
+        >>> from exciting_environments import MassSpringDamper
         >>> 
         >>> # Create the environment
         >>> env= MassSpringDamper(batch_size=2,d=2,k=0.5,max_force=10)

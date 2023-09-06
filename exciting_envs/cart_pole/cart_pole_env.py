@@ -29,7 +29,7 @@ class CartPole:
 
     Example:
         >>> import jax
-        >>> from exciting-environments import CarPole
+        >>> from exciting_environments import CarPole
         >>> 
         >>> # Create the environment
         >>> env= CartPole(batch_size=2,l=2,m_c=4,max_force=30)

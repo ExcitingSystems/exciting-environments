@@ -28,7 +28,7 @@ class Pendulum:
 
     Example:
         >>> import jax
-        >>> from exciting-environments import Pendulum
+        >>> from exciting_environments import Pendulum
         >>> 
         >>> # Create the environment
         >>> env= Pendulum(batch_size=2,l=2,m=4)
@@ -42,7 +42,7 @@ class Pendulum:
         >>> # Perform step
         >>> obs,reward,terminated, truncated,info= env.step(action)
         >>> 
-        
+
     """
       
 
