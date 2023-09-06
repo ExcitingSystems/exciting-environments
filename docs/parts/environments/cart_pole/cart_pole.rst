@@ -1,5 +1,5 @@
 Cartpole
 ==================================================
 
-.. autoclass:: exciting_envs.cart_pole.cart_pole_env.Cartpole
+.. autoclass:: exciting_envs.cartpole.cart_pole_env.Cartpole
    :members:
