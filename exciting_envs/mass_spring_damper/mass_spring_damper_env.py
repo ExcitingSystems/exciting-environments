@@ -28,7 +28,21 @@ class MassSpringDamper:
         Unless chosen otherwise, deflection and velocity is set to zero.
 
     Example:
-        >>> #TODO
+        >>> import jax
+        >>> from exciting-environments import MassSpringDamper
+        >>> 
+        >>> # Create the environment
+        >>> env= MassSpringDamper(batch_size=2,d=2,k=0.5,max_force=10)
+        >>> 
+        >>> # Reset the environment with default initial values
+        >>> env.reset()
+        >>> 
+        >>> # Sample a random action
+        >>> action = env.action_space.sample(jax.random.PRNGKey(6))
+        >>> 
+        >>> # Perform step
+        >>> obs,reward,terminated, truncated,info= env.step(action)
+        >>> 
         
     """
       

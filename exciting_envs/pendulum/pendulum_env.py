@@ -27,8 +27,22 @@ class Pendulum:
         Unless chosen otherwise, theta equals 1(normalized to pi) and omega is set to zero.
 
     Example:
-        >>> #TODO
-
+        >>> import jax
+        >>> from exciting-environments import Pendulum
+        >>> 
+        >>> # Create the environment
+        >>> env= Pendulum(batch_size=2,l=2,m=4)
+        >>> 
+        >>> # Reset the environment with default initial values
+        >>> env.reset()
+        >>> 
+        >>> # Sample a random action
+        >>> action = env.action_space.sample(jax.random.PRNGKey(6))
+        >>> 
+        >>> # Perform step
+        >>> obs,reward,terminated, truncated,info= env.step(action)
+        >>> 
+        
     """
       
 

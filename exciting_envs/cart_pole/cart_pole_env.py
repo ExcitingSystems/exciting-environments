@@ -28,7 +28,21 @@ class CartPole:
         Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to 1(normalized to pi).
 
     Example:
-        >>> #TODO
+        >>> import jax
+        >>> from exciting-environments import CarPole
+        >>> 
+        >>> # Create the environment
+        >>> env= CartPole(batch_size=2,l=2,m_c=4,max_force=30)
+        >>> 
+        >>> # Reset the environment with default initial values
+        >>> env.reset()
+        >>> 
+        >>> # Sample a random action
+        >>> action = env.action_space.sample(jax.random.PRNGKey(6))
+        >>> 
+        >>> # Perform step
+        >>> obs,reward,terminated, truncated,info= env.step(action)
+        >>> 
         
     """
       
