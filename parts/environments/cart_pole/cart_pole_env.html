@@ -79,6 +79,47 @@
              
   <div class="section" id="cartpole">
 <h1>Cartpole<a class="headerlink" href="#cartpole" title="Permalink to this headline"></a></h1>
+<dl class="class">
+<dt id="exciting_envs.cart_pole.cart_pole_env.CartPole">
+<em class="property">class </em><code class="sig-prename descclassname">exciting_envs.cart_pole.cart_pole_env.</code><code class="sig-name descname">CartPole</code><span class="sig-paren">(</span><em class="sig-param">batch_size=8, my_p=0, my_c=0, l=1, m_c=1, m_p=1, max_force=20, reward_func=None, g=9.81, tau=0.0001, constraints=[10, 10, 10]</em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_envs/cart_pole/cart_pole_env.html#CartPole"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#exciting_envs.cart_pole.cart_pole_env.CartPole" title="Permalink to this definition"></a></dt>
+<dd><dl class="simple">
+<dt>Description:</dt><dd><p>Environment to simulate a Cartpole System.</p>
+</dd>
+<dt>State Variables:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['deflection'</span> <span class="pre">,</span> <span class="pre">'velocity'</span> <span class="pre">,</span> <span class="pre">'theta'</span> <span class="pre">,</span> <span class="pre">'omega']''</span></code></p>
+</dd>
+<dt>Action Variable:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['force']''</span></code></p>
+</dd>
+<dt>Observation Space (State Space):</dt><dd><p>Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])</p>
+</dd>
+<dt>Action Space:</dt><dd><p>Box(low=-1, high=1)</p>
+</dd>
+<dt>Initial State:</dt><dd><p>Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to 1(normalized to pi).</p>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1">#TODO</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
+<li><p><strong>my_p</strong> (<em>float</em>) – Coefficient of friction of the articualtion connecting pole and cart. Default: 0</p></li>
+<li><p><strong>my_c</strong> (<em>float</em>) – Coefficient of friction between cart and track. Default: 0</p></li>
+<li><p><strong>l</strong> (<em>float</em>) – Length of the pendulum. Default: 1</p></li>
+<li><p><strong>m_c</strong> (<em>float</em>) – Mass of the cart. Default: 1</p></li>
+<li><p><strong>m_p</strong> (<em>float</em>) – Mass of the pendulum tip. Default: 1</p></li>
+<li><p><strong>max_force</strong> (<em>float</em>) – Maximum force that can be applied to the system as action. Default: 20</p></li>
+<li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class)</p></li>
+<li><p><strong>g</strong> (<em>float</em>) – Gravitational acceleration. Default: 9.81</p></li>
+<li><p><strong>tau</strong> (<em>float</em>) – Duration of one control step in seconds. Default: 1e-4.</p></li>
+<li><p><strong>constraints</strong> (<em>array</em>) – Constraints for states [‘deflection’,’velocity’,’omega’] (array with length 3). Default: [10,10,10]</p></li>
+</ul>
+</dd>
+</dl>
+<p>Note: my_p, my_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.</p>
+</dd></dl>
+
 </div>
 
 
