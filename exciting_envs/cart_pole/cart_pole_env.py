@@ -205,7 +205,6 @@ class CartPole:
         return np.array(["force"])
     
     def step(self, force_norm):
-        #TODO Totzeit hinzufügen
         
         obs,reward,terminated,truncated,self.states= self.step_static(self.states,force_norm)
         
