@@ -1,5 +1,5 @@
 Pendulum
 ==================================================
 
-.. autoclass:: exciting_envs.pendulum.pendulum_env.Pendulum
+.. autoclass:: exciting_environments.pendulum.pendulum_env.Pendulum
    :members:
