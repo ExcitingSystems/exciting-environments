@@ -91,10 +91,10 @@ class MassSpringDamper:
             self.m= jnp.array(self.m_values).reshape(-1,1)
         
         if jnp.isscalar(self.max_force_values):
-            self.max_torque = jnp.full((self.batch_size,1), self.max_force_values)
+            self.max_force = jnp.full((self.batch_size,1), self.max_force_values)
         else:
             assert len(self.max_force_values)==self.batch_size, f"max_force is expected to be a scalar or a list with len(list)=batch_size"
-            self.max_torque= jnp.array(self.max_force_values).reshape(-1,1)
+            self.max_force = jnp.array(self.max_force_values).reshape(-1,1)
 
         deflection = jnp.full((self.batch_size),1).reshape(-1,1)
         velocity = jnp.zeros(self.batch_size).reshape(-1,1)
