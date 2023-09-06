@@ -1,7 +1,7 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-from exciting_envs import spaces
+from exciting_environments import spaces
 from gymnasium import vector
 from functools import partial
 import chex
