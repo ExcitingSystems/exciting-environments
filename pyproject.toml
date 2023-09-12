@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "exciting_environments"
+name = "excenvs"
 version = "0.0.1"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
