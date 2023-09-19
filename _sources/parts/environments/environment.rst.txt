@@ -9,7 +9,7 @@ CartPole                                                             ``'CartPole
 MassSpringDamper                                                     ``'MassSpringDamper-v0'``
 Pendulum                                                             ``'Pendulum-v0'``
 
-
+=================================================================== ==============================
 
 .. toctree::
    :maxdepth: 3
