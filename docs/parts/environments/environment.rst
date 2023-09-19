@@ -6,6 +6,7 @@ On this page, all environments with their environment-id are listed.
 =================================================================== ==============================
 Environment                                                         environment-id
 =================================================================== ==============================
+**Permanently Excited DC Motor Environments**
 
 CartPole                                                             ``'CartPole-v0'``
 MassSpringDamper                                                     ``'MassSpringDamper-v0'``
