@@ -1,6 +1,16 @@
 Environments
 ############
 
+=================================================================== ==============================
+Environment                                                         environment-id
+=================================================================== ==============================
+
+CartPole                                                             ``'CartPole-v0'``
+MassSpringDamper                                                     ``'MassSpringDamper-v0'``
+Pendulum                                                             ``'Pendulum-v0'``
+
+
+
 .. toctree::
    :maxdepth: 3
    :caption: Environments:
