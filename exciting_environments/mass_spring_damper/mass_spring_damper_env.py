@@ -29,10 +29,10 @@ class MassSpringDamper:
 
     Example:
         >>> import jax
-        >>> import exciting_environments as excenv
+        >>> import exciting_environments as excenvs
         >>> 
         >>> # Create the environment
-        >>> env= excenv.make('MassSpringDamper-v0',batch_size=2,d=2,k=0.5,max_force=10)
+        >>> env= excenvs.make('MassSpringDamper-v0',batch_size=2,d=2,k=0.5,max_force=10)
         >>> 
         >>> # Reset the environment with default initial values
         >>> env.reset()

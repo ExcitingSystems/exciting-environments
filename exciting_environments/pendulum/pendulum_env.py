@@ -28,10 +28,10 @@ class Pendulum:
 
     Example:
         >>> import jax
-        >>> import exciting_environments as excenv
+        >>> import exciting_environments as excenvs
         >>> 
         >>> # Create the environment
-        >>> env= excenv.make('Pendulum-v0',batch_size=2,l=2,m=4)
+        >>> env= excenvs.make('Pendulum-v0',batch_size=2,l=2,m=4)
         >>> 
         >>> # Reset the environment with default initial values
         >>> env.reset()
