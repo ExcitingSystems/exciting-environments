@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from functools import partial
-from typing import Tuple
+from typing import Tuple, Any
 
 
 class Space:
@@ -11,7 +11,7 @@ class Space:
     def sample(self, rng: chex.PRNGKey):
         raise NotImplementedError
 
-    def contains(self, x: jnp.int_) -> bool:
+    def contains(self, x: Any) -> bool:
         raise NotImplementedError
     
 
@@ -33,7 +33,7 @@ class Box(Space):
         return jax.random.uniform(rng,shape=self.shape, minval=self.low, maxval=self.high
         ).astype(self.dtype)
 
-    def contains(self, x: jnp.int_) -> bool:
+    def contains(self, x: Any) -> bool:
         in_range = jnp.logical_and(
             jnp.all(x >= self.low), jnp.all(x <= self.high)
         )
