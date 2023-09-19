@@ -102,10 +102,10 @@
 
 <span class="sd">    Example:</span>
 <span class="sd">        &gt;&gt;&gt; import jax</span>
-<span class="sd">        &gt;&gt;&gt; from exciting_environments import MassSpringDamper</span>
+<span class="sd">        &gt;&gt;&gt; import exciting_environments as excenvs</span>
 <span class="sd">        &gt;&gt;&gt; </span>
 <span class="sd">        &gt;&gt;&gt; # Create the environment</span>
-<span class="sd">        &gt;&gt;&gt; env= MassSpringDamper(batch_size=2,d=2,k=0.5,max_force=10)</span>
+<span class="sd">        &gt;&gt;&gt; env= excenvs.make(&#39;MassSpringDamper-v0&#39;,batch_size=2,d=2,k=0.5,max_force=10)</span>
 <span class="sd">        &gt;&gt;&gt; </span>
 <span class="sd">        &gt;&gt;&gt; # Reset the environment with default initial values</span>
 <span class="sd">        &gt;&gt;&gt; env.reset()</span>
