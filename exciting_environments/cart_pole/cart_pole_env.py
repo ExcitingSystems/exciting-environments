@@ -29,10 +29,10 @@ class CartPole:
 
     Example:
         >>> import jax
-        >>> from exciting_environments import CarPole
+        >>> import exciting_environments as excenv
         >>> 
         >>> # Create the environment
-        >>> env= CartPole(batch_size=2,l=2,m_c=4,max_force=30)
+        >>> env= excenv.make('CartPole-v0',batch_size=2,l=2,m_c=4,max_force=30)
         >>> 
         >>> # Reset the environment with default initial values
         >>> env.reset()
