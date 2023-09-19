@@ -32,7 +32,7 @@ class CartPole:
         >>> import exciting_environments as excenvs
         >>> 
         >>> # Create the environment
-        >>> env= excenvs.make('CartPole-v0',batch_size=2,l=2,m_c=4,max_force=30)
+        >>> env= excenvs.make('CartPole-v0',batch_size=2,l=3,m_c=4,max_force=30)
         >>> 
         >>> # Reset the environment with default initial values
         >>> env.reset()
