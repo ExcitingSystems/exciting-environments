@@ -88,10 +88,10 @@ class Pendulum:
     def update_batch_dim(self):
 
         if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
-            assert len(self.constraints)==1, f"constraints is expected to be a list with len(list)=1 or a Matrix with Matrix.shape=(batch_size,1)"
+            assert len(self.constraints)==1, f"constraints is expected to be a list with len(list)=1 or a list of lists with overall dimension (batch_size,1)"
             self.state_normalizer = jnp.concatenate((jnp.array([jnp.pi]),jnp.array(self.constraints)), axis=0)
         else:
-            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=1 or a Matrix with Matrix.shape=(batch_size,1)"
+            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=1 or a list of lists with overall dimension (batch_size,1)"
             self.state_normalizer = jnp.concatenate((jnp.full((self.batch_size,1),jnp.pi).reshape(-1,1),jnp.array(self.constraints)), axis=1)
 
         if jnp.isscalar(self.l_values):

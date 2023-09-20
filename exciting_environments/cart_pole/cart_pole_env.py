@@ -78,8 +78,6 @@ class CartPole:
         self.constraints= constraints
         self.batch_size = batch_size
         
-        self.state_normalizer = jnp.concatenate((jnp.array(constraints[0:2]),jnp.array([jnp.pi]),jnp.array(constraints[2:3])), axis=0)
-        
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,1), dtype=jnp.float32)
         
         self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,4), dtype=jnp.float32)
@@ -95,10 +93,10 @@ class CartPole:
     def update_batch_dim(self):
 
         if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
-            assert len(self.constraints)==3, f"constraints is expected to be a list with len(list)=3 or a Matrix with Matrix.shape=(batch_size,3)"
+            assert len(self.constraints)==3, f"constraints is expected to be a list with len(list)=3 or list of lists with overall dimension (batch_size,3)"
             self.state_normalizer = jnp.concatenate((jnp.array(self.constraints[0:2]),jnp.array([jnp.pi]),jnp.array(self.constraints[2:3])), axis=0)
         else:
-            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=3 or a Matrix with Matrix.shape=(batch_size,3)"
+            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=3 or a list of lists with overall dimension (batch_size,3)"
             self.state_normalizer = jnp.concatenate((jnp.array(self.constraints)[:,0:2],jnp.full((2,1),jnp.pi).reshape(-1,1),jnp.array(self.constraints)[:,2:3]), axis=1)
 
         if jnp.isscalar(self.my_p_values):

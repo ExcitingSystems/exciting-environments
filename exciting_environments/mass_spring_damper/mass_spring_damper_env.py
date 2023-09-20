@@ -88,10 +88,10 @@ class MassSpringDamper:
     def update_batch_dim(self):
 
         if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
-            assert len(self.constraints)==2, f"constraints is expected to be a list with len(list)=2 or a Matrix with Matrix.shape=(batch_size,2)"
+            assert len(self.constraints)==2, f"constraints is expected to be a list with len(list)=2 or a list of lists with overall dimension (batch_size,2)"
             self.state_normalizer = jnp.array(self.constraints)
         else:
-            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=1 or a Matrix with Matrix.shape=(batch_size,1)"
+            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=1 or a list of lists with overall dimension (batch_size,1)"
             self.state_normalizer = jnp.array(self.constraints)
 
         if jnp.isscalar(self.d_values):
