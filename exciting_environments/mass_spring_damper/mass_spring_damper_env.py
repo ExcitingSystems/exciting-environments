@@ -61,6 +61,7 @@ class MassSpringDamper:
             constraints(array): Constraints for states ['deflection','velocity'] (array with length 2). Default: [1000,10]
 
         Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.
+              In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.  
         """
 
         
@@ -69,9 +70,9 @@ class MassSpringDamper:
         self.d_values = d
         self.m_values = m
         self.max_force_values= max_force
+        self.constraints= constraints
         self.batch_size = batch_size
-        
-        self.state_normalizer = jnp.array(constraints)
+
         
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,1), dtype=jnp.float32)
         
@@ -86,6 +87,14 @@ class MassSpringDamper:
         
 
     def update_batch_dim(self):
+
+        if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
+            assert len(self.constraints)==2, f"constraints is expected to be a list with len(list)=2 or a Matrix with Matrix.shape=(batch_size,2)"
+            self.state_normalizer = jnp.array(self.constraints)
+        else:
+            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=1 or a Matrix with Matrix.shape=(batch_size,1)"
+            self.state_normalizer = jnp.array(self.constraints)
+
         if jnp.isscalar(self.d_values):
             self.d = jnp.full((self.batch_size,1), self.d_values)
         else:

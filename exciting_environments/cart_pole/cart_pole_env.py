@@ -64,6 +64,7 @@ class CartPole:
             constraints(array): Constraints for states ['deflection','velocity','omega'] (array with length 3). Default: [10,10,10]
 
         Note: my_p, my_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.
+              In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
         """
 
         
@@ -75,6 +76,7 @@ class CartPole:
         self.m_p_values = m_p
         self.l_values = l
         self.max_force_values= max_force
+        self.constraints= constraints
         self.batch_size = batch_size
         
         self.state_normalizer = jnp.concatenate((jnp.array(constraints[0:2]),jnp.array([jnp.pi]),jnp.array(constraints[2:3])), axis=0)
@@ -92,6 +94,14 @@ class CartPole:
         
 
     def update_batch_dim(self):
+
+        if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
+            assert len(self.constraints)==3, f"constraints is expected to be a list with len(list)=3 or a Matrix with Matrix.shape=(batch_size,3)"
+            self.state_normalizer = jnp.concatenate((jnp.array(self.constraints[0:2]),jnp.array([jnp.pi]),jnp.array(self.constraints[2:3])), axis=0)
+        else:
+            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=3 or a Matrix with Matrix.shape=(batch_size,3)"
+            self.state_normalizer = jnp.concatenate((jnp.array(self.constraints)[:,0:2],jnp.full((2,1),jnp.pi).reshape(-1,1),jnp.array(self.constraints)[:,2:3]), axis=1)
+
         if jnp.isscalar(self.my_p_values):
             self.my_p = jnp.full((self.batch_size,1), self.my_p_values)
         else:

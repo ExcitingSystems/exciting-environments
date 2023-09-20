@@ -58,9 +58,10 @@ class Pendulum:
                                     Default: None (default_reward_func from class) 
             g(float): Gravitational acceleration. Default: 9.81
             tau(float): Duration of one control step in seconds. Default: 1e-4.
-            constraints(array): Constraints for state ['omega'] (array with length 1). Default: [10]
+            constraints(array): Constraints for state ['omega'] (list with length 1). Default: [10]
 
         Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch.
+              In addition to that constraints can also be passed as a list of lists with length 1 to set different constraints per batch.  
         """
 
         
@@ -69,9 +70,8 @@ class Pendulum:
         self.l_values = l
         self.m_values = m
         self.max_torque_values= max_torque
+        self.constraints= constraints
         self.batch_size = batch_size
-        
-        self.state_normalizer = jnp.concatenate((jnp.array([jnp.pi]),jnp.array(constraints)), axis=0)
         
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.batch_size,1), dtype=jnp.float32)
         
@@ -87,6 +87,14 @@ class Pendulum:
         
 
     def update_batch_dim(self):
+
+        if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
+            assert len(self.constraints)==1, f"constraints is expected to be a list with len(list)=1 or a Matrix with Matrix.shape=(batch_size,1)"
+            self.state_normalizer = jnp.concatenate((jnp.array([jnp.pi]),jnp.array(self.constraints)), axis=0)
+        else:
+            assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=1 or a Matrix with Matrix.shape=(batch_size,1)"
+            self.state_normalizer = jnp.concatenate((jnp.full((self.batch_size,1),jnp.pi).reshape(-1,1),jnp.array(self.constraints)), axis=1)
+
         if jnp.isscalar(self.l_values):
             self.l = jnp.full((self.batch_size,1), self.l_values)
         else:
