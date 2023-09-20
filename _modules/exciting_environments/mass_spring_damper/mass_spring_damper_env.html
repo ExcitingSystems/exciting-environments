@@ -134,6 +134,7 @@
 <span class="sd">            constraints(array): Constraints for states [&#39;deflection&#39;,&#39;velocity&#39;] (array with length 2). Default: [1000,10]</span>
 
 <span class="sd">        Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.</span>
+<span class="sd">              In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.  </span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
         
@@ -142,9 +143,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">d_values</span> <span class="o">=</span> <span class="n">d</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">m_values</span> <span class="o">=</span> <span class="n">m</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">max_force_values</span><span class="o">=</span> <span class="n">max_force</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="o">=</span> <span class="n">constraints</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span> <span class="o">=</span> <span class="n">batch_size</span>
-        
-        <span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">constraints</span><span class="p">)</span>
+
         
         <span class="bp">self</span><span class="o">.</span><span class="n">action_space</span> <span class="o">=</span> <span class="n">spaces</span><span class="o">.</span><span class="n">Box</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         
@@ -159,6 +160,14 @@
         
 
     <span class="k">def</span> <span class="nf">update_batch_dim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span><span class="o">==</span><span class="mi">2</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;constraints is expected to be a list with len(list)=2 or a Matrix with Matrix.shape=(batch_size,2)&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;constraints is expected to be a list with len(list)=1 or a Matrix with Matrix.shape=(batch_size,1)&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span>
+
         <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">d_values</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">d_values</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
