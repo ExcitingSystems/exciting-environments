@@ -63,8 +63,7 @@ class CartPole:
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for states ['deflection','velocity','omega'] (array with length 3). Default: [10,10,10]
 
-        Note: my_p, my_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.
-              In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
+        Note: my_p, my_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
         """
 
         

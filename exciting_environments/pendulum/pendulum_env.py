@@ -60,8 +60,7 @@ class Pendulum:
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for state ['omega'] (list with length 1). Default: [10]
 
-        Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch.
-              In addition to that constraints can also be passed as a list of lists with length 1 to set different constraints per batch.  
+        Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 1 to set different constraints per batch.  
         """
 
         

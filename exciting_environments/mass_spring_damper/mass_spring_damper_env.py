@@ -60,8 +60,7 @@ class MassSpringDamper:
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for states ['deflection','velocity'] (array with length 2). Default: [1000,10]
 
-        Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch.
-              In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.  
+        Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.  
         """
 
         
