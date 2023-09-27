@@ -113,7 +113,7 @@
 <span class="sd">        &gt;&gt;&gt; action = env.action_space.sample(jax.random.PRNGKey(6))</span>
 <span class="sd">        &gt;&gt;&gt; </span>
 <span class="sd">        &gt;&gt;&gt; # Perform step</span>
-<span class="sd">        &gt;&gt;&gt; obs,reward,terminated, truncated,info= env.step(action)</span>
+<span class="sd">        &gt;&gt;&gt; obs,reward,terminated,truncated,info= env.step(action)</span>
 <span class="sd">        &gt;&gt;&gt; </span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -238,10 +238,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">update_batch_dim</span><span class="p">()</span>
          
     <span class="k">def</span> <span class="nf">generate_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="c1">#         return jnp.hstack((</span>
-<span class="c1">#             self.states,</span>
-<span class="c1">#             #torque,</span>
-<span class="c1">#         ))</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">states</span>
     
     <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
