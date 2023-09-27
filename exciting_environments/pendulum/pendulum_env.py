@@ -40,7 +40,7 @@ class Pendulum:
         >>> action = env.action_space.sample(jax.random.PRNGKey(6))
         >>> 
         >>> # Perform step
-        >>> obs,reward,terminated, truncated,info= env.step(action)
+        >>> obs,reward,terminated,truncated,info= env.step(action)
         >>> 
 
     """
@@ -165,10 +165,6 @@ class Pendulum:
         self.update_batch_dim()
          
     def generate_observation(self):
-#         return jnp.hstack((
-#             self.states,
-#             #torque,
-#         ))
         return self.states
     
     @partial(jax.jit, static_argnums=0)

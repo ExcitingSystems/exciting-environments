@@ -41,7 +41,7 @@ class CartPole:
         >>> action = env.action_space.sample(jax.random.PRNGKey(6))
         >>> 
         >>> # Perform step
-        >>> obs,reward,terminated, truncated,info= env.step(action)
+        >>> obs,reward,terminated,truncated,info= env.step(action)
         >>> 
         
     """
