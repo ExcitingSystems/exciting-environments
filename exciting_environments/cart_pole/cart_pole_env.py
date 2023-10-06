@@ -14,6 +14,14 @@ class CartPole:
 
             Environment to simulate a Cartpole System.
 
+    =====  =====  =======
+    A      B      A and B
+    =====  =====  =======
+    False  False  False
+    True   False  False
+    False  True   False
+    True   True   True
+    =====  =====  =======       
     
     State Space
 
