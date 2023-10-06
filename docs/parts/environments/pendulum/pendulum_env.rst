@@ -7,12 +7,12 @@ Model Equation
 
       u= l m g sin(\theta) + l^2 m \ddot{\theta}
 
-Parameters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.. math::
+   Parameters
+   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   .. math::
 
-      l: \textrm{ Length of the pendulum}
-      m: \textrm{ Mass of the pendulum tip}
+      l: \textrm{ Length of the pendulum}\
+      m: \textrm{ Mass of the pendulum tip}\
       g: \textrm{ Gravitational acceleration}
 
 
