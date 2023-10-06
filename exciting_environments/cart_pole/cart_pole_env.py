@@ -10,7 +10,7 @@ import chex
 class CartPole:
     """
 
-    Description
+    Description::
 
             Environment to simulate a Cartpole System.
 
