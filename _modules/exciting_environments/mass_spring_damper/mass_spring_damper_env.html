@@ -158,7 +158,7 @@
         
         
 
-<div class="viewcode-block" id="MassSpringDamper.update_batch_dim"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.update_batch_dim">[docs]</a>    <span class="k">def</span> <span class="nf">update_batch_dim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">update_batch_dim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">list</span><span class="p">):</span>
             <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span><span class="o">==</span><span class="mi">2</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;constraints is expected to be a list with len(list)=2 or a list of lists with overall dimension (batch_size,2)&quot;</span>
@@ -196,9 +196,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">states</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">hstack</span><span class="p">((</span>
                     <span class="n">deflection</span><span class="p">,</span>
                     <span class="n">velocity</span><span class="p">,</span>
-                <span class="p">))</span></div>
+                <span class="p">))</span>
         
-<div class="viewcode-block" id="MassSpringDamper.test_rew_func"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.test_rew_func">[docs]</a>    <span class="k">def</span> <span class="nf">test_rew_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">func</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_rew_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">func</span><span class="p">):</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">out</span><span class="o">=</span><span class="n">func</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_obs_description</span><span class="p">()))]))</span>
         <span class="k">except</span><span class="p">:</span>
@@ -208,9 +208,9 @@
                 <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Reward function should be returning vector in shape (batch_size,1)&quot;</span><span class="p">)</span>    
         <span class="k">except</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Reward function should be returning vector in shape (batch_size,1)&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="kc">True</span></div>
+        <span class="k">return</span> <span class="kc">True</span>
    
-<div class="viewcode-block" id="MassSpringDamper.ode_exp_euler_step"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.ode_exp_euler_step">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">ode_exp_euler_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">states_norm</span><span class="p">,</span><span class="n">force_norm</span><span class="p">):</span>
         
         <span class="n">force</span> <span class="o">=</span> <span class="n">force_norm</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">max_force</span>
@@ -230,7 +230,7 @@
                 <span class="p">))</span>
         <span class="n">states_k1_norm</span> <span class="o">=</span> <span class="n">states_k1</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span>
         
-        <span class="k">return</span> <span class="n">states_k1_norm</span></div>
+        <span class="k">return</span> <span class="n">states_k1_norm</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">batch_size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -242,37 +242,37 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_batch_size</span> <span class="o">=</span> <span class="n">batch_size</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">update_batch_dim</span><span class="p">()</span>
          
-<div class="viewcode-block" id="MassSpringDamper.generate_observation"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_observation">[docs]</a>    <span class="k">def</span> <span class="nf">generate_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">states</span></div>
+    <span class="k">def</span> <span class="nf">generate_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">states</span>
     
-<div class="viewcode-block" id="MassSpringDamper.static_generate_observation"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.static_generate_observation">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">static_generate_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">states</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">states</span></div>
+        <span class="k">return</span> <span class="n">states</span>
         
-<div class="viewcode-block" id="MassSpringDamper.get_def_reward_func"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.get_def_reward_func">[docs]</a>    <span class="k">def</span> <span class="nf">get_def_reward_func</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_reward_func</span></div>
+    <span class="k">def</span> <span class="nf">get_def_reward_func</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_reward_func</span>
     
-<div class="viewcode-block" id="MassSpringDamper.default_reward_func"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.default_reward_func">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">default_reward_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">obs</span><span class="p">,</span><span class="n">action</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">((</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">0.1</span><span class="o">*</span><span class="p">(</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">1</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">0.1</span><span class="o">*</span><span class="p">(</span><span class="n">action</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="p">((</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">0.1</span><span class="o">*</span><span class="p">(</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">1</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">0.1</span><span class="o">*</span><span class="p">(</span><span class="n">action</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
     
-<div class="viewcode-block" id="MassSpringDamper.get_obs_description"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.get_obs_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_obs_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_states_description</span><span class="p">()</span></div>
+    <span class="k">def</span> <span class="nf">get_obs_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_states_description</span><span class="p">()</span>
     
-<div class="viewcode-block" id="MassSpringDamper.get_states_description"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.get_states_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_states_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;deflection&quot;</span><span class="p">,</span><span class="s2">&quot;velocity&quot;</span><span class="p">])</span></div>
+    <span class="k">def</span> <span class="nf">get_states_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;deflection&quot;</span><span class="p">,</span><span class="s2">&quot;velocity&quot;</span><span class="p">])</span>
     
-<div class="viewcode-block" id="MassSpringDamper.get_action_description"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.get_action_description">[docs]</a>    <span class="k">def</span> <span class="nf">get_action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;force&quot;</span><span class="p">])</span></div>
+    <span class="k">def</span> <span class="nf">get_action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;force&quot;</span><span class="p">])</span>
     
-<div class="viewcode-block" id="MassSpringDamper.step"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.step">[docs]</a>    <span class="k">def</span> <span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_norm</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_norm</span><span class="p">):</span>
         <span class="c1">#TODO Totzeit hinzufügen</span>
         
         <span class="n">obs</span><span class="p">,</span><span class="n">reward</span><span class="p">,</span><span class="n">terminated</span><span class="p">,</span><span class="n">truncated</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_static</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="p">,</span><span class="n">force_norm</span><span class="p">)</span>
         
-        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">terminated</span><span class="p">,</span> <span class="n">truncated</span><span class="p">,</span> <span class="p">{}</span></div>
+        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">terminated</span><span class="p">,</span> <span class="n">truncated</span><span class="p">,</span> <span class="p">{}</span>
 
-<div class="viewcode-block" id="MassSpringDamper.step_static"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.step_static">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">step_static</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">states</span><span class="p">,</span><span class="n">force_norm</span><span class="p">):</span>
         <span class="c1"># ode step</span>
         <span class="n">states</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ode_exp_euler_step</span><span class="p">(</span><span class="n">states</span><span class="p">,</span><span class="n">force_norm</span><span class="p">)</span>
@@ -287,15 +287,15 @@
         <span class="n">truncated</span> <span class="o">=</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">states</span><span class="p">)</span><span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
         <span class="n">terminated</span> <span class="o">=</span> <span class="n">reward</span> <span class="o">==</span> <span class="mi">0</span>
         
-        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">terminated</span><span class="p">,</span> <span class="n">truncated</span> <span class="p">,</span><span class="n">states</span></div>
+        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">terminated</span><span class="p">,</span> <span class="n">truncated</span> <span class="p">,</span><span class="n">states</span>
     
-<div class="viewcode-block" id="MassSpringDamper.render"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.render">[docs]</a>    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;To be implemented!&quot;</span><span class="p">)</span></div>
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;To be implemented!&quot;</span><span class="p">)</span>
         
-<div class="viewcode-block" id="MassSpringDamper.close"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;To be implemented!&quot;</span><span class="p">)</span></div>
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;To be implemented!&quot;</span><span class="p">)</span>
     
-<div class="viewcode-block" id="MassSpringDamper.reset"><a class="viewcode-back" href="../../../parts/environments/mass_spring_damper/mass_spring_damper_env.html#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.reset">[docs]</a>    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">random_key</span><span class="p">:</span><span class="n">chex</span><span class="o">.</span><span class="n">PRNGKey</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span><span class="n">initial_values</span><span class="p">:</span><span class="n">jnp</span><span class="o">.</span><span class="n">ndarray</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">random_key</span><span class="p">:</span><span class="n">chex</span><span class="o">.</span><span class="n">PRNGKey</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span><span class="n">initial_values</span><span class="p">:</span><span class="n">jnp</span><span class="o">.</span><span class="n">ndarray</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">random_key</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">observation_space</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">random_key</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">initial_values</span><span class="o">!=</span><span class="kc">None</span><span class="p">:</span>
@@ -309,7 +309,7 @@
             
         <span class="n">obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_observation</span><span class="p">()</span>
 
-        <span class="k">return</span> <span class="n">obs</span><span class="p">,{}</span></div></div>
+        <span class="k">return</span> <span class="n">obs</span><span class="p">,{}</span></div>
 </pre></div>
 
            </div>
