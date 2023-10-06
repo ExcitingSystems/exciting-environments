@@ -15,7 +15,7 @@ Pendulum                                                             ``'Pendulum
 =================================================================== ==============================
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 4
    :caption: Environments:
    :glob:
 
