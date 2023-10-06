@@ -10,14 +10,12 @@ import chex
 class CartPole:
     """
 
-    Description
-    ------------
+    Description:
 
     Environment to simulate a Cartpole System.
 
     
-    State Space
-    ------------
+    State Space:
 
     ``['deflection' , 'velocity' , 'theta' , 'omega']''``
         
