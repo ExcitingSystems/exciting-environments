@@ -7,8 +7,8 @@ Model Equation
 
       u= l m g sin(\theta) + l^2 m \ddot{\theta}
 
-   Parameters
-   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
    .. math::
 
       l: \textrm{ Length of the pendulum}\\
