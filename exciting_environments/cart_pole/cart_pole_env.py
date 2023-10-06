@@ -9,42 +9,25 @@ import chex
 
 class CartPole:
     """
-
     Description:
+        Environment to simulate a Cartpole System.
 
-            Environment to simulate a Cartpole System.
-
-    =====  =====  =======
-    A      B      A and B
-    =====  =====  =======
-    False  False  False
-    True   False  False
-    False  True   False
-    True   True   True
-    =====  =====  =======       
-    
-    State Space:
-
-    =================
-    This is a heading
-    =================
-    =====  
-    A    
-    =====   
-
-
-            ``['deflection' , 'velocity' , 'theta' , 'omega']''``
+    State Variables:
+        ``['deflection' , 'velocity' , 'theta' , 'omega']''``
         
-            Observation Space (State Space)
-            Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])    
+    Action Variable:
+        ``['force']''``
         
-    Action Space
-            Box(low=-1, high=1)
+    Observation Space (State Space):
+        Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])    
+        
+    Action Space:
+        Box(low=-1, high=1)
 
-    Initial State
+    Initial State:
         Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to 1(normalized to pi).
 
-    ## Example
+    Example:
         >>> import jax
         >>> import exciting_environments as excenvs
         >>> 
