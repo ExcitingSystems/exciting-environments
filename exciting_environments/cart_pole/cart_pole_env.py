@@ -10,22 +10,22 @@ import chex
 class CartPole:
     """
 
-    Description:
+    Description
 
-    Environment to simulate a Cartpole System.
+            Environment to simulate a Cartpole System.
 
     
-    State Space:
+    State Space
 
-    ``['deflection' , 'velocity' , 'theta' , 'omega']''``
+            ``['deflection' , 'velocity' , 'theta' , 'omega']''``
         
-    Observation Space (State Space)
-    Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])    
+            Observation Space (State Space)
+            Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])    
         
-    ## Action Space
-        Box(low=-1, high=1)
+    Action Space
+            Box(low=-1, high=1)
 
-    ## Initial State
+    Initial State
         Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to 1(normalized to pi).
 
     ## Example
