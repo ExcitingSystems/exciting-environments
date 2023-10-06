@@ -11,9 +11,9 @@ Parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    .. math::
       \begin{flalign}
-      l: \textrm{ Length of the pendulum}\\
-      m: \textrm{ Mass of the pendulum tip}\\
-      g: \textrm{ Gravitational acceleration}
+      &l: \textrm{ Length of the pendulum}&\\
+      &m: \textrm{ Mass of the pendulum tip}&\\
+      &g: \textrm{ Gravitational acceleration}&
       \end{flalign}
 
 Class
