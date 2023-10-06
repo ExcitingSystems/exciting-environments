@@ -11,8 +11,8 @@ Model Equation
    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    .. math::
 
-      l: \textrm{ Length of the pendulum}\
-      m: \textrm{ Mass of the pendulum tip}\
+      l: \textrm{ Length of the pendulum}\\
+      m: \textrm{ Mass of the pendulum tip}\\
       g: \textrm{ Gravitational acceleration}
 
 
