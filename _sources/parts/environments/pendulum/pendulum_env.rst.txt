@@ -9,12 +9,11 @@ Model Equation
 
 Parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   .. math::
-      \begin{flalign*}
-      l: \textrm{ Length of the pendulum}\\
-      m: \textrm{ Mass of the pendulum tip}\\
-      g: \textrm{ Gravitational acceleration}
-      \end{flalign*}
+   
+l: Length of the pendulum}
+m: Mass of the pendulum tip}
+g: Gravitational acceleration}
+
 
 Class
 --------------------------------------------------
