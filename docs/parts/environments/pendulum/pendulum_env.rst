@@ -10,9 +10,9 @@ Model Equation
 Parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    
-\(l\):Length of the pendulum \\
-\(m\):Mass of the pendulum tip \\
-\(g\): Gravitational acceleration
+:math:`l`:Length of the pendulum \\
+:math:`m`:Mass of the pendulum tip \\
+:math:`g`: Gravitational acceleration
 
 
 Class
