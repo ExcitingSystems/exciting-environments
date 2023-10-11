@@ -80,15 +80,67 @@
              
   <div class="section" id="cartpole">
 <h1>Cartpole<a class="headerlink" href="#cartpole" title="Permalink to this headline"></a></h1>
+<div class="section" id="description">
+<h2>Description<a class="headerlink" href="#description" title="Permalink to this headline"></a></h2>
+<p>Environment to simulate a Cartpole System.</p>
+</div>
+<div class="section" id="equation">
+<h2>Equation<a class="headerlink" href="#equation" title="Permalink to this headline"></a></h2>
 <div class="math notranslate nohighlight">
-\[\frac{ \sum_{t=0}^{N}f(t,k) }{N}\]</div>
+\[u= l m g sin(\theta) + l^2 m \ddot{\theta}\]</div>
+</div>
+<div class="section" id="parameters">
+<h2>Parameters<a class="headerlink" href="#parameters" title="Permalink to this headline"></a></h2>
+<div class="line-block">
+<div class="line"><span class="math notranslate nohighlight">\(\mu_{p}\)</span>: Coefficient of friction of pole on cart</div>
+<div class="line"><span class="math notranslate nohighlight">\(\mu_{c}\)</span>: Coefficient of friction of cart on track</div>
+<div class="line"><span class="math notranslate nohighlight">\(l\)</span>: Half-pole length</div>
+<div class="line"><span class="math notranslate nohighlight">\(\m_{c}\)</span>: Mass of cart</div>
+<div class="line"><span class="math notranslate nohighlight">\(\m_{p}\)</span>: Mass of pole</div>
+<div class="line"><span class="math notranslate nohighlight">\(g\)</span>: Gravitational acceleration</div>
+</div>
+</div>
+<div class="section" id="states">
+<h2>States<a class="headerlink" href="#states" title="Permalink to this headline"></a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 55%" />
+<col style="width: 32%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Num</p></th>
+<th class="head"><p>Term in Equation</p></th>
+<th class="head"><p>Term in Class</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>0</p></td>
+<td><p><span class="math notranslate nohighlight">\(x\)</span></p></td>
+<td><p>deflection</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p><span class="math notranslate nohighlight">\(\dot{x}\)</span></p></td>
+<td><p>velocity</p></td>
+</tr>
+<tr class="row-even"><td><p>2</p></td>
+<td><p><span class="math notranslate nohighlight">\(\theta\)</span></p></td>
+<td><p>theta</p></td>
+</tr>
+<tr class="row-odd"><td><p>3</p></td>
+<td><p><span class="math notranslate nohighlight">\(\dot{\theta}\)</span></p></td>
+<td><p>omega</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="class">
+<h2>Class<a class="headerlink" href="#class" title="Permalink to this headline"></a></h2>
 <dl class="class">
 <dt id="exciting_environments.cart_pole.cart_pole_env.CartPole">
-<em class="property">class </em><code class="sig-prename descclassname">exciting_environments.cart_pole.cart_pole_env.</code><code class="sig-name descname">CartPole</code><span class="sig-paren">(</span><em class="sig-param">batch_size=8, my_p=0, my_c=0, l=1, m_c=1, m_p=1, max_force=20, reward_func=None, g=9.81, tau=0.0001, constraints=[10, 10, 10]</em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/cart_pole/cart_pole_env.html#CartPole"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#exciting_environments.cart_pole.cart_pole_env.CartPole" title="Permalink to this definition"></a></dt>
+<em class="property">class </em><code class="sig-prename descclassname">exciting_environments.cart_pole.cart_pole_env.</code><code class="sig-name descname">CartPole</code><span class="sig-paren">(</span><em class="sig-param">batch_size=8, mu_p=0, mu_c=0, l=1, m_c=1, m_p=1, max_force=20, reward_func=None, g=9.81, tau=0.0001, constraints=[10, 10, 10]</em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/cart_pole/cart_pole_env.html#CartPole"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#exciting_environments.cart_pole.cart_pole_env.CartPole" title="Permalink to this definition"></a></dt>
 <dd><dl class="simple">
-<dt>Description:</dt><dd><p>Environment to simulate a Cartpole System.</p>
-</dd>
-<dt>State Variables:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['deflection'</span> <span class="pre">,</span> <span class="pre">'velocity'</span> <span class="pre">,</span> <span class="pre">'theta'</span> <span class="pre">,</span> <span class="pre">'omega']''</span></code></p>
+<dt>State Variables</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['deflection'</span> <span class="pre">,</span> <span class="pre">'velocity'</span> <span class="pre">,</span> <span class="pre">'theta'</span> <span class="pre">,</span> <span class="pre">'omega']''</span></code></p>
 </dd>
 <dt>Action Variable:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['force']''</span></code></p>
 </dd>
@@ -121,11 +173,11 @@
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
-<li><p><strong>my_p</strong> (<em>float</em>) – Coefficient of friction of the articualtion connecting pole and cart. Default: 0</p></li>
-<li><p><strong>my_c</strong> (<em>float</em>) – Coefficient of friction between cart and track. Default: 0</p></li>
-<li><p><strong>l</strong> (<em>float</em>) – Length of the pendulum. Default: 1</p></li>
+<li><p><strong>mu_p</strong> (<em>float</em>) – Coefficient of friction of pole on cart. Default: 0</p></li>
+<li><p><strong>mu_c</strong> (<em>float</em>) – Coefficient of friction of cart on track. Default: 0</p></li>
+<li><p><strong>l</strong> (<em>float</em>) – Half-pole length. Default: 1</p></li>
 <li><p><strong>m_c</strong> (<em>float</em>) – Mass of the cart. Default: 1</p></li>
-<li><p><strong>m_p</strong> (<em>float</em>) – Mass of the pendulum tip. Default: 1</p></li>
+<li><p><strong>m_p</strong> (<em>float</em>) – Mass of the pole. Default: 1</p></li>
 <li><p><strong>max_force</strong> (<em>float</em>) – Maximum force that can be applied to the system as action. Default: 20</p></li>
 <li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class)</p></li>
 <li><p><strong>g</strong> (<em>float</em>) – Gravitational acceleration. Default: 9.81</p></li>
@@ -134,9 +186,10 @@
 </ul>
 </dd>
 </dl>
-<p>Note: my_p, my_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.</p>
+<p>Note: mu_p, mu_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.</p>
 </dd></dl>
 
+</div>
 </div>
 
 
