@@ -17,6 +17,7 @@ Pendulum                                                             ``'Pendulum
 .. toctree::
    :maxdepth: 3
    :caption: Environments:
+   :titlesonly:
    :glob:
 
    pendulum/pendulum_env

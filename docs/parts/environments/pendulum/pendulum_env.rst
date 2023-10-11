@@ -18,14 +18,14 @@ Parameters
 | :math:`m`:Mass of the pendulum tip 
 | :math:`g`: Gravitational acceleration
 
-State-/ Obvservation Space
+States
 --------------------------------------------------
 
 ====== ==========================  ==============
-Num    Name in Equation            Term in Class            
+Num    Term in Equation            Term in Class            
 ====== ==========================  ==============
 0      :math:`\theta`              theta
-1      :math:`\ddot{\theta}`       omega
+1      :math:`\dot{\theta}`        omega
 ====== ==========================  ==============
 
 Class
