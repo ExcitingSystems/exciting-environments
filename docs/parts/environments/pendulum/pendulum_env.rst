@@ -21,7 +21,6 @@ Parameters
 State-/ Obvservation Space
 --------------------------------------------------
 
-:math:`l`:Length of the pendulum 
 ====== ==========================  ==============
 Num    Name in Equation            Term in Class            
 ====== ==========================  ==============
