@@ -17,8 +17,8 @@ Parameters
 | :math:`\mu_{p}`: Coefficient of friction of pole on cart
 | :math:`\mu_{c}`: Coefficient of friction of cart on track
 | :math:`l`: Half-pole length
-| :math:`\m_{c}`: Mass of cart
-| :math:`\m_{p}`: Mass of pole
+| :math:`m_{c}`: Mass of cart
+| :math:`m_{p}`: Mass of pole
 | :math:`g`: Gravitational acceleration
 
 States
