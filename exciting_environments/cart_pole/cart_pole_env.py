@@ -9,10 +9,7 @@ import chex
 
 class CartPole:
     """
-    Description:
-        Environment to simulate a Cartpole System.
-
-    State Variables:
+    State Variables
         ``['deflection' , 'velocity' , 'theta' , 'omega']''``
         
     Action Variable:
@@ -47,30 +44,30 @@ class CartPole:
     """
       
 
-    def __init__(self, batch_size=8, my_p=0, my_c=0, l=1 , m_c=1, m_p=1,  max_force=20, reward_func=None, g=9.81,tau = 1e-4 , constraints= [10,10,10]):
+    def __init__(self, batch_size=8, mu_p=0, mu_c=0, l=1 , m_c=1, m_p=1,  max_force=20, reward_func=None, g=9.81,tau = 1e-4 , constraints= [10,10,10]):
         
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            my_p(float): Coefficient of friction of the articualtion connecting pole and cart. Default: 0
-            my_c(float): Coefficient of friction between cart and track. Default: 0
-            l(float): Length of the pendulum. Default: 1
+            mu_p(float): Coefficient of friction of pole on cart. Default: 0
+            mu_c(float): Coefficient of friction of cart on track. Default: 0
+            l(float): Half-pole length. Default: 1
             m_c(float): Mass of the cart. Default: 1
-            m_p(float): Mass of the pendulum tip. Default: 1
+            m_p(float): Mass of the pole. Default: 1
             max_force(float): Maximum force that can be applied to the system as action. Default: 20
             reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) 
             g(float): Gravitational acceleration. Default: 9.81
             tau(float): Duration of one control step in seconds. Default: 1e-4.
             constraints(array): Constraints for states ['deflection','velocity','omega'] (array with length 3). Default: [10,10,10]
 
-        Note: my_p, my_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
+        Note: mu_p, mu_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
         """
 
         
         self.tau = tau
         self.g = g
-        self.my_p_values = my_p
-        self.my_c_values = my_c
+        self.mu_p_values = mu_p
+        self.mu_c_values = mu_c
         self.m_c_values = m_c
         self.m_p_values = m_p
         self.l_values = l
@@ -99,17 +96,17 @@ class CartPole:
             assert jnp.array(self.constraints).shape[0]==self.batch_size, f"constraints is expected to be a list with len(list)=3 or a list of lists with overall dimension (batch_size,3)"
             self.state_normalizer = jnp.concatenate((jnp.array(self.constraints)[:,0:2],jnp.full((2,1),jnp.pi).reshape(-1,1),jnp.array(self.constraints)[:,2:3]), axis=1)
 
-        if jnp.isscalar(self.my_p_values):
-            self.my_p = jnp.full((self.batch_size,1), self.my_p_values)
+        if jnp.isscalar(self.mu_p_values):
+            self.mu_p = jnp.full((self.batch_size,1), self.mu_p_values)
         else:
-            assert len(self.my_p_values)==self.batch_size, f"my_p is expected to be a scalar or a list with len(list)=batch_size"
-            self.my_p= jnp.array(self.my_p_values).reshape(-1,1)
+            assert len(self.mu_p_values)==self.batch_size, f"mu_p is expected to be a scalar or a list with len(list)=batch_size"
+            self.mu_p= jnp.array(self.mu_p_values).reshape(-1,1)
             
-        if jnp.isscalar(self.my_c_values):
-            self.my_c = jnp.full((self.batch_size,1), self.my_c_values)
+        if jnp.isscalar(self.mu_c_values):
+            self.mu_c = jnp.full((self.batch_size,1), self.mu_c_values)
         else:
-            assert len(self.my_c_values)==self.batch_size, f"my_c is expected to be a scalar or a list with len(list)=batch_size"
-            self.my_c= jnp.array(self.my_c_values).reshape(-1,1)
+            assert len(self.mu_c_values)==self.batch_size, f"mu_c is expected to be a scalar or a list with len(list)=batch_size"
+            self.mu_c= jnp.array(self.mu_c_values).reshape(-1,1)
             
         if jnp.isscalar(self.m_c_values):
             self.m_c = jnp.full((self.batch_size,1), self.m_c_values)
@@ -171,9 +168,9 @@ class CartPole:
         ddeflection = velocity
         dtheta = omega
         
-        domega = (self.g*jnp.sin(theta)+jnp.cos(theta)*((-force-self.m_p*self.l*(omega**2)*jnp.sin(theta)+self.my_c*jnp.sign(velocity))/(self.m_c+self.m_p))-(self.my_p*omega)/(self.m_p*self.l))/(self.l*(4/3-(self.m_p*(jnp.cos(theta))**2)/(self.m_c+self.m_p)))
+        domega = (self.g*jnp.sin(theta)+jnp.cos(theta)*((-force-self.m_p*self.l*(omega**2)*jnp.sin(theta)+self.mu_c*jnp.sign(velocity))/(self.m_c+self.m_p))-(self.mu_p*omega)/(self.m_p*self.l))/(self.l*(4/3-(self.m_p*(jnp.cos(theta))**2)/(self.m_c+self.m_p)))
         
-        dvelocity = (force + self.m_p*self.l*((omega**2)*jnp.sin(theta)-domega*jnp.cos(theta))- self.my_c* jnp.sign(velocity))/(self.m_c+self.m_p)
+        dvelocity = (force + self.m_p*self.l*((omega**2)*jnp.sin(theta)-domega*jnp.cos(theta))- self.mu_c* jnp.sign(velocity))/(self.m_c+self.m_p)
     
         deflection_k1 = deflection + self.tau *ddeflection  # explicit Euler
         velocity_k1= velocity + self.tau *dvelocity # explicit Euler
