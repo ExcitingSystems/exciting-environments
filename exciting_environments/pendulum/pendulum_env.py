@@ -9,7 +9,7 @@ import chex
 class Pendulum:
     """
     State Variables:
-        ``['theta' , 'omega']''``
+        ``['theta' , 'omega']``
         
     Action Variable:
         ``['torque']''``

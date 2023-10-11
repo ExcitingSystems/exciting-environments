@@ -13,7 +13,7 @@ class MassSpringDamper:
         Environment to simulate a Mass-Spring-Damper System.
 
     State Variables:
-        ``['deflection' , 'velocity']''``
+        ``['deflection' , 'velocity']``
         
     Action Variable:
         ``['force']''``

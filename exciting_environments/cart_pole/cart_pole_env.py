@@ -10,7 +10,7 @@ import chex
 class CartPole:
     """
     State Variables
-        ``['deflection' , 'velocity' , 'theta' , 'omega']''``
+        ``['deflection' , 'velocity' , 'theta' , 'omega']``
         
     Action Variable:
         ``['force']''``
