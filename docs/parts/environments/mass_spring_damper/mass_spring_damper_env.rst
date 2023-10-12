@@ -9,7 +9,7 @@ Equation
 --------------------------------------------------
 .. math::
 
-      u = m \ddot{y} + d \dot{y} + k y
+      u_t = m \ddot{y_t} + d \dot{y_t} + k y_t
 
 Parameters
 --------------------------------------------------
@@ -24,8 +24,8 @@ States
 ====== ========================  ==============
 Num    Term in Equation          Term in Class            
 ====== ========================  ==============
-0      :math:`y`                 deflection
-1      :math:`\dot{y}`           velocity
+0      :math:`y_t`                 deflection
+1      :math:`\dot{y_t}`           velocity
 ====== ========================  ==============
 
 Class
