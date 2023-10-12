@@ -9,8 +9,8 @@ Equation
 --------------------------------------------------
 .. math::
 
-      \ddot{\theta_t}= \frac{g\sin{\theta_t}+\cos{\theta_t}[\frac{-u_t-ml{\dot{\theta}}^2 \sin{\theta_t}+\mu_c sgn {\dot{x}}}{m_c+m_p}]-\frac{\mu_p \dot{\theta_t}}{m_p l}}{l [\frac{4}{3}- \frac{m_p {\cos{\theta_t}}^2}{m_c + m_p}]} \\
-      \ddot{x_t}= \frac{u_t + m l [{\dot{\theta_t}}^2 \sin{\theta_t}- \ddot{\theta_t} \cos{\theta_t}]-\mu_c sgn(\dot{x_t})}{m_c + m_p}
+      \ddot{\theta_t}= \frac{g\sin{\theta_t}+\cos{\theta_t}[\frac{-u_t-ml{\dot{\theta}}^2 \sin{\theta_t}+\mu_c sgn {\dot{x}}}{m_c+m_p}]-\frac{\mu_p \dot{\theta_t}}{m_p l}}{l [\frac{4}{3}- \frac{m_p {\cos^2{\theta_t}}}{m_c + m_p}]} \\
+      \ddot{x_t}= \frac{u_t + m l [{\dot{\theta_t}}^2 \sin{\theta_t}- \ddot{\theta_t} \cos{\theta_t}]-\mu_c \textrm{sgn}(\dot{x_t})}{m_c + m_p}
 
 Parameters
 --------------------------------------------------
