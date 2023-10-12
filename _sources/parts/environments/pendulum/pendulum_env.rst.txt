@@ -9,7 +9,7 @@ Equation
 --------------------------------------------------
 .. math::
 
-      u= l m g \sin{\theta} + l^2 m \ddot{\theta}
+      u _t = l m g \sin{\theta_t} + l^2 m \ddot{\theta_t}
 
 Parameters
 --------------------------------------------------
@@ -24,8 +24,8 @@ States
 ====== ========================  ==============
 Num    Term in Equation          Term in Class            
 ====== ========================  ==============
-0      :math:`\theta`            theta
-1      :math:`\dot{\theta}`      omega
+0      :math:`\theta_t`            theta
+1      :math:`\dot{\theta_t}`      omega
 ====== ========================  ==============
 
 Class
