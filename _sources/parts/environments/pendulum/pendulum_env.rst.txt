@@ -9,7 +9,7 @@ Equation
 --------------------------------------------------
 .. math::
 
-      u _t = l m g \sin{\theta_t} + l^2 m \ddot{\theta_t}
+      M_t = l m g \sin{\theta_t} + l^2 m \ddot{\theta_t}
 
 Parameters
 --------------------------------------------------
@@ -17,6 +17,16 @@ Parameters
 | :math:`l`: Length of the pendulum 
 | :math:`m`: Mass of the pendulum tip 
 | :math:`g`: Gravitational acceleration
+
+Action
+--------------------------------------------------
+
+====== ========================  ==============
+Num    Term in Equation          Term in Class            
+====== ========================  ==============
+0      :math:`M_t`                 torque
+====== ========================  ==============
+
 
 States
 --------------------------------------------------

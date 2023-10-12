@@ -9,7 +9,7 @@ Equation
 --------------------------------------------------
 .. math::
 
-      u_t = m \ddot{y_t} + d \dot{y_t} + k y_t
+      F_t = m \ddot{y_t} + d \dot{y_t} + k y_t
 
 Parameters
 --------------------------------------------------
@@ -17,6 +17,16 @@ Parameters
 | :math:`d`: Damping constant
 | :math:`k`: Spring constant
 | :math:`m`: Mass of the oscillating object
+
+Action
+--------------------------------------------------
+
+====== ========================  ==============
+Num    Term in Equation          Term in Class            
+====== ========================  ==============
+0      :math:`F_t`                 force
+====== ========================  ==============
+
 
 States
 --------------------------------------------------
