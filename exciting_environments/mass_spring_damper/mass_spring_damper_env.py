@@ -9,8 +9,6 @@ import chex
 
 class MassSpringDamper:
     """
-    Description:
-        Environment to simulate a Mass-Spring-Damper System.
 
     State Variables:
         ``['deflection' , 'velocity']``

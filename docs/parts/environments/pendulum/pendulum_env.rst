@@ -9,7 +9,7 @@ Equation
 --------------------------------------------------
 .. math::
 
-      u= l m g sin(\theta) + l^2 m \ddot{\theta}
+      u= l m g \sin{\theta} + l^2 m \ddot{\theta}
 
 Parameters
 --------------------------------------------------
