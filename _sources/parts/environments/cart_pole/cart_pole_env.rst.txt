@@ -9,7 +9,7 @@ Equation
 --------------------------------------------------
 .. math::
 
-      u= l m g sin(\theta) + l^2 m \ddot{\theta}
+      \ddot{\theta}= \frac{g\sin{\theta_t}+\cos{\theta_t}(\frac{-u_t-ml{\dot{\theta}}^2 \sin{\theta_t}+\mu_c \sgn{\dot{x}}}{m_c+m_p})-\frac{\mu_p \dot{\theta_t}}{m_p l}}{l (\frac{4}{3}- \frac{m_p {\cos{\theta_t}}^2}{m_c + m_p})}
 
 Parameters
 --------------------------------------------------
@@ -27,10 +27,10 @@ States
 ====== ========================  ==============
 Num    Term in Equation          Term in Class            
 ====== ========================  ==============
-0      :math:`x`                 deflection
-1      :math:`\dot{x}`           velocity
-2      :math:`\theta`            theta
-3      :math:`\dot{\theta}`      omega
+0      :math:`x_t`                 deflection
+1      :math:`\dot{x_t}`           velocity
+2      :math:`\theta_t`            theta
+3      :math:`\dot{\theta_t}`      omega
 ====== ========================  ==============
 
 Class

@@ -87,7 +87,7 @@
 <div class="section" id="equation">
 <h2>Equation<a class="headerlink" href="#equation" title="Permalink to this headline"></a></h2>
 <div class="math notranslate nohighlight">
-\[u= l m g sin(\theta) + l^2 m \ddot{\theta}\]</div>
+\[\ddot{\theta}= \frac{g\sin{\theta_t}+\cos{\theta_t}(\frac{-u_t-ml{\dot{\theta}}^2 \sin{\theta_t}+\mu_c \sgn{\dot{x}}}{m_c+m_p})-\frac{\mu_p \dot{\theta_t}}{m_p l}}{l (\frac{4}{3}- \frac{m_p {\cos{\theta_t}}^2}{m_c + m_p})}\]</div>
 </div>
 <div class="section" id="parameters">
 <h2>Parameters<a class="headerlink" href="#parameters" title="Permalink to this headline"></a></h2>
@@ -116,19 +116,19 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>0</p></td>
-<td><p><span class="math notranslate nohighlight">\(x\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(x_t\)</span></p></td>
 <td><p>deflection</p></td>
 </tr>
 <tr class="row-odd"><td><p>1</p></td>
-<td><p><span class="math notranslate nohighlight">\(\dot{x}\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(\dot{x_t}\)</span></p></td>
 <td><p>velocity</p></td>
 </tr>
 <tr class="row-even"><td><p>2</p></td>
-<td><p><span class="math notranslate nohighlight">\(\theta\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(\theta_t\)</span></p></td>
 <td><p>theta</p></td>
 </tr>
 <tr class="row-odd"><td><p>3</p></td>
-<td><p><span class="math notranslate nohighlight">\(\dot{\theta}\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(\dot{\theta_t}\)</span></p></td>
 <td><p>omega</p></td>
 </tr>
 </tbody>
