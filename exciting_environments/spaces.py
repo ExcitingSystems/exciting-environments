@@ -13,7 +13,7 @@ class Space:
 
     def contains(self, x: Any) -> bool:
         raise NotImplementedError
-    
+
 
 class Box(Space):
     def __init__(
@@ -27,11 +27,11 @@ class Box(Space):
         self.high = high
         self.dtype = dtype
         self.shape = shape
-        
+
     @partial(jax.jit, static_argnums=0)
     def sample(self, rng: chex.PRNGKey):
-        return jax.random.uniform(rng,shape=self.shape, minval=self.low, maxval=self.high
-        ).astype(self.dtype)
+        return jax.random.uniform(rng, shape=self.shape, minval=self.low, maxval=self.high
+                                  ).astype(self.dtype)
 
     def contains(self, x: Any) -> bool:
         in_range = jnp.logical_and(
