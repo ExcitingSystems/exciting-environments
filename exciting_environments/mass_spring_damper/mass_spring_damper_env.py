@@ -57,12 +57,6 @@ class MassSpringDamper(core_env.CoreEnvironment):
         Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.  
         """
 
-        self.k_values = k
-        self.d_values = d
-        self.m_values = m
-        self.max_force_values = max_force
-        self.constraints = constraints
-
         self.params = {"k": k, "d": d, "m": m}
         self.state_constraints = constraints  # ["deflection", "velocity"]
         self.state_initials = [0, 0]
