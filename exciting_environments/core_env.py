@@ -72,7 +72,17 @@ class CoreEnvironment(ABC):
         self._update_batch_dim()
 
     def _update_batch_dim(self):
-        "Updates ..."
+        """Creates or updates parameters,variables,spaces,etc. to fit batch_size.
+
+        Creates/Updates:
+            params : Model Parameters.
+            action_space: Space for applied actions.
+            observation_space: Space for system states.
+            state_normalizer: State normalizer to normalize and denormalize states to implement physical equations with actual values.
+            action_normalizer: Action normalizer to normalize and denormalize actions to implement physical equations with actual values.
+            states: System states.
+
+        """
         for key, value in self.params.items():
             if jnp.isscalar(value):
                 self.params[key] = jnp.full((self.batch_size, 1), value)
@@ -120,6 +130,7 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def _static_generate_observation(self, states):
+        """Returns states."""
         return states
 
     def generate_observation(self):
@@ -127,6 +138,14 @@ class CoreEnvironment(ABC):
         return self.states
 
     def _test_rew_func(self, func):
+        """Checks if passed reward function is compatible with given environment.
+
+        Args:
+            func(function): Reward function to test.
+
+        Returns:
+            compatible(bool): Environment compatibility.
+        """
         try:
             out = func(
                 jnp.zeros([self.batch_size, int(len(self.obs_description))]))
@@ -177,7 +196,27 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def _step_static(self, states, action_norm):
-        """Addtional function in step execution to enable JAX jit"""
+        """Addtional function in step execution to enable JAX jit.
+
+        Args:
+            states(ndarray(float)): State Matrix (shape=(batch_size,states)).
+            action_norm(ndarray(float)): Action Matrix (shape=(batch_size,actions)).
+
+
+        Returns:
+            Multiple Outputs:
+
+            observation(ndarray(float)): Observation/State Matrix (shape=(batch_size,states)).
+
+            reward(ndarray(float)): Amount of reward received for the last step (shape=(batch_size,1)).
+
+            terminated(bool): Flag, indicating if Agent has reached the terminal state.
+
+            truncated(ndarray(bool)): Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
+
+            {}: An empty dictionary for consistency with the OpenAi Gym interface.
+
+        """
         # ode step
         states = self._ode_exp_euler_step(states, action_norm)
 
@@ -194,6 +233,20 @@ class CoreEnvironment(ABC):
         return obs, reward, terminated, truncated, states
 
     def reset(self, random_key: chex.PRNGKey = False, initial_values: jnp.ndarray = None):
+        """Reset environment to chosen initial states. If no parameters are passed the states will be reset to defined default states.
+
+        Args:
+            random_key(chex.PRNGKey): If passed, environment states will be set to random initial states depending on the PRNGKey value.
+            initial_values(ndarray): If passed, environment states will be set to passed initial_values.
+
+
+        Returns:
+            Multiple Outputs:
+
+            observation(ndarray(float)): Observation/State Matrix (shape=(batch_size,states)).
+
+            {}: An empty dictionary for consistency with the OpenAi Gym interface.
+        """
         if random_key:
             self.states = self.observation_space.sample(random_key)
         elif initial_values != None:
@@ -247,6 +300,11 @@ class CoreEnvironment(ABC):
     @abstractmethod
     def _ode_exp_euler_step(self, states_norm, action_norm):
         """Implementation of the system equations in the class with Explicit Euler.
+
+        Args:
+            states_norm(ndarray(float)): State Matrix (shape=(batch_size,states)).
+            action_norm(ndarray(float)): Action Matrix (shape=(batch_size,actions)).
+
 
         Returns:
             states(ndarray(float)): State Matrix (shape=(batch_size,states)).
