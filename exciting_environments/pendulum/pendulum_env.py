@@ -2,17 +2,16 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from functools import partial
-import chex
-from exciting_environments import core_env, spaces
+from exciting_environments import core_env
 
 
 class Pendulum(core_env.CoreEnvironment):
     """
     State Variables:
-        ``['theta' , 'omega']``
+        ``['theta', 'omega']``
 
     Action Variable:
-        ``['torque']''``
+        ``['torque']``
 
     Observation Space (State Space):
         Box(low=[-1, -1], high=[1, 1])    
@@ -58,78 +57,24 @@ class Pendulum(core_env.CoreEnvironment):
         Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 1 to set different constraints per batch.  
         """
 
-        self.g = g
-        self.l_values = l
-        self.m_values = m
-        self.max_torque_values = max_torque
-        self.constraints = constraints
+        self.params = {"g": g, "l": l, "m": m}
+        self.state_constraints = [np.pi, constraints[0]]  # ["theta", "omega"]
+        self.state_initials = [1, 0]
+        self.max_action = [max_torque]
+
         super().__init__(batch_size=batch_size, tau=tau)
-
-        self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, 1), dtype=jnp.float32)
-
-        self.observation_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, 2), dtype=jnp.float32)
-
-        if reward_func:
-            if self._test_rew_func(reward_func):
-                self.reward_func = reward_func
-        else:
-            self.reward_func = self.default_reward_func
-
-    def update_batch_dim(self):
-
-        if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
-            assert len(
-                self.constraints) == 1, f"constraints is expected to be a list with len(list)=1 or a list of lists with overall dimension (batch_size,1)"
-            self.state_normalizer = jnp.concatenate(
-                (jnp.array([jnp.pi]), jnp.array(self.constraints)), axis=0)
-        else:
-            assert jnp.array(
-                self.constraints).shape[0] == self.batch_size, f"constraints is expected to be a list with len(list)=1 or a list of lists with overall dimension (batch_size,1)"
-            self.state_normalizer = jnp.concatenate((jnp.full(
-                (self.batch_size, 1), jnp.pi).reshape(-1, 1), jnp.array(self.constraints)), axis=1)
-
-        if jnp.isscalar(self.l_values):
-            self.l = jnp.full((self.batch_size, 1), self.l_values)
-        else:
-            assert len(
-                self.l_values) == self.batch_size, f"l is expected to be a scalar or a list with len(list)=batch_size"
-            self.l = jnp.array(self.l_values).reshape(-1, 1)
-
-        if jnp.isscalar(self.m_values):
-            self.m = jnp.full((self.batch_size, 1), self.m_values)
-        else:
-            assert len(
-                self.m_values) == self.batch_size, f"m is expected to be a scalar or a list with len(list)=batch_size"
-            self.m = jnp.array(self.m_values).reshape(-1, 1)
-
-        if jnp.isscalar(self.max_torque_values):
-            self.max_torque = jnp.full(
-                (self.batch_size, 1), self.max_torque_values)
-        else:
-            assert len(
-                self.max_torque_values) == self.batch_size, f"max_torque is expected to be a scalar or a list with len(list)=batch_size"
-            self.max_torque = jnp.array(self.max_torque_values).reshape(-1, 1)
-
-        theta = jnp.full((self.batch_size), 1).reshape(-1, 1)
-        omega = jnp.zeros(self.batch_size).reshape(-1, 1)
-        self.states = jnp.hstack((
-            theta,
-            omega,
-        ))
 
     @partial(jax.jit, static_argnums=0)
     def _ode_exp_euler_step(self, states_norm, torque_norm):
 
-        torque = torque_norm*self.max_torque
+        torque = torque_norm*self.action_normalizer
         states = self.state_normalizer * states_norm
         theta = states[:, 0].reshape(-1, 1)
         omega = states[:, 1].reshape(-1, 1)
 
         dtheta = omega
-        domega = (torque+self.l*self.m*self.g*jnp.sin(theta)) / \
-            (self.m * (self.l)**2)
+        domega = (torque+self.params["l"]*self.params["m"]*self.params["g"]*jnp.sin(theta)) / \
+            (self.params["m"] * (self.params["l"])**2)
 
         theta_k1 = theta + self.tau * dtheta  # explicit Euler
         theta_k1 = ((theta_k1+jnp.pi) % (2*jnp.pi))-jnp.pi
@@ -158,24 +103,3 @@ class Pendulum(core_env.CoreEnvironment):
     @property
     def action_description(self):
         return np.array(["torque"])
-
-    def reset(self, random_key: chex.PRNGKey = False, initial_values: jnp.ndarray = None):
-        if random_key:
-            self.states = self.observation_space.sample(random_key)
-        elif initial_values != None:
-            assert initial_values.shape[
-                0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
-            assert initial_values.shape[1] == len(
-                self.obs_description), f"number of columns is expected to be amount obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
-            assert self.observation_space.contains(
-                initial_values), f"values of initial states are out of bounds"
-            self.states = initial_values
-        else:
-            self.states = self.states.at[:, 0:1].set(
-                jnp.full(self.batch_size, 1).reshape(-1, 1))
-            self.states = self.states.at[:, 1:2].set(
-                jnp.zeros(self.batch_size).reshape(-1, 1))
-
-        obs = self.generate_observation()
-
-        return obs, {}

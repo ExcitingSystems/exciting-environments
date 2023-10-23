@@ -2,17 +2,16 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from functools import partial
-import chex
-from exciting_environments import core_env, spaces
+from exciting_environments import core_env
 
 
 class CartPole(core_env.CoreEnvironment):
     """
     State Variables
-        ``['deflection' , 'velocity' , 'theta' , 'omega']``
+        ``['deflection', 'velocity', 'theta', 'omega']``
 
     Action Variable:
-        ``['force']''``
+        ``['force']``
 
     Observation Space (State Space):
         Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])    
@@ -60,99 +59,20 @@ class CartPole(core_env.CoreEnvironment):
         Note: mu_p, mu_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
         """
 
-        self.g = g
-        self.mu_p_values = mu_p
-        self.mu_c_values = mu_c
-        self.m_c_values = m_c
-        self.m_p_values = m_p
-        self.l_values = l
-        self.max_force_values = max_force
-        self.constraints = constraints
-        super().__init__(batch_size=batch_size, tau=tau)
+        self.params = {"g": g, "mu_p": mu_p, "mu_c": mu_c,
+                       "m_c": m_c, "m_p": m_p, "l": l}
 
-        self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, 1), dtype=jnp.float32)
+        self.state_constraints = [constraints[0],
+                                  constraints[1], np.pi, constraints[2]]  # ["deflection", "velocity", "theta", "omega"]
+        self.state_initials = [0, 0, 1, 0]
+        self.max_action = [max_force]
 
-        self.observation_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, 4), dtype=jnp.float32)
-
-        if reward_func:
-            if self.test_rew_func(reward_func):
-                self.reward_func = reward_func
-        else:
-            self.reward_func = self.default_reward_func
-
-    def update_batch_dim(self):
-
-        if isinstance(self.constraints, list) and not isinstance(self.constraints[0], list):
-            assert len(
-                self.constraints) == 3, f"constraints is expected to be a list with len(list)=3 or list of lists with overall dimension (batch_size,3)"
-            self.state_normalizer = jnp.concatenate((jnp.array(self.constraints[0:2]), jnp.array(
-                [jnp.pi]), jnp.array(self.constraints[2:3])), axis=0)
-        else:
-            assert jnp.array(
-                self.constraints).shape[0] == self.batch_size, f"constraints is expected to be a list with len(list)=3 or a list of lists with overall dimension (batch_size,3)"
-            self.state_normalizer = jnp.concatenate((jnp.array(self.constraints)[:, 0:2], jnp.full(
-                (2, 1), jnp.pi).reshape(-1, 1), jnp.array(self.constraints)[:, 2:3]), axis=1)
-
-        if jnp.isscalar(self.mu_p_values):
-            self.mu_p = jnp.full((self.batch_size, 1), self.mu_p_values)
-        else:
-            assert len(
-                self.mu_p_values) == self.batch_size, f"mu_p is expected to be a scalar or a list with len(list)=batch_size"
-            self.mu_p = jnp.array(self.mu_p_values).reshape(-1, 1)
-
-        if jnp.isscalar(self.mu_c_values):
-            self.mu_c = jnp.full((self.batch_size, 1), self.mu_c_values)
-        else:
-            assert len(
-                self.mu_c_values) == self.batch_size, f"mu_c is expected to be a scalar or a list with len(list)=batch_size"
-            self.mu_c = jnp.array(self.mu_c_values).reshape(-1, 1)
-
-        if jnp.isscalar(self.m_c_values):
-            self.m_c = jnp.full((self.batch_size, 1), self.m_c_values)
-        else:
-            assert len(
-                self.m_c_values) == self.batch_size, f"m_c is expected to be a scalar or a list with len(list)=batch_size"
-            self.m_c = jnp.array(self.m_c_values).reshape(-1, 1)
-
-        if jnp.isscalar(self.m_p_values):
-            self.m_p = jnp.full((self.batch_size, 1), self.m_p_values)
-        else:
-            assert len(
-                self.m_p_values) == self.batch_size, f"m_p is expected to be a scalar or a list with len(list)=batch_size"
-            self.m_p = jnp.array(self.m_p_values).reshape(-1, 1)
-
-        if jnp.isscalar(self.l_values):
-            self.l = jnp.full((self.batch_size, 1), self.l_values)
-        else:
-            assert len(
-                self.l_values) == self.batch_size, f"l is expected to be a scalar or a list with len(list)=batch_size"
-            self.l = jnp.array(self.l_values).reshape(-1, 1)
-
-        if jnp.isscalar(self.max_force_values):
-            self.max_force = jnp.full(
-                (self.batch_size, 1), self.max_force_values)
-        else:
-            assert len(
-                self.max_force_values) == self.batch_size, f"max_force is expected to be a scalar or a list with len(list)=batch_size"
-            self.max_force = jnp.array(self.max_force_values).reshape(-1, 1)
-
-        deflection = jnp.zeros(self.batch_size).reshape(-1, 1)
-        velocity = jnp.zeros(self.batch_size).reshape(-1, 1)
-        theta = jnp.full((self.batch_size), 1).reshape(-1, 1)
-        omega = jnp.zeros(self.batch_size).reshape(-1, 1)
-        self.states = jnp.hstack((
-            deflection,
-            velocity,
-            theta,
-            omega,
-        ))
+        super().__init__(batch_size=batch_size, tau=tau, reward_func=reward_func)
 
     @partial(jax.jit, static_argnums=0)
     def _ode_exp_euler_step(self, states_norm, force_norm):
 
-        force = force_norm*self.max_force
+        force = force_norm*self.action_normalizer
         states = self.state_normalizer * states_norm
         deflection = states[:, 0].reshape(-1, 1)
         velocity = states[:, 1].reshape(-1, 1)
@@ -162,11 +82,11 @@ class CartPole(core_env.CoreEnvironment):
         ddeflection = velocity
         dtheta = omega
 
-        domega = (self.g*jnp.sin(theta)+jnp.cos(theta)*((-force-self.m_p*self.l*(omega**2)*jnp.sin(theta)+self.mu_c*jnp.sign(velocity)) /
-                  (self.m_c+self.m_p))-(self.mu_p*omega)/(self.m_p*self.l))/(self.l*(4/3-(self.m_p*(jnp.cos(theta))**2)/(self.m_c+self.m_p)))
+        domega = (self.params["g"]*jnp.sin(theta)+jnp.cos(theta)*((-force-self.params["m_p"]*self.params["l"]*(omega**2)*jnp.sin(theta)+self.params["mu_c"]*jnp.sign(velocity)) /
+                  (self.params["m_c"]+self.params["m_p"]))-(self.params["mu_p"]*omega)/(self.params["m_p"]*self.params["l"]))/(self.params["l"]*(4/3-(self.params["m_p"]*(jnp.cos(theta))**2)/(self.params["m_c"]+self.params["m_p"])))
 
-        dvelocity = (force + self.m_p*self.l*((omega**2)*jnp.sin(theta)-domega *
-                     jnp.cos(theta)) - self.mu_c * jnp.sign(velocity))/(self.m_c+self.m_p)
+        dvelocity = (force + self.params["m_p"]*self.params["l"]*((omega**2)*jnp.sin(theta)-domega *
+                     jnp.cos(theta)) - self.params["mu_c"] * jnp.sign(velocity))/(self.params["m_c"]+self.params["m_p"])
 
         deflection_k1 = deflection + self.tau * ddeflection  # explicit Euler
         velocity_k1 = velocity + self.tau * dvelocity  # explicit Euler
@@ -200,28 +120,3 @@ class CartPole(core_env.CoreEnvironment):
     @property
     def action_description(self):
         return np.array(["force"])
-
-    def reset(self, random_key: chex.PRNGKey = False, initial_values: jnp.ndarray = None):
-        if random_key:
-            self.states = self.observation_space.sample(random_key)
-        elif initial_values != None:
-            assert initial_values.shape[
-                0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
-            assert initial_values.shape[1] == len(
-                self.obs_description), f"number of columns is expected to be amount of obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
-            assert self.observation_space.contains(
-                initial_values), f"values of initial states are out of bounds"
-            self.states = initial_values
-        else:
-            self.states = self.states.at[:, 0:1].set(
-                jnp.zeros(self.batch_size).reshape(-1, 1))
-            self.states = self.states.at[:, 1:2].set(
-                jnp.zeros(self.batch_size).reshape(-1, 1))
-            self.states = self.states.at[:, 2:3].set(
-                jnp.full(self.batch_size, 1).reshape(-1, 1))
-            self.states = self.states.at[:, 3:4].set(
-                jnp.zeros(self.batch_size).reshape(-1, 1))
-
-        obs = self.generate_observation()
-
-        return obs, {}
