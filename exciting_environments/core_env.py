@@ -232,7 +232,7 @@ class CoreEnvironment(ABC):
 
         return obs, reward, terminated, truncated, states
 
-    def reset(self, random_key: chex.PRNGKey = False, initial_values: jnp.ndarray = None):
+    def reset(self, random_key: chex.PRNGKey = None, initial_values: jnp.ndarray = jnp.array([])):
         """Reset environment to chosen initial states. If no parameters are passed the states will be reset to defined default states.
 
         Args:
@@ -247,9 +247,9 @@ class CoreEnvironment(ABC):
 
             {}: An empty dictionary for consistency with the OpenAi Gym interface.
         """
-        if random_key:
+        if random_key != None:
             self.states = self.observation_space.sample(random_key)
-        elif initial_values != None:
+        elif initial_values.any() != False:
             assert initial_values.shape[
                 0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
             assert initial_values.shape[1] == len(
