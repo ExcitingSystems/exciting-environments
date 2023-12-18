@@ -65,32 +65,31 @@ class Pendulum(core_env.CoreEnvironment):
         super().__init__(batch_size=batch_size, tau=tau)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, torque_norm):
+    def _ode_exp_euler_step(self, states_norm, torque_norm, state_normalizer, action_normalizer, params):
 
-        torque = torque_norm*self.action_normalizer
-        states = self.state_normalizer * states_norm
-        theta = states[:, 0].reshape(-1, 1)
-        omega = states[:, 1].reshape(-1, 1)
+        torque = torque_norm*action_normalizer
+        states = state_normalizer * states_norm
+        theta = states[0]
+        omega = states[1]
 
-        dtheta = omega
-        domega = (torque+self.params["l"]*self.params["m"]*self.params["g"]*jnp.sin(theta)) / \
-            (self.params["m"] * (self.params["l"])**2)
+        domega = (torque+params[1]*params[2]*params[0]
+                  * jnp.sin(theta)) / (params[2] * (params[1])**2)
 
+        omega_k1 = omega + self.tau * domega  # explicit Euler
+        dtheta = omega_k1
         theta_k1 = theta + self.tau * dtheta  # explicit Euler
         theta_k1 = ((theta_k1+jnp.pi) % (2*jnp.pi))-jnp.pi
-        omega_k1 = omega + self.tau * domega  # explicit Euler
 
         states_k1 = jnp.hstack((
             theta_k1,
             omega_k1,
         ))
-        states_k1_norm = states_k1/self.state_normalizer
-
+        states_k1_norm = states_k1/state_normalizer
         return states_k1_norm
 
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action):
-        return ((obs[:, 0])**2 + 0.1*(obs[:, 1])**2 + 0.1*(action[:, 0])**2).reshape(-1, 1)
+        return (obs[0])**2 + 0.1*(obs[1])**2 + 0.1*(action[0])**2
 
     @property
     def obs_description(self):

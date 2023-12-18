@@ -218,13 +218,14 @@ class CoreEnvironment(ABC):
 
         """
         # ode step
-        states = self._ode_exp_euler_step(states, action_norm)
+        states = jax.vmap(self._ode_exp_euler_step)(states, action_norm, self.state_normalizer,
+                                                    self.action_normalizer, jnp.array(list(self.params.values()))[:, :, 0].T)
 
         # observation
         obs = self._static_generate_observation(states)
 
         # reward
-        reward = self.reward_func(obs, action_norm)
+        reward = jax.vmap(self.reward_func)(obs, action_norm).reshape(-1, 1)
 
         # bound check
         truncated = (jnp.abs(states) > 1)
@@ -298,7 +299,7 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
-    def _ode_exp_euler_step(self, states_norm, action_norm):
+    def _ode_exp_euler_step(self, states_norm, action_norm, state_normalizer,  action_normalizer, params):
         """Implementation of the system equations in the class with Explicit Euler.
 
         Args:

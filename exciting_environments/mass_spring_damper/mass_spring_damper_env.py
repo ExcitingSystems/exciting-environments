@@ -65,16 +65,16 @@ class MassSpringDamper(core_env.CoreEnvironment):
         super().__init__(batch_size=batch_size, tau=tau)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, force_norm):
+    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, params):
 
-        force = force_norm*self.action_normalizer
-        states = self.state_normalizer * states_norm
-        deflection = states[:, 0].reshape(-1, 1)
-        velocity = states[:, 1].reshape(-1, 1)
+        force = force_norm*action_normalizer
+        states = state_normalizer * states_norm
+        deflection = states[0]
+        velocity = states[1]
 
         ddeflection = velocity
-        dvelocity = (force - self.params["d"]
-                     * velocity - self.params["k"]*deflection)/self.params["m"]
+        dvelocity = (force - params[1]
+                     * velocity - params[0]*deflection)/params[2]
 
         deflection_k1 = deflection + self.tau * ddeflection  # explicit Euler
         velocity_k1 = velocity + self.tau * dvelocity  # explicit Euler
@@ -83,13 +83,13 @@ class MassSpringDamper(core_env.CoreEnvironment):
             deflection_k1,
             velocity_k1,
         ))
-        states_k1_norm = states_k1/self.state_normalizer
+        states_k1_norm = states_k1/state_normalizer
 
         return states_k1_norm
 
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action):
-        return ((obs[:, 0])**2 + 0.1*(obs[:, 1])**2 + 0.1*(action[:, 0])**2).reshape(-1, 1)
+        return ((obs[0])**2 + 0.1*(obs[1])**2 + 0.1*(action[0])**2)
 
     @property
     def obs_description(self):

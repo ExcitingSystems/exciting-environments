@@ -70,23 +70,23 @@ class CartPole(core_env.CoreEnvironment):
         super().__init__(batch_size=batch_size, tau=tau, reward_func=reward_func)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, force_norm):
+    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, params):
 
-        force = force_norm*self.action_normalizer
-        states = self.state_normalizer * states_norm
-        deflection = states[:, 0].reshape(-1, 1)
-        velocity = states[:, 1].reshape(-1, 1)
-        theta = states[:, 2].reshape(-1, 1)
-        omega = states[:, 3].reshape(-1, 1)
+        force = force_norm*action_normalizer
+        states = state_normalizer * states_norm
+        deflection = states[0]
+        velocity = states[1]
+        theta = states[2]
+        omega = states[3]
 
         ddeflection = velocity
         dtheta = omega
 
-        domega = (self.params["g"]*jnp.sin(theta)+jnp.cos(theta)*((-force-self.params["m_p"]*self.params["l"]*(omega**2)*jnp.sin(theta)+self.params["mu_c"]*jnp.sign(velocity)) /
-                  (self.params["m_c"]+self.params["m_p"]))-(self.params["mu_p"]*omega)/(self.params["m_p"]*self.params["l"]))/(self.params["l"]*(4/3-(self.params["m_p"]*(jnp.cos(theta))**2)/(self.params["m_c"]+self.params["m_p"])))
+        domega = (params[0]*jnp.sin(theta)+jnp.cos(theta)*((-force-params[4]*params[5]*(omega**2)*jnp.sin(theta)+params[2]*jnp.sign(velocity)) /
+                  (params[3]+params[4]))-(params[1]*omega)/(params[4]*params[5]))/(params[5]*(4/3-(params[4]*(jnp.cos(theta))**2)/(params[3]+params[4])))
 
-        dvelocity = (force + self.params["m_p"]*self.params["l"]*((omega**2)*jnp.sin(theta)-domega *
-                     jnp.cos(theta)) - self.params["mu_c"] * jnp.sign(velocity))/(self.params["m_c"]+self.params["m_p"])
+        dvelocity = (force + params[4]*params[5]*((omega**2)*jnp.sin(theta)-domega *
+                     jnp.cos(theta)) - params[2] * jnp.sign(velocity))/(params[3]+params[4])
 
         deflection_k1 = deflection + self.tau * ddeflection  # explicit Euler
         velocity_k1 = velocity + self.tau * dvelocity  # explicit Euler
@@ -101,13 +101,13 @@ class CartPole(core_env.CoreEnvironment):
             theta_k1,
             omega_k1,
         ))
-        states_k1_norm = states_k1/self.state_normalizer
+        states_k1_norm = states_k1/state_normalizer
 
         return states_k1_norm
 
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action):
-        return ((0.01*obs[:, 0])**2 + 0.1*(obs[:, 1])**2 + (obs[:, 2])**2 + 0.1*(obs[:, 3])**2 + 0.1*(action[:, 0])**2).reshape(-1, 1)
+        return ((0.01*obs[0])**2 + 0.1*(obs[1])**2 + (obs[2])**2 + 0.1*(obs[3])**2 + 0.1*(action[0])**2)
 
     @property
     def obs_description(self):
