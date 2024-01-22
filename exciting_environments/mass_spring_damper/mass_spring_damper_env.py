@@ -66,7 +66,7 @@ class MassSpringDamper(core_env.CoreEnvironment):
         super().__init__(batch_size=batch_size, tau=tau)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, params):
+    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, params, solver):
 
         force = force_norm*action_normalizer
         states = state_normalizer * states_norm
@@ -82,18 +82,15 @@ class MassSpringDamper(core_env.CoreEnvironment):
             return d_y
 
         term = diffrax.ODETerm(vector_field)
-        solver = diffrax.Euler()
         t0 = 0
-        dt0 = self.tau
         t1 = self.tau
-        saveat = diffrax.SaveAt(ts=[self.tau])
-
         y0 = tuple(states)
-        sol = diffrax.diffeqsolve(
-            term, solver, t0, t1, dt0, y0, args=args, saveat=saveat)
+        state = solver.init(term, t0, t1, y0, args)
+        y, _, _, state, _ = solver.step(
+            term, t0, t1, y0, args, state, made_jump=False)
 
-        deflection_k1 = sol.ys[0][0]
-        velocity_k1 = sol.ys[1][0]
+        deflection_k1 = y[0]
+        velocity_k1 = y[1]
 
         states_k1 = jnp.hstack((
             deflection_k1,

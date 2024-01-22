@@ -6,6 +6,7 @@ import chex
 from abc import ABC
 from abc import abstractmethod
 from exciting_environments import spaces
+import diffrax
 
 
 class CoreEnvironment(ABC):
@@ -169,7 +170,7 @@ class CoreEnvironment(ABC):
         """
         raise NotImplementedError("To be implemented!")
 
-    def step(self, action):
+    def step(self, action, solver=diffrax.Euler()):
         """Perform one simulation step of the environment with an action of the action space.
 
         Args:
@@ -190,12 +191,12 @@ class CoreEnvironment(ABC):
         """
 
         obs, reward, terminated, truncated, self.states = self._step_static(
-            self.states, action)
+            self.states, action, solver=solver)
 
         return obs, reward, terminated, truncated, {}
 
     @partial(jax.jit, static_argnums=0)
-    def _step_static(self, states, action_norm):
+    def _step_static(self, states, action_norm, solver):
         """Addtional function in step execution to enable JAX jit.
 
         Args:
@@ -219,7 +220,7 @@ class CoreEnvironment(ABC):
         """
         # ode step
         states = jax.vmap(self._ode_exp_euler_step)(states, action_norm, self.state_normalizer,
-                                                    self.action_normalizer, jnp.array(list(self.params.values()))[:, :, 0].T)
+                                                    self.action_normalizer, jnp.array(list(self.params.values()))[:, :, 0].T, solver=solver)
 
         # observation
         obs = self._static_generate_observation(states)
