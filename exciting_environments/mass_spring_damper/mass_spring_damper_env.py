@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 from exciting_environments import core_env
+import diffrax
 
 
 class MassSpringDamper(core_env.CoreEnvironment):
@@ -69,15 +70,30 @@ class MassSpringDamper(core_env.CoreEnvironment):
 
         force = force_norm*action_normalizer
         states = state_normalizer * states_norm
-        deflection = states[0]
-        velocity = states[1]
+        args = (force, params)
 
-        ddeflection = velocity
-        dvelocity = (force - params[1]
-                     * velocity - params[0]*deflection)/params[2]
+        def vector_field(t, y, args):
+            deflection, velocity = y
+            force, params = args
+            d_velocity = (force[0] - params[1]
+                          * velocity - params[0]*deflection)/params[2]
+            d_deflection = velocity
+            d_y = d_deflection, d_velocity
+            return d_y
 
-        deflection_k1 = deflection + self.tau * ddeflection  # explicit Euler
-        velocity_k1 = velocity + self.tau * dvelocity  # explicit Euler
+        term = diffrax.ODETerm(vector_field)
+        solver = diffrax.Euler()
+        t0 = 0
+        dt0 = self.tau
+        t1 = self.tau
+        saveat = diffrax.SaveAt(ts=[self.tau])
+
+        y0 = tuple(states)
+        sol = diffrax.diffeqsolve(
+            term, solver, t0, t1, dt0, y0, args=args, saveat=saveat)
+
+        deflection_k1 = sol.ys[0][0]
+        velocity_k1 = sol.ys[1][0]
 
         states_k1 = jnp.hstack((
             deflection_k1,

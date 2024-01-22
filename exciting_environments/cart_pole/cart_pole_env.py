@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 from exciting_environments import core_env
+import diffrax
 
 
 class CartPole(core_env.CoreEnvironment):
@@ -74,26 +75,37 @@ class CartPole(core_env.CoreEnvironment):
 
         force = force_norm*action_normalizer
         states = state_normalizer * states_norm
-        deflection = states[0]
-        velocity = states[1]
-        theta = states[2]
-        omega = states[3]
+        args = (force, params)
 
-        ddeflection = velocity
-        dtheta = omega
+        def vector_field(t, y, args):
+            deflection, velocity, theta, omega = y
+            force, params = args
+            d_omega = (params[0]*jnp.sin(theta)+jnp.cos(theta)*((-force[0]-params[4]*params[5]*(omega**2)*jnp.sin(theta)+params[2]*jnp.sign(velocity)) /
+                                                                (params[3]+params[4]))-(params[1]*omega)/(params[4]*params[5]))/(params[5]*(4/3-(params[4]*(jnp.cos(theta))**2)/(params[3]+params[4])))
 
-        domega = (params[0]*jnp.sin(theta)+jnp.cos(theta)*((-force-params[4]*params[5]*(omega**2)*jnp.sin(theta)+params[2]*jnp.sign(velocity)) /
-                  (params[3]+params[4]))-(params[1]*omega)/(params[4]*params[5]))/(params[5]*(4/3-(params[4]*(jnp.cos(theta))**2)/(params[3]+params[4])))
+            d_velocity = (force[0] + params[4]*params[5]*((omega**2)*jnp.sin(theta)-d_omega *
+                                                          jnp.cos(theta)) - params[2] * jnp.sign(velocity))/(params[3]+params[4])
+            d_theta = omega
+            d_deflection = velocity
+            d_y = d_deflection, d_velocity, d_theta, d_omega
+            return d_y
 
-        dvelocity = (force + params[4]*params[5]*((omega**2)*jnp.sin(theta)-domega *
-                     jnp.cos(theta)) - params[2] * jnp.sign(velocity))/(params[3]+params[4])
+        term = diffrax.ODETerm(vector_field)
+        solver = diffrax.Euler()
+        t0 = 0
+        dt0 = self.tau
+        t1 = self.tau
+        saveat = diffrax.SaveAt(ts=[self.tau])
 
-        deflection_k1 = deflection + self.tau * ddeflection  # explicit Euler
-        velocity_k1 = velocity + self.tau * dvelocity  # explicit Euler
+        y0 = tuple(states)
+        sol = diffrax.diffeqsolve(
+            term, solver, t0, t1, dt0, y0, args=args, saveat=saveat)
 
-        theta_k1 = theta + self.tau * dtheta  # explicit Euler
+        deflection_k1 = sol.ys[0][0]
+        velocity_k1 = sol.ys[1][0]
+        theta_k1 = sol.ys[2][0]
+        omega_k1 = sol.ys[3][0]
         theta_k1 = ((theta_k1+jnp.pi) % (2*jnp.pi))-jnp.pi
-        omega_k1 = omega + self.tau * domega  # explicit Euler
 
         states_k1 = jnp.hstack((
             deflection_k1,

@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 from exciting_environments import core_env
+import diffrax
 
 
 class Pendulum(core_env.CoreEnvironment):
@@ -69,22 +70,39 @@ class Pendulum(core_env.CoreEnvironment):
 
         torque = torque_norm*action_normalizer
         states = state_normalizer * states_norm
-        theta = states[0]
-        omega = states[1]
+        args = (torque, params)
 
-        domega = (torque+params[1]*params[2]*params[0]
-                  * jnp.sin(theta)) / (params[2] * (params[1])**2)
+        def vector_field(t, y, args):
+            theta, omega = y
+            torque, params = args
+            d_omega = (torque[0]+params[1]*params[2]*params[0]
+                       * jnp.sin(theta)) / (params[2] * (params[1])**2)
+            d_theta = omega
+            d_y = d_theta, d_omega
+            return d_y
 
-        omega_k1 = omega + self.tau * domega  # explicit Euler
-        dtheta = omega_k1
-        theta_k1 = theta + self.tau * dtheta  # explicit Euler
+        term = diffrax.ODETerm(vector_field)
+        solver = diffrax.Euler()
+        t0 = 0
+        dt0 = self.tau
+        t1 = self.tau
+        saveat = diffrax.SaveAt(ts=[self.tau])
+
+        y0 = tuple(states)
+        sol = diffrax.diffeqsolve(
+            term, solver, t0, t1, dt0, y0, args=args, saveat=saveat)
+
+        theta_k1 = sol.ys[0][0]
+        omega_k1 = sol.ys[1][0]
         theta_k1 = ((theta_k1+jnp.pi) % (2*jnp.pi))-jnp.pi
 
         states_k1 = jnp.hstack((
             theta_k1,
             omega_k1,
         ))
+        states_k1.shape
         states_k1_norm = states_k1/state_normalizer
+
         return states_k1_norm
 
     @partial(jax.jit, static_argnums=0)
