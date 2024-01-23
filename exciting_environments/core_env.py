@@ -42,7 +42,7 @@ class CoreEnvironment(ABC):
 
     """
 
-    def __init__(self, batch_size: int, tau: float = 1e-4, reward_func=None):
+    def __init__(self, batch_size: int, tau: float = 1e-4, solver=diffrax.Euler(), reward_func=None):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration.
@@ -50,6 +50,8 @@ class CoreEnvironment(ABC):
         """
         self.batch_size = batch_size
         self.tau = tau
+        self._solver = solver
+
         if reward_func:
             if self._test_rew_func(reward_func):
                 self.reward_func = reward_func
@@ -129,6 +131,16 @@ class CoreEnvironment(ABC):
         self.states = jnp.tile(
             jnp.array(self.state_initials), (self.batch_size, 1))
 
+    @property
+    def solver(self):
+        """Returns the current solver of the environment setup."""
+        return self._solver
+
+    @solver.setter
+    def solver(self, solver):
+        # TODO:check if solver exists in diffrax ?
+        self._solver = solver
+
     @partial(jax.jit, static_argnums=0)
     def _static_generate_observation(self, states):
         """Returns states."""
@@ -170,7 +182,7 @@ class CoreEnvironment(ABC):
         """
         raise NotImplementedError("To be implemented!")
 
-    def step(self, action, solver=diffrax.Euler()):
+    def step(self, action):
         """Perform one simulation step of the environment with an action of the action space.
 
         Args:
@@ -191,7 +203,7 @@ class CoreEnvironment(ABC):
         """
 
         obs, reward, terminated, truncated, self.states = self._step_static(
-            self.states, action, solver=solver)
+            self.states, action, solver=self._solver)
 
         return obs, reward, terminated, truncated, {}
 
