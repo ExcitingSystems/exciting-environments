@@ -43,7 +43,7 @@ class MassSpringDamper(core_env.CoreEnvironment):
 
     """
 
-    def __init__(self, batch_size: int = 8, d: float = 1, k: float = 100, m: float = 1,  max_force: float = 20, reward_func=None, tau: float = 1e-4, constraints: list = [10, 10]):
+    def __init__(self, batch_size: int = 8, d: float = 1, k: float = 100, m: float = 1,  max_force: float = 20, solver=diffrax.Euler(), reward_func=None, tau: float = 1e-4, constraints: list = [10, 10]):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8

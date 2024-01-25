@@ -42,7 +42,7 @@ class CartPole(core_env.CoreEnvironment):
 
     """
 
-    def __init__(self, batch_size: float = 8, mu_p: float = 0, mu_c: float = 0, l: float = 1, m_c: float = 1, m_p: float = 1,  max_force: float = 20, reward_func=None, g: float = 9.81, tau: float = 1e-4, constraints: list = [10, 10, 10]):
+    def __init__(self, batch_size: float = 8, mu_p: float = 0, mu_c: float = 0, l: float = 1, m_c: float = 1, m_p: float = 1,  max_force: float = 20, solver=diffrax.Euler(), reward_func=None, g: float = 9.81, tau: float = 1e-4, constraints: list = [10, 10, 10]):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8

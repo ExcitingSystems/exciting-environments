@@ -42,7 +42,7 @@ class Pendulum(core_env.CoreEnvironment):
 
     """
 
-    def __init__(self, batch_size: int = 8, l: float = 1, m: float = 1,  max_torque: float = 20, reward_func=None, g: float = 9.81, tau: float = 1e-4, constraints: list = [10]):
+    def __init__(self, batch_size: int = 8, l: float = 1, m: float = 1,  max_torque: float = 20, solver=diffrax.Euler(), reward_func=None, g: float = 9.81, tau: float = 1e-4, constraints: list = [10]):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
@@ -63,7 +63,7 @@ class Pendulum(core_env.CoreEnvironment):
         self.state_initials = [1, 0]
         self.max_action = [max_torque]
 
-        super().__init__(batch_size=batch_size, tau=tau)
+        super().__init__(batch_size=batch_size, tau=tau, solver=solver)
 
     @partial(jax.jit, static_argnums=0)
     def _ode_exp_euler_step(self, states_norm, torque_norm, state_normalizer, action_normalizer, params, solver):
