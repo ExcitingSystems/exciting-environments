@@ -58,7 +58,7 @@ class Pendulum(core_env.CoreEnvironment):
         Note: l,m and max_torque can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 1 to set different constraints per batch.  
         """
 
-        self.params = {"g": g, "l": l, "m": m}
+        self.static_params = {"g": g, "l": l, "m": m}
         self.state_constraints = [np.pi, constraints[0]]  # ["theta", "omega"]
         self.state_initials = [1, 0]
         self.max_action = [max_torque]
@@ -66,27 +66,27 @@ class Pendulum(core_env.CoreEnvironment):
         super().__init__(batch_size=batch_size, tau=tau, solver=solver)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, torque_norm, state_normalizer, action_normalizer, params, solver):
+    def _ode_exp_euler_step(self, states_norm, torque_norm, state_normalizer, action_normalizer, static_params):
 
         torque = torque_norm*action_normalizer
         states = state_normalizer * states_norm
-        args = (torque, params)
+        args = (torque, static_params)
 
         def vector_field(t, y, args):
             theta, omega = y
             torque, params = args
-            d_omega = (torque[0]+params[1]*params[2]*params[0]
-                       * jnp.sin(theta)) / (params[2] * (params[1])**2)
+            d_omega = (torque[0]+params["l"]*params["m"]*params["g"]
+                       * jnp.sin(theta)) / (params["m"] * (params["l"])**2)
             d_theta = omega
-            d_y = d_theta, d_omega
+            d_y = d_theta, d_omega[0]  # d_theta, d_omega
             return d_y
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
         y0 = tuple(states)
-        state = solver.init(term, t0, t1, y0, args)
-        y, _, _, state, _ = solver.step(
+        state = self._solver.init(term, t0, t1, y0, args)
+        y, _, _, state, _ = self._solver.step(
             term, t0, t1, y0, args, state, made_jump=False)
 
         theta_k1 = y[0]
@@ -105,6 +105,21 @@ class Pendulum(core_env.CoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action):
         return (obs[0])**2 + 0.1*(obs[1])**2 + 0.1*(action[0])**2
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_observation(self, states):
+        """Returns states."""
+        return states
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, states):
+        """Returns states."""
+        return jnp.abs(states) > 1
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, states, reward):
+        """Returns states."""
+        return reward == 0
 
     @property
     def obs_description(self):

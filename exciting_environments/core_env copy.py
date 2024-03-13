@@ -51,7 +51,6 @@ class CoreEnvironment(ABC):
         self.batch_size = batch_size
         self.tau = tau
         self._solver = solver
-        self._adapt_sizes()
 
         if reward_func:
             if self._test_rew_func(reward_func):
@@ -59,22 +58,23 @@ class CoreEnvironment(ABC):
         else:
             self.reward_func = self.default_reward_func
 
-    # @property
-    # def batch_size(self):
-    #     """Returns the batch size of the environment setup."""
-    #     return self._batch_size
+    @property
+    def batch_size(self):
+        """Returns the batch size of the environment setup."""
+        return self._batch_size
 
     @property
     def default_reward_function(self):
         """Returns the default reward function for the given environment."""
         return self.default_reward_func
 
-    # @batch_size.setter
-    # def batch_size(self, batch_size):
-    #     # If batchsize change, update the corresponding dimension
-    #     self._batch_size = batch_size
+    @batch_size.setter
+    def batch_size(self, batch_size):
+        # If batchsize change, update the corresponding dimension
+        self._batch_size = batch_size
+        self._update_batch_dim()
 
-    def _adapt_sizes(self):
+    def _update_batch_dim(self):
         """Creates or updates parameters,variables,spaces,etc. to fit batch_size.
 
         Creates/Updates:
@@ -83,42 +83,40 @@ class CoreEnvironment(ABC):
             observation_space: Space for system states.
             state_normalizer: State normalizer to normalize and denormalize states to implement physical equations with actual values.
             action_normalizer: Action normalizer to normalize and denormalize actions to implement physical equations with actual values.
+            states: System states.
+
         """
-        self.static_para_dims = {}
-        for key, value in self.static_params.items():
+        for key, value in self.params.items():
             if jnp.isscalar(value):
-                self.static_params[key] = jnp.full((self.batch_size, 1), value)
-                # self.static_para_dims[key] = None
-            # elif jnp.all(value == value[0]):
-            #     self.static_params[key] = jnp.full(
-            #         (self.batch_size, 1), value[0])
+                self.params[key] = jnp.full((self.batch_size, 1), value)
+            elif jnp.all(value == value[0]):
+                self.params[key] = jnp.full((self.batch_size, 1), value[0])
             else:
                 assert len(
                     value) == self.batch_size, f"{key} is expected to be a scalar or a list with len(list)=batch_size"
-                self.static_params[key] = jnp.array(value).reshape(-1, 1)
-                # self.static_para_dims[key] = 0
+                self.params[key] = jnp.array(value).reshape(-1, 1)
 
-        self.state_normalizer = self.state_constraints.copy()
+        self.state_normalizer = self.state_constraints
         for i in range(len(self.state_constraints)):
             if jnp.isscalar(self.state_constraints[i]):
                 self.state_normalizer[i] = jnp.full(
                     self.batch_size, self.state_constraints[i])
-            # elif jnp.all(self.state_constraints[i] == self.state_constraints[i][0]):
-            #     self.state_normalizer[i] = jnp.full(
-            #         self.batch_size, self.state_constraints[i][0])
+            elif jnp.all(self.state_constraints[i] == self.state_constraints[i][0]):
+                self.state_normalizer[i] = jnp.full(
+                    self.batch_size, self.state_constraints[i][0])
             else:
                 assert len(
                     self.state_constraints[i]) == self.batch_size, f"self.constraints entries are expected to be a scalar or a list with len(list)=batch_size"
         self.state_normalizer = jnp.array(self.state_normalizer).transpose()
 
-        self.action_normalizer = self.max_action.copy()
+        self.action_normalizer = self.max_action
         for i in range(len(self.max_action)):
             if jnp.isscalar(self.max_action[i]):
                 self.action_normalizer[i] = jnp.full(
                     self.batch_size, self.max_action[i])
-            # elif jnp.all(self.max_action[i] == self.max_action[i][0]):
-            #     self.action_normalizer[i] = jnp.full(
-            #         self.batch_size, self.max_action[i][0])
+            elif jnp.all(self.max_action[i] == self.max_action[i][0]):
+                self.action_normalizer[i] = jnp.full(
+                    self.batch_size, self.max_action[i][0])
             else:
                 assert len(
                     self.max_action[i]) == self.batch_size, f"self.max_action entries are expected to be a scalar or a list with len(list)=batch_size"
@@ -130,15 +128,27 @@ class CoreEnvironment(ABC):
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(self.batch_size, len(self.state_constraints)), dtype=jnp.float32)
 
-    # @property
-    # def solver(self):
-    #     """Returns the current solver of the environment setup."""
-    #     return self._solver
+        self.states = jnp.tile(
+            jnp.array(self.state_initials), (self.batch_size, 1))
 
-    # @solver.setter
-    # def solver(self, solver):
-    #     # TODO:check if solver exists in diffrax ?
-    #     self._solver = solver
+    @property
+    def solver(self):
+        """Returns the current solver of the environment setup."""
+        return self._solver
+
+    @solver.setter
+    def solver(self, solver):
+        # TODO:check if solver exists in diffrax ?
+        self._solver = solver
+
+    @partial(jax.jit, static_argnums=0)
+    def _static_generate_observation(self, states):
+        """Returns states."""
+        return states
+
+    def generate_observation(self):
+        """Returns the states of the environment."""
+        return self.states
 
     def _test_rew_func(self, func):
         """Checks if passed reward function is compatible with given environment.
@@ -164,8 +174,41 @@ class CoreEnvironment(ABC):
                 "Reward function should be returning vector in shape (batch_size,1)")
         return True
 
+    def render(self, *_, **__):
+        """
+        Update the visualization of the environment.
+
+        NotImplemented
+        """
+        raise NotImplementedError("To be implemented!")
+
+    def step(self, action):
+        """Perform one simulation step of the environment with an action of the action space.
+
+        Args:
+            action: Action to play on the environment.
+
+        Returns:
+            Multiple Outputs:
+
+            observation(ndarray(float)): Observation/State Matrix (shape=(batch_size,states)).
+
+            reward(ndarray(float)): Amount of reward received for the last step (shape=(batch_size,1)).
+
+            terminated(bool): Flag, indicating if Agent has reached the terminal state.
+
+            truncated(ndarray(bool)): Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
+
+            {}: An empty dictionary for consistency with the OpenAi Gym interface.
+        """
+
+        obs, reward, terminated, truncated, self.states = self._step_static(
+            self.states, action, solver=self._solver)
+
+        return obs, reward, terminated, truncated, {}
+
     @partial(jax.jit, static_argnums=0)
-    def step(self, action_norm, states):
+    def _step_static(self, states, action_norm, solver):
         """Addtional function in step execution to enable JAX jit.
 
         Args:
@@ -189,17 +232,17 @@ class CoreEnvironment(ABC):
         """
         # ode step
         states = jax.vmap(self._ode_exp_euler_step)(states, action_norm, self.state_normalizer,
-                                                    self.action_normalizer, self.static_params)
+                                                    self.action_normalizer, jnp.array(list(self.params.values()))[:, :, 0].T, solver=solver)
 
         # observation
-        obs = jax.vmap(self.generate_observation)(states)
+        obs = self._static_generate_observation(states)
 
         # reward
         reward = jax.vmap(self.reward_func)(obs, action_norm).reshape(-1, 1)
 
         # bound check
-        truncated = jax.vmap(self.generate_truncated)(states)
-        terminated = jax.vmap(self.generate_terminated)(states, reward)
+        truncated = (jnp.abs(states) > 1)
+        terminated = reward == 0
 
         return obs, reward, terminated, truncated, states
 
@@ -219,7 +262,7 @@ class CoreEnvironment(ABC):
             {}: An empty dictionary for consistency with the OpenAi Gym interface.
         """
         if random_key != None:
-            states = self.observation_space.sample(random_key)
+            self.states = self.observation_space.sample(random_key)
         elif initial_values.any() != False:
             assert initial_values.shape[
                 0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
@@ -227,14 +270,21 @@ class CoreEnvironment(ABC):
                 self.obs_description), f"number of columns is expected to be amount obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
             assert self.observation_space.contains(
                 initial_values), f"values of initial states are out of bounds"
-            states = initial_values
+            self.states = initial_values
         else:
-            states = jnp.tile(
+            self.states = jnp.tile(
                 jnp.array(self.state_initials), (self.batch_size, 1))
 
-        obs = self.generate_observation(states)
+        obs = self.generate_observation()
 
-        return obs, states
+        return obs, {}
+
+    def close(self):
+        """Called when the environment is deleted.
+
+        NotImplemented
+        """
+        raise NotImplementedError("To be implemented!")
 
     @property
     @abstractmethod
@@ -258,24 +308,6 @@ class CoreEnvironment(ABC):
     @abstractmethod
     def default_reward_func(self, obs, action):
         """Returns the default RewardFunction of the environment."""
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_observation(self, states):
-        """Returns states."""
-        return states
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_truncated(self, states):
-        """Returns states."""
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_terminated(self, states, reward):
-        """Returns states."""
         return
 
     @partial(jax.jit, static_argnums=0)

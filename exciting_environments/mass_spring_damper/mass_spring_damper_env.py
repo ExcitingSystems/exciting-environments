@@ -58,7 +58,7 @@ class MassSpringDamper(core_env.CoreEnvironment):
         Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.  
         """
 
-        self.params = {"k": k, "d": d, "m": m}
+        self.static_params = {"k": k, "d": d, "m": m}
         self.state_constraints = constraints  # ["deflection", "velocity"]
         self.state_initials = [0, 0]
         self.max_action = [max_force]
@@ -66,27 +66,27 @@ class MassSpringDamper(core_env.CoreEnvironment):
         super().__init__(batch_size=batch_size, tau=tau)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, params, solver):
+    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, static_params):
 
         force = force_norm*action_normalizer
         states = state_normalizer * states_norm
-        args = (force, params)
+        args = (force, static_params)
 
         def vector_field(t, y, args):
             deflection, velocity = y
             force, params = args
-            d_velocity = (force[0] - params[1]
-                          * velocity - params[0]*deflection)/params[2]
+            d_velocity = (force[0] - params["d"]
+                          * velocity - params["k"]*deflection)/params["m"]
             d_deflection = velocity
-            d_y = d_deflection, d_velocity
+            d_y = d_deflection, d_velocity[0]
             return d_y
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
         y0 = tuple(states)
-        state = solver.init(term, t0, t1, y0, args)
-        y, _, _, state, _ = solver.step(
+        state = self._solver.init(term, t0, t1, y0, args)
+        y, _, _, state, _ = self._solver.step(
             term, t0, t1, y0, args, state, made_jump=False)
 
         deflection_k1 = y[0]
@@ -103,6 +103,21 @@ class MassSpringDamper(core_env.CoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action):
         return ((obs[0])**2 + 0.1*(obs[1])**2 + 0.1*(action[0])**2)
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_observation(self, states):
+        """Returns states."""
+        return states
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, states):
+        """Returns states."""
+        return jnp.abs(states) > 1
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, states, reward):
+        """Returns states."""
+        return reward == 0
 
     @property
     def obs_description(self):

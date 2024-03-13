@@ -60,8 +60,8 @@ class CartPole(core_env.CoreEnvironment):
         Note: mu_p, mu_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
         """
 
-        self.params = {"g": g, "mu_p": mu_p, "mu_c": mu_c,
-                       "m_c": m_c, "m_p": m_p, "l": l}
+        self.static_params = {"g": g, "mu_p": mu_p, "mu_c": mu_c,
+                              "m_c": m_c, "m_p": m_p, "l": l}
 
         self.state_constraints = [constraints[0],
                                   constraints[1], np.pi, constraints[2]]  # ["deflection", "velocity", "theta", "omega"]
@@ -71,31 +71,31 @@ class CartPole(core_env.CoreEnvironment):
         super().__init__(batch_size=batch_size, tau=tau, reward_func=reward_func)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, params, solver):
+    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, static_params):
 
         force = force_norm*action_normalizer
         states = state_normalizer * states_norm
-        args = (force, params)
+        args = (force, static_params)
 
         def vector_field(t, y, args):
             deflection, velocity, theta, omega = y
             force, params = args
-            d_omega = (params[0]*jnp.sin(theta)+jnp.cos(theta)*((-force[0]-params[4]*params[5]*(omega**2)*jnp.sin(theta)+params[2]*jnp.sign(velocity)) /
-                                                                (params[3]+params[4]))-(params[1]*omega)/(params[4]*params[5]))/(params[5]*(4/3-(params[4]*(jnp.cos(theta))**2)/(params[3]+params[4])))
+            d_omega = (params["g"]*jnp.sin(theta)+jnp.cos(theta)*((-force[0]-params["m_p"]*params["l"]*(omega**2)*jnp.sin(theta)+params["mu_c"]*jnp.sign(velocity)) /
+                                                                  (params["m_c"]+params["m_p"]))-(params["mu_p"]*omega)/(params["m_p"]*params["l"]))/(params["l"]*(4/3-(params["m_p"]*(jnp.cos(theta))**2)/(params["m_c"]+params["m_p"])))
 
-            d_velocity = (force[0] + params[4]*params[5]*((omega**2)*jnp.sin(theta)-d_omega *
-                                                          jnp.cos(theta)) - params[2] * jnp.sign(velocity))/(params[3]+params[4])
+            d_velocity = (force[0] + params["m_p"]*params["l"]*((omega**2)*jnp.sin(theta)-d_omega *
+                                                                jnp.cos(theta)) - params["mu_c"] * jnp.sign(velocity))/(params["m_c"]+params["m_p"])
             d_theta = omega
             d_deflection = velocity
-            d_y = d_deflection, d_velocity, d_theta, d_omega
+            d_y = d_deflection, d_velocity[0], d_theta, d_omega[0]
             return d_y
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
         y0 = tuple(states)
-        state = solver.init(term, t0, t1, y0, args)
-        y, _, _, state, _ = solver.step(
+        state = self._solver.init(term, t0, t1, y0, args)
+        y, _, _, state, _ = self._solver.step(
             term, t0, t1, y0, args, state, made_jump=False)
 
         deflection_k1 = y[0]
@@ -117,6 +117,21 @@ class CartPole(core_env.CoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action):
         return ((0.01*obs[0])**2 + 0.1*(obs[1])**2 + (obs[2])**2 + 0.1*(obs[3])**2 + 0.1*(action[0])**2)
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_observation(self, states):
+        """Returns states."""
+        return states
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, states):
+        """Returns states."""
+        return jnp.abs(states) > 1
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, states, reward):
+        """Returns states."""
+        return reward == 0
 
     @property
     def obs_description(self):
