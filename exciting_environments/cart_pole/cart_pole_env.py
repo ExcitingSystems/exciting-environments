@@ -63,18 +63,21 @@ class CartPole(core_env.CoreEnvironment):
         self.static_params = {"g": g, "mu_p": mu_p, "mu_c": mu_c,
                               "m_c": m_c, "m_p": m_p, "l": l}
 
-        self.state_constraints = [constraints[0],
-                                  constraints[1], np.pi, constraints[2]]  # ["deflection", "velocity", "theta", "omega"]
-        self.state_initials = [0, 0, 1, 0]
+        self.env_state_constraints = [constraints[0],
+                                      constraints[1], np.pi, constraints[2]]  # ["deflection", "velocity", "theta", "omega"]
+        self.env_state_initials = [0, 0, 1, 0]
         self.max_action = [max_force]
 
         super().__init__(batch_size=batch_size, tau=tau, reward_func=reward_func)
+        self.static_params, self.env_state_normalizer, self.action_normalizer, self.env_observation_space, self.action_space = self.sim_paras(
+            self.static_params, self.env_state_constraints, self.max_action)
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, force_norm, state_normalizer, action_normalizer, static_params):
+    def _ode_exp_euler_step(self, states_norm, force_norm, env_state_normalizer, action_normalizer, static_params):
 
+        env_states_norm = states_norm
         force = force_norm*action_normalizer
-        states = state_normalizer * states_norm
+        env_states = env_state_normalizer * env_states_norm
         args = (force, static_params)
 
         def vector_field(t, y, args):
@@ -93,10 +96,10 @@ class CartPole(core_env.CoreEnvironment):
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple(states)
-        state = self._solver.init(term, t0, t1, y0, args)
-        y, _, _, state, _ = self._solver.step(
-            term, t0, t1, y0, args, state, made_jump=False)
+        y0 = tuple(env_states)
+        env_state = self._solver.init(term, t0, t1, y0, args)
+        y, _, _, env_state, _ = self._solver.step(
+            term, t0, t1, y0, args, env_state, made_jump=False)
 
         deflection_k1 = y[0]
         velocity_k1 = y[1]
@@ -104,15 +107,15 @@ class CartPole(core_env.CoreEnvironment):
         omega_k1 = y[3]
         theta_k1 = ((theta_k1+jnp.pi) % (2*jnp.pi))-jnp.pi
 
-        states_k1 = jnp.hstack((
+        env_states_k1 = jnp.hstack((
             deflection_k1,
             velocity_k1,
             theta_k1,
             omega_k1,
         ))
-        states_k1_norm = states_k1/state_normalizer
+        env_states_k1_norm = env_states_k1/env_state_normalizer
 
-        return states_k1_norm
+        return env_states_k1_norm
 
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action):

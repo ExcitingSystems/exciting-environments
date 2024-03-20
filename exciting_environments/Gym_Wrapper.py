@@ -17,7 +17,7 @@ class GymWrapper(ABC):
 
         self.env = env
         self.states = jnp.tile(
-            jnp.array(self.env.state_initials), (self.env.batch_size, 1))
+            jnp.array(self.env.env_state_initials), (self.env.batch_size, 1))
 
     @classmethod
     def fromName(cls, env_id: str, **env_kwargs):

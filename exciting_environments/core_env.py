@@ -51,7 +51,6 @@ class CoreEnvironment(ABC):
         self.batch_size = batch_size
         self.tau = tau
         self._solver = solver
-        self._adapt_sizes()
 
         if reward_func:
             if self._test_rew_func(reward_func):
@@ -74,20 +73,19 @@ class CoreEnvironment(ABC):
     #     # If batchsize change, update the corresponding dimension
     #     self._batch_size = batch_size
 
-    def _adapt_sizes(self):
+    def sim_paras(self, static_params, env_state_constraints, max_action):
         """Creates or updates parameters,variables,spaces,etc. to fit batch_size.
 
         Creates/Updates:
             params : Model Parameters.
             action_space: Space for applied actions.
             observation_space: Space for system states.
-            state_normalizer: State normalizer to normalize and denormalize states to implement physical equations with actual values.
+            env_state_normalizer: Environment State normalizer to normalize and denormalize states of the environment to implement physical equations with actual values.
             action_normalizer: Action normalizer to normalize and denormalize actions to implement physical equations with actual values.
         """
-        self.static_para_dims = {}
-        for key, value in self.static_params.items():
+        for key, value in static_params.items():
             if jnp.isscalar(value):
-                self.static_params[key] = jnp.full((self.batch_size, 1), value)
+                static_params[key] = jnp.full((self.batch_size, 1), value)
                 # self.static_para_dims[key] = None
             # elif jnp.all(value == value[0]):
             #     self.static_params[key] = jnp.full(
@@ -95,41 +93,42 @@ class CoreEnvironment(ABC):
             else:
                 assert len(
                     value) == self.batch_size, f"{key} is expected to be a scalar or a list with len(list)=batch_size"
-                self.static_params[key] = jnp.array(value).reshape(-1, 1)
+                static_params[key] = jnp.array(value).reshape(-1, 1)
                 # self.static_para_dims[key] = 0
 
-        self.state_normalizer = self.state_constraints.copy()
-        for i in range(len(self.state_constraints)):
-            if jnp.isscalar(self.state_constraints[i]):
-                self.state_normalizer[i] = jnp.full(
-                    self.batch_size, self.state_constraints[i])
+        env_state_normalizer = env_state_constraints.copy()
+        for i in range(len(env_state_constraints)):
+            if jnp.isscalar(env_state_constraints[i]):
+                env_state_normalizer[i] = jnp.full(
+                    self.batch_size, env_state_constraints[i])
             # elif jnp.all(self.state_constraints[i] == self.state_constraints[i][0]):
             #     self.state_normalizer[i] = jnp.full(
             #         self.batch_size, self.state_constraints[i][0])
             else:
                 assert len(
-                    self.state_constraints[i]) == self.batch_size, f"self.constraints entries are expected to be a scalar or a list with len(list)=batch_size"
-        self.state_normalizer = jnp.array(self.state_normalizer).transpose()
+                    self.env_state_constraints[i]) == self.batch_size, f"self.constraints entries are expected to be a scalar or a list with len(list)=batch_size"
+        env_state_normalizer = jnp.array(env_state_normalizer).transpose()
 
-        self.action_normalizer = self.max_action.copy()
-        for i in range(len(self.max_action)):
-            if jnp.isscalar(self.max_action[i]):
-                self.action_normalizer[i] = jnp.full(
-                    self.batch_size, self.max_action[i])
+        action_normalizer = max_action.copy()
+        for i in range(len(max_action)):
+            if jnp.isscalar(max_action[i]):
+                action_normalizer[i] = jnp.full(
+                    self.batch_size, max_action[i])
             # elif jnp.all(self.max_action[i] == self.max_action[i][0]):
             #     self.action_normalizer[i] = jnp.full(
             #         self.batch_size, self.max_action[i][0])
             else:
                 assert len(
-                    self.max_action[i]) == self.batch_size, f"self.max_action entries are expected to be a scalar or a list with len(list)=batch_size"
-        self.action_normalizer = jnp.array(self.action_normalizer).transpose()
+                    max_action[i]) == self.batch_size, f"self.max_action entries are expected to be a scalar or a list with len(list)=batch_size"
+        action_normalizer = jnp.array(action_normalizer).transpose()
 
-        self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, len(self.max_action)), dtype=jnp.float32)
+        action_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(self.batch_size, len(max_action)), dtype=jnp.float32)
 
-        self.observation_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, len(self.state_constraints)), dtype=jnp.float32)
+        env_observation_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(self.batch_size, len(env_state_constraints)), dtype=jnp.float32)
 
+        return static_params, env_state_normalizer, action_normalizer, env_observation_space, action_space
     # @property
     # def solver(self):
     #     """Returns the current solver of the environment setup."""
@@ -188,7 +187,7 @@ class CoreEnvironment(ABC):
 
         """
         # ode step
-        states = jax.vmap(self._ode_exp_euler_step)(states, action_norm, self.state_normalizer,
+        states = jax.vmap(self._ode_exp_euler_step)(states, action_norm, self.env_state_normalizer,
                                                     self.action_normalizer, self.static_params)
 
         # observation
@@ -219,18 +218,18 @@ class CoreEnvironment(ABC):
             {}: An empty dictionary for consistency with the OpenAi Gym interface.
         """
         if random_key != None:
-            states = self.observation_space.sample(random_key)
+            states = self.env_observation_space.sample(random_key)
         elif initial_values.any() != False:
             assert initial_values.shape[
                 0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
             assert initial_values.shape[1] == len(
                 self.obs_description), f"number of columns is expected to be amount obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
-            assert self.observation_space.contains(
+            assert self.env_observation_space.contains(
                 initial_values), f"values of initial states are out of bounds"
             states = initial_values
         else:
             states = jnp.tile(
-                jnp.array(self.state_initials), (self.batch_size, 1))
+                jnp.array(self.env_state_initials), (self.batch_size, 1))
 
         obs = self.generate_observation(states)
 
