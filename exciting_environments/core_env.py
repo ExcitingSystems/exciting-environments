@@ -7,6 +7,7 @@ from abc import ABC
 from abc import abstractmethod
 from exciting_environments import spaces
 import diffrax
+from collections import OrderedDict
 
 
 class CoreEnvironment(ABC):
@@ -73,19 +74,16 @@ class CoreEnvironment(ABC):
     #     # If batchsize change, update the corresponding dimension
     #     self._batch_size = batch_size
 
-    def sim_paras(self, static_params, env_state_constraints, max_action):
-        """Creates or updates parameters,variables,spaces,etc. to fit batch_size.
+    def sim_paras(self, static_params_, env_state_constraints_, env_max_actions_):
+        """Creates or updates static parameters to fit batch_size.
 
         Creates/Updates:
             params : Model Parameters.
-            action_space: Space for applied actions.
-            observation_space: Space for system states.
-            env_state_normalizer: Environment State normalizer to normalize and denormalize states of the environment to implement physical equations with actual values.
-            action_normalizer: Action normalizer to normalize and denormalize actions to implement physical equations with actual values.
         """
+        static_params = static_params_.copy()
         for key, value in static_params.items():
             if jnp.isscalar(value):
-                static_params[key] = jnp.full((self.batch_size, 1), value)
+                static_params[key] = jnp.full((self.batch_size), value)
                 # self.static_para_dims[key] = None
             # elif jnp.all(value == value[0]):
             #     self.static_params[key] = jnp.full(
@@ -93,43 +91,39 @@ class CoreEnvironment(ABC):
             else:
                 assert len(
                     value) == self.batch_size, f"{key} is expected to be a scalar or a list with len(list)=batch_size"
-                static_params[key] = jnp.array(value).reshape(-1, 1)
+                static_params[key] = jnp.array(value)
                 # self.static_para_dims[key] = 0
 
-        env_state_normalizer = env_state_constraints.copy()
-        for i in range(len(env_state_constraints)):
-            if jnp.isscalar(env_state_constraints[i]):
-                env_state_normalizer[i] = jnp.full(
-                    self.batch_size, env_state_constraints[i])
-            # elif jnp.all(self.state_constraints[i] == self.state_constraints[i][0]):
-            #     self.state_normalizer[i] = jnp.full(
-            #         self.batch_size, self.state_constraints[i][0])
+        env_state_constraints = env_state_constraints_.copy()
+        for key, value in env_state_constraints.items():
+            if jnp.isscalar(value):
+                env_state_constraints[key] = jnp.full((self.batch_size), value)
+                # self.static_para_dims[key] = None
+            # elif jnp.all(value == value[0]):
+            #     self.static_params[key] = jnp.full(
+            #         (self.batch_size, 1), value[0])
             else:
                 assert len(
-                    self.env_state_constraints[i]) == self.batch_size, f"self.constraints entries are expected to be a scalar or a list with len(list)=batch_size"
-        env_state_normalizer = jnp.array(env_state_normalizer).transpose()
+                    value) == self.batch_size, f"Constraint of {key} is expected to be a scalar or a list with len(list)=batch_size"
+                env_state_constraints[key] = jnp.array(value)
+                # self.static_para_dims[key] = 0
 
-        action_normalizer = max_action.copy()
-        for i in range(len(max_action)):
-            if jnp.isscalar(max_action[i]):
-                action_normalizer[i] = jnp.full(
-                    self.batch_size, max_action[i])
-            # elif jnp.all(self.max_action[i] == self.max_action[i][0]):
-            #     self.action_normalizer[i] = jnp.full(
-            #         self.batch_size, self.max_action[i][0])
+        env_max_actions = env_max_actions_.copy()
+        for key, value in env_max_actions.items():
+            if jnp.isscalar(value):
+                env_max_actions[key] = jnp.full((self.batch_size), value)
+                # self.static_para_dims[key] = None
+            # elif jnp.all(value == value[0]):
+            #     self.static_params[key] = jnp.full(
+            #         (self.batch_size, 1), value[0])
             else:
                 assert len(
-                    max_action[i]) == self.batch_size, f"self.max_action entries are expected to be a scalar or a list with len(list)=batch_size"
-        action_normalizer = jnp.array(action_normalizer).transpose()
+                    value) == self.batch_size, f"Constraint of {key} is expected to be a scalar or a list with len(list)=batch_size"
+                env_max_actions[key] = jnp.array(value)
+                # self.static_para_dims[key] = 0
 
-        action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, len(max_action)), dtype=jnp.float32)
+        return static_params, OrderedDict(env_state_constraints), OrderedDict(env_max_actions)
 
-        env_observation_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.batch_size, len(env_state_constraints)), dtype=jnp.float32)
-
-        return static_params, env_state_normalizer, action_normalizer, env_observation_space, action_space
-    # @property
     # def solver(self):
     #     """Returns the current solver of the environment setup."""
     #     return self._solver
@@ -164,7 +158,7 @@ class CoreEnvironment(ABC):
         return True
 
     @partial(jax.jit, static_argnums=0)
-    def step(self, action_norm, states):
+    def step(self, action, states):
         """Addtional function in step execution to enable JAX jit.
 
         Args:
@@ -187,71 +181,30 @@ class CoreEnvironment(ABC):
 
         """
         # ode step
-        states = jax.vmap(self._ode_exp_euler_step)(states, action_norm, self.env_state_normalizer,
-                                                    self.action_normalizer, self.static_params)
+        states = jax.vmap(self._ode_exp_euler_step)(
+            states, action, self.static_params)
 
         # observation
-        obs = jax.vmap(self.generate_observation)(states)
-
+        # print(states)
+        # print(self.env_state_constraints)
+        obs = jax.vmap(self.generate_observation)(
+            states, self.env_state_constraints)
         # reward
-        reward = jax.vmap(self.reward_func)(obs, action_norm).reshape(-1, 1)
+        reward = jax.vmap(self.reward_func)(
+            obs, action, self.env_max_actions).reshape(-1, 1)
 
         # bound check
-        truncated = jax.vmap(self.generate_truncated)(states)
+        truncated = jax.vmap(self.generate_truncated)(
+            states, self.env_state_constraints)
         terminated = jax.vmap(self.generate_terminated)(states, reward)
 
         return obs, reward, terminated, truncated, states
-
-    def reset(self, random_key: chex.PRNGKey = None, initial_values: jnp.ndarray = jnp.array([])):
-        """Reset environment to chosen initial states. If no parameters are passed the states will be reset to defined default states.
-
-        Args:
-            random_key(chex.PRNGKey): If passed, environment states will be set to random initial states depending on the PRNGKey value.
-            initial_values(ndarray): If passed, environment states will be set to passed initial_values.
-
-
-        Returns:
-            Multiple Outputs:
-
-            observation(ndarray(float)): Observation/State Matrix (shape=(batch_size,states)).
-
-            {}: An empty dictionary for consistency with the OpenAi Gym interface.
-        """
-        if random_key != None:
-            states = self.env_observation_space.sample(random_key)
-        elif initial_values.any() != False:
-            assert initial_values.shape[
-                0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
-            assert initial_values.shape[1] == len(
-                self.obs_description), f"number of columns is expected to be amount obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
-            assert self.env_observation_space.contains(
-                initial_values), f"values of initial states are out of bounds"
-            states = initial_values
-        else:
-            states = jnp.tile(
-                jnp.array(self.env_state_initials), (self.batch_size, 1))
-
-        obs = self.generate_observation(states)
-
-        return obs, states
 
     @property
     @abstractmethod
     def obs_description(self):
         """Returns a list of state names of all states in the observation (equal to state space)."""
         return self.states_description
-
-    @property
-    @abstractmethod
-    def states_description(self):
-        """Returns a list of state names of all states in the states space."""
-        return np.array(["state1_name", "..."])
-
-    @property
-    @abstractmethod
-    def action_description(self):
-        """Returns the name of the action."""
-        return np.array(["action_name"])
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
@@ -291,4 +244,8 @@ class CoreEnvironment(ABC):
             states(ndarray(float)): State Matrix (shape=(batch_size,states)).
 
         """
+        return
+
+    @abstractmethod
+    def reset(self, initial_values: jnp.ndarray = jnp.array([])):
         return
