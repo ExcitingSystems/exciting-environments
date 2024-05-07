@@ -2,8 +2,12 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from functools import partial
-from exciting_environments import core_env
 import diffrax
+from collections import OrderedDict
+from exciting_environments import core_env
+import jax_dataclasses as jdc
+import chex
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
 
 class CartPole(core_env.CoreEnvironment):
@@ -14,89 +18,121 @@ class CartPole(core_env.CoreEnvironment):
     Action Variable:
         ``['force']``
 
-    Observation Space (State Space):
-        Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])    
-
-    Action Space:
-        Box(low=-1, high=1)
-
     Initial State:
-        Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to 1(normalized to pi).
+        Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to pi.
 
     Example:
         >>> import jax
         >>> import exciting_environments as excenvs
+        >>> from exciting_environments import GymWrapper
         >>> 
         >>> # Create the environment
-        >>> env= excenvs.make('CartPole-v0',batch_size=2,l=3,m_c=4,max_force=30)
-        >>> 
+        >>> cartpole= excenv.CartPole(batch_size=5)
+        >>>
+        >>> # Use GymWrapper for Simulation (optional)
+        >>> gym_cartpole=GymWrapper(env=cartpole)
+        >>>
         >>> # Reset the environment with default initial values
-        >>> env.reset()
-        >>> 
-        >>> # Sample a random action
-        >>> action = env.action_space.sample(jax.random.PRNGKey(6))
+        >>> gym_cartpole.reset()
         >>> 
         >>> # Perform step
-        >>> obs,reward,terminated,truncated,info= env.step(action)
+        >>> obs,reward,terminated,truncated,info= gym_cartpole.step(action=jnp.ones(5).reshape(-1,1))
         >>> 
 
     """
 
-    def __init__(self, batch_size: float = 8, mu_p: float = 0, mu_c: float = 0, l: float = 1, m_c: float = 1, m_p: float = 1,  max_force: float = 20, solver=diffrax.Euler(), reward_func=None, g: float = 9.81, tau: float = 1e-4, constraints: list = [10, 10, 10]):
+    def __init__(
+            self,
+            batch_size: int = 8,
+            physical_constraints: dict = {
+                "deflection": 10, "velocity": 10, "theta": jnp.pi, "omega": 10},
+            action_constraints: dict = {"force": 20},
+            static_params: dict = {"mu_p": 0, "mu_c": 0,
+                                   "l": 1, "m_p": 1, "m_c": 1, "g": 9.81},
+            solver=diffrax.Euler(),
+            reward_func=None,
+            tau: float = 1e-4,
+    ):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            mu_p(float): Coefficient of friction of pole on cart. Default: 0
-            mu_c(float): Coefficient of friction of cart on track. Default: 0
-            l(float): Half-pole length. Default: 1
-            m_c(float): Mass of the cart. Default: 1
-            m_p(float): Mass of the pole. Default: 1
-            max_force(float): Maximum force that can be applied to the system as action. Default: 20
-            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) 
-            g(float): Gravitational acceleration. Default: 9.81
+            physical_constraints(jdc.pytree_dataclass): Constraints of physical states of the environment.
+                deflection(float): Deflection of the cart. Default: 10
+                velocity(float): Velocity of the cart. Default: 10
+                theta(float): Rotation angle of the pole. Default: jnp.pi
+                omega(float): Angular velocity. Default: 10
+            action_constraints(jdc.pytree_dataclass): Constraints of actions.
+                force(float): Maximum torque that can be applied to the system as action. Default: 20 
+            static_params(jdc.pytree_dataclass): Parameters of environment which do not change during simulation.
+                mu_p(float): Coefficient of friction of pole on cart. Default: 0
+                mu_c(float): Coefficient of friction of cart on track. Default: 0
+                l(float): Half-pole length. Default: 1
+                m_p(float): Mass of the pole. Default: 1
+                m_c(float): Mass of the cart. Default: 1
+                g(float): Gravitational acceleration. Default: 9.81
+            solver(diffrax.solver): Solver used to compute states for next step.
+            reward_func(function): Reward function for training. Needs observation matrix, action and action_constraints as Parameters. 
+                                    Default: None (default_reward_func from class)
             tau(float): Duration of one control step in seconds. Default: 1e-4.
-            constraints(list): Constraints for states ['deflection','velocity','omega'] (list with length 3). Default: [10,10,10]
 
-        Note: mu_p, mu_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.
+        Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.  
         """
 
-        self.static_params = {"g": g, "mu_p": mu_p, "mu_c": mu_c,
-                              "m_c": m_c, "m_p": m_p, "l": l}
+        physical_constraints = self.PhysicalStates(**physical_constraints)
+        action_constraints = self.Actions(**action_constraints)
+        static_params = self.StaticParams(**static_params)
 
-        self.env_state_constraints = [constraints[0],
-                                      constraints[1], np.pi, constraints[2]]  # ["deflection", "velocity", "theta", "omega"]
-        self.env_state_initials = [0, 0, 1, 0]
-        self.max_action = [max_force]
+        super().__init__(batch_size, physical_constraints, action_constraints, static_params, tau=tau,
+                         solver=solver, reward_func=reward_func)
 
-        super().__init__(batch_size=batch_size, tau=tau, reward_func=reward_func)
-        self.static_params, self.env_state_normalizer, self.action_normalizer, self.env_observation_space, self.action_space = self.sim_paras(
-            self.static_params, self.env_state_constraints, self.max_action)
+    @jdc.pytree_dataclass
+    class PhysicalStates:
+        deflection: jax.Array
+        velocity: jax.Array
+        theta: jax.Array
+        omega: jax.Array
+
+    @jdc.pytree_dataclass
+    class Optional:
+        something: jax.Array
+
+    @jdc.pytree_dataclass
+    class StaticParams:
+        mu_p: jax.Array
+        mu_c: jax.Array
+        l: jax.Array
+        m_p: jax.Array
+        m_c: jax.Array
+        g: jax.Array
+
+    @jdc.pytree_dataclass
+    class Actions:
+        force: jax.Array
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states_norm, force_norm, env_state_normalizer, action_normalizer, static_params):
+    def _ode_solver_step(self, states, action, static_params):
 
-        env_states_norm = states_norm
-        force = force_norm*action_normalizer
-        env_states = env_state_normalizer * env_states_norm
-        args = (force, static_params)
+        env_states = states.physical_states
+        args = (action, static_params)
 
         def vector_field(t, y, args):
             deflection, velocity, theta, omega = y
-            force, params = args
-            d_omega = (params["g"]*jnp.sin(theta)+jnp.cos(theta)*((-force[0]-params["m_p"]*params["l"]*(omega**2)*jnp.sin(theta)+params["mu_c"]*jnp.sign(velocity)) /
-                                                                  (params["m_c"]+params["m_p"]))-(params["mu_p"]*omega)/(params["m_p"]*params["l"]))/(params["l"]*(4/3-(params["m_p"]*(jnp.cos(theta))**2)/(params["m_c"]+params["m_p"])))
+            action, params = args
+            d_omega = (params.g*jnp.sin(theta)+jnp.cos(theta)*((-action[0]-params.m_p*params.l*(omega**2)*jnp.sin(theta)+params.mu_c*jnp.sign(velocity)) /
+                                                               (params.m_c+params.m_p))-(params.mu_p*omega)/(params.m_p*params.l))/(params.l*(4/3-(params.m_p*(jnp.cos(theta))**2)/(params.m_c+params.m_p)))
 
-            d_velocity = (force[0] + params["m_p"]*params["l"]*((omega**2)*jnp.sin(theta)-d_omega *
-                                                                jnp.cos(theta)) - params["mu_c"] * jnp.sign(velocity))/(params["m_c"]+params["m_p"])
+            d_velocity = (action[0] + params.m_p*params.l*((omega**2)*jnp.sin(theta)-d_omega *
+                                                           jnp.cos(theta)) - params.mu_c * jnp.sign(velocity))/(params.m_c+params.m_p)
             d_theta = omega
             d_deflection = velocity
-            d_y = d_deflection, d_velocity[0], d_theta, d_omega[0]
+            d_y = d_deflection, d_velocity, d_theta, d_omega
             return d_y
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple(env_states)
+        y0 = tuple([env_states.deflection, env_states.velocity,
+                   env_states.theta, env_states.omega])
         env_state = self._solver.init(term, t0, t1, y0, args)
         y, _, _, env_state, _ = self._solver.step(
             term, t0, t1, y0, args, env_state, made_jump=False)
@@ -107,43 +143,65 @@ class CartPole(core_env.CoreEnvironment):
         omega_k1 = y[3]
         theta_k1 = ((theta_k1+jnp.pi) % (2*jnp.pi))-jnp.pi
 
-        env_states_k1 = jnp.hstack((
-            deflection_k1,
-            velocity_k1,
-            theta_k1,
-            omega_k1,
+        phys = self.PhysicalStates(deflection=deflection_k1, velocity=velocity_k1,
+                                   theta=theta_k1, omega=omega_k1)
+        opt = None  # Optional(something=...)
+        return self.States(physical_states=phys, PRNGKey=None, optional=None)
+
+    @partial(jax.jit, static_argnums=0)
+    def init_states(self):
+        phys = self.PhysicalStates(deflection=jnp.zeros(self.batch_size), velocity=jnp.zeros(self.batch_size), theta=jnp.full(
+            self.batch_size, jnp.pi), omega=jnp.zeros(self.batch_size))
+        opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        return self.States(physical_states=phys, PRNGKey=None, optional=opt)
+
+    @partial(jax.jit, static_argnums=0)
+    def default_reward_func(self, obs, action, action_constraints):
+        """Returns reward for one batch."""
+        reward = ((0.01*obs[0])**2 + 0.1*(obs[1])**2 +
+                  (obs[2])**2 + 0.1*(obs[3])**2 + 0.1*(action[0]/action_constraints.force)**2)
+        return jnp.array([reward])
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_observation(self, states, physical_constraints):
+        """Returns observation for one batch."""
+        obs = jnp.hstack((
+            states.physical_states.deflection / physical_constraints.deflection,
+            states.physical_states.velocity / physical_constraints.velocity,
+            states.physical_states.theta / physical_constraints.theta,
+            states.physical_states.omega / physical_constraints.omega,
         ))
-        env_states_k1_norm = env_states_k1/env_state_normalizer
-
-        return env_states_k1_norm
-
-    @partial(jax.jit, static_argnums=0)
-    def default_reward_func(self, obs, action):
-        return ((0.01*obs[0])**2 + 0.1*(obs[1])**2 + (obs[2])**2 + 0.1*(obs[3])**2 + 0.1*(action[0])**2)
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, states):
-        """Returns states."""
-        return states
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, states):
-        """Returns states."""
-        return jnp.abs(states) > 1
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, states, reward):
-        """Returns states."""
-        return reward == 0
+        return obs
 
     @property
     def obs_description(self):
-        return self.states_description
-
-    @property
-    def states_description(self):
         return np.array(["deflection", "velocity", "theta", "omega"])
 
-    @property
-    def action_description(self):
-        return np.array(["force"])
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, states, physical_constraints):
+        """Returns truncated information for one batch."""
+        _states = jnp.hstack((
+            states.physical_states.deflection / physical_constraints.deflection,
+            states.physical_states.velocity / physical_constraints.velocity,
+            states.physical_states.theta / physical_constraints.theta,
+            states.physical_states.omega / physical_constraints.omega,
+        ))
+        return jnp.abs(_states) > 1
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, states, reward):
+        """Returns terminated information for one batch."""
+        return reward == 0
+
+    def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
+        if initial_values is not None:
+            assert tree_structure(self.init_states()) == tree_structure(
+                initial_values), f"initial_values should have the same dataclass structure as self.init_states()"
+            states = initial_values
+        else:
+            states = self.init_states()
+
+        obs = jax.vmap(self.generate_observation, in_axes=(0, self.in_axes_env_properties.physical_constraints))(
+            states, self.env_properties.physical_constraints)
+
+        return obs, states

@@ -9,7 +9,9 @@ from exciting_environments import spaces
 from exciting_environments.core_env import CoreEnvironment
 import diffrax
 from exciting_environments.registration import make
-from collections import OrderedDict
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+import chex
+import jax_dataclasses as jdc
 
 
 class GymWrapper(ABC):
@@ -17,22 +19,22 @@ class GymWrapper(ABC):
     def __init__(self, env):
 
         self.env = env
-        self.states = OrderedDict([(name, jnp.full((self.env.batch_size), init)) for name, init in zip(
-            self.env.env_states_initials.keys(), self.env.env_states_initials.values())])
+        self.states = jnp.array(tree_flatten(self.env.init_states())[0]).T
+        self.states_tree_struct = tree_structure(self.env.init_states())
+        # TODO action and observation space for gym interface
+        # self.action_space = spaces.Box(
+        #     low=-1.0, high=1.0, shape=(self.env.batch_size, len(list(self.env.env_max_actions.values()))), dtype=jnp.float32)
 
-        self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.env.batch_size, len(list(self.env.env_max_actions.values()))), dtype=jnp.float32)
-
-        self.env_observation_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.env.batch_size, len(list(self.env.env_state_constraints.values()))), dtype=jnp.float32)
+        # self.env_observation_space = spaces.Box(
+        #     low=-1.0, high=1.0, shape=(self.env.batch_size, len(list(self.env.env_state_constraints.values()))), dtype=jnp.float32)
 
     @classmethod
     def fromName(cls, env_id: str, **env_kwargs):
         env = make(env_id, **env_kwargs)
         return cls(env)
 
-    def step(self, actions):
-        """Perform one simulation step of the environment with an action of the action space.
+    def step(self, action):
+        """Perform one simulation step of the environment with an given action.
 
         Args:
             action: Action to play on the environment.
@@ -52,38 +54,41 @@ class GymWrapper(ABC):
         """
 
         obs, reward, terminated, truncated, self.states = self.gym_step(
-            actions, self.states)
+            action, self.states)
 
         return obs, reward, terminated, truncated, {}
 
     @partial(jax.jit, static_argnums=0)
-    def gym_step(self, actions, states):
+    def gym_step(self, action, states):
 
         # denormalize action
-        actions = actions*jnp.array(list(self.env.env_max_actions.values())).T
+        action = action * \
+            np.array(
+                list(self.env.env_properties.action_constraints.__dict__.values())).T
 
-        # action shape from array to dict
-        actions = {name: actions[:, idx] for name, idx in zip(
-            self.env.env_actions_name, range(actions.shape[1]))}
+        # transform array to dataclass defined in environment
+        states = tree_unflatten(self.states_tree_struct, states.T)
 
-        obs, reward, terminated, truncated, states = self.env.step(
-            actions, states)
+        obs, reward, terminated, truncated, states = self.env.vmap_step(
+            action, states)
+
+        # transform dataclass to array
+        states = jnp.array(tree_flatten(states)[0]).T
 
         return obs, reward, terminated, truncated, states
 
-    def reset(self, random_key: chex.PRNGKey = None, initial_values: jnp.ndarray = jnp.array([])):
+    def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
 
-        if random_key != None:
-            states_mat = self.env_observation_space.sample(
-                random_key)*jnp.array(list(self.env.env_state_constraints.values())).T
-            self.states = {name: states_mat[:, idx] for name, idx in zip(
-                self.env.env_states_name, range(states_mat.shape[1]))}
+        # TODO: rng
 
+        if initial_values is not None:
+            assert jnp.array(tree_flatten(self.env.init_states())[
+                             0]).T.shape == initial_values.shape, f"initial_values should have shape={jnp.array(tree_flatten(self.env.init_states())[0]).T.shape}"
+            obs, states = self.env.reset(initial_values=tree_unflatten(
+                self.states_tree_struct, initial_values.T))
         else:
-            self.states = self.env.reset(initial_values=initial_values)
-
-        obs = self.env.generate_observation(
-            self.states, self.env.env_state_constraints)
+            obs, states = self.env.reset()
+        self.states = jnp.array(tree_flatten(states)[0]).T
         return obs, {}
 
     def render(self, *_, **__):
@@ -100,20 +105,3 @@ class GymWrapper(ABC):
         NotImplemented
         """
         raise NotImplementedError("To be implemented!")
-
-    # def sim_paras(self, env_state_constraints, max_action):
-    #     """Creates or updates parameters,variables,spaces,etc. to fit batch_size.
-
-    #     Creates/Updates:
-    #         action_space: Space for applied actions.
-    #         observation_space: Space for system states.
-    #         env_state_normalizer: Environment State normalizer to normalize and denormalize states of the environment to implement physical equations with actual values.
-    #         action_normalizer: Action normalizer to normalize and denormalize actions to implement physical equations with actual values.
-    #     """
-    #     action_space = spaces.Box(
-    #         low=-1.0, high=1.0, shape=(self.batch_size, len(max_action)), dtype=jnp.float32)
-
-    #     env_observation_space = spaces.Box(
-    #         low=-1.0, high=1.0, shape=(self.batch_size, len(env_state_constraints)), dtype=jnp.float32)
-
-    #     return env_observation_space, action_space

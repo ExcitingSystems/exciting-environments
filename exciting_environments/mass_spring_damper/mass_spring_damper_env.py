@@ -4,6 +4,9 @@ import jax.numpy as jnp
 from functools import partial
 from exciting_environments import core_env
 import diffrax
+import jax_dataclasses as jdc
+import chex
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
 
 class MassSpringDamper(core_env.CoreEnvironment):
@@ -15,70 +18,97 @@ class MassSpringDamper(core_env.CoreEnvironment):
     Action Variable:
         ``['force']``
 
-    Observation Space (State Space):
-        Box(low=[-1, -1], high=[1, 1])    
-
-    Action Space:
-        Box(low=-1, high=1)
-
     Initial State:
         Unless chosen otherwise, deflection and velocity is set to zero.
 
     Example:
         >>> import jax
+        >>> import jax.numpy as jnp
         >>> import exciting_environments as excenvs
+        >>> from exciting_environments import GymWrapper
         >>> 
         >>> # Create the environment
-        >>> env= excenvs.make('MassSpringDamper-v0',batch_size=2,d=2,k=0.5,max_force=10)
+        >>> msd=excenv.MassSpringDamper(batch_size=4,action_constraints={"force":10})
+        >>> 
+        >>> # Use GymWrapper for Simulation (optional)
+        >>> gym_msd=GymWrapper(env=msd)
         >>> 
         >>> # Reset the environment with default initial values
-        >>> env.reset()
-        >>> 
-        >>> # Sample a random action
-        >>> action = env.action_space.sample(jax.random.PRNGKey(6))
+        >>> gym_msd.reset()
         >>> 
         >>> # Perform step
-        >>> obs,reward,terminated,truncated,info= env.step(action)
+        >>> obs,reward,terminated,truncated,info= gym_msd.step(action=jnp.ones(4).reshape(-1,1))
         >>> 
 
     """
 
-    def __init__(self, batch_size: int = 8, k: int = 100, d: int = 1, m: int = 1,  env_max_actions: dict = {"force": 20}, solver=diffrax.Euler(), reward_func=None, tau: float = 1e-4, env_state_constraints: dict = {"deflection": 10, "velocity": 10}):
+    def __init__(
+        self,
+        batch_size: int = 8,
+        physical_constraints: dict = {"deflection": 10, "velocity": 10},
+        action_constraints: dict = {"force": 20},
+        static_params: dict = {"k": 100, "d": 1, "m": 1},
+        solver=diffrax.Euler(),
+        reward_func=None,
+        tau: float = 1e-4,
+    ):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            d(float): Damping constant. Default: 1
-            k(float): Spring constant. Default: 100
-            m(float): Mass of the oscillating object. Default: 1
-            max_force(float): Maximum force that can be applied to the system as action. Default: 20
-            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) 
+            physical_constraints(jdc.pytree_dataclass): Constraints of physical states of the environment.
+                deflection(float): Deflection of the mass. Default: 10
+                velocity(float): Velocity of the mass. Default: 10
+            action_constraints(jdc.pytree_dataclass): Constraints of actions.
+                force(float): Maximum force that can be applied to the system as action. Default: 20 
+            static_params(jdc.pytree_dataclass): Parameters of environment which do not change during simulation.
+                d(float): Damping constant. Default: 1
+                k(float): Spring constant. Default: 100
+                m(float): Mass of the oscillating object. Default: 1
+            solver(diffrax.solver): Solver used to compute states for next step.
+            reward_func(function): Reward function for training. Needs observation matrix, action and action_constraints as Parameters. 
+                                    Default: None (default_reward_func from class)
             tau(float): Duration of one control step in seconds. Default: 1e-4.
-            constraints(list): Constraints for states ['deflection','velocity'] (list with length 2). Default: [10,10]
 
-        Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.  
+        Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.  
         """
 
-        self.env_states_name = ["deflection", "velocity"]
-        self.env_actions_name = ["force"]
+        physical_constraints = self.PhysicalStates(**physical_constraints)
+        action_constraints = self.Actions(**action_constraints)
+        static_params = self.StaticParams(**static_params)
 
-        self.env_states_initials = {"deflection": 0, "velocity": 0}
-
-        super().__init__(batch_size=batch_size, tau=tau,
+        super().__init__(batch_size, physical_constraints, action_constraints, static_params, tau=tau,
                          solver=solver, reward_func=reward_func)
-        self.static_params, self.env_state_constraints, self.env_max_actions = self.sim_paras(
-            {"k": k, "d": d, "m": m}, env_state_constraints, env_max_actions)
+
+    @jdc.pytree_dataclass
+    class PhysicalStates:
+        deflection: jax.Array
+        velocity: jax.Array
+
+    @jdc.pytree_dataclass
+    class Optional:
+        something: jax.Array
+
+    @jdc.pytree_dataclass
+    class StaticParams:
+        d: jax.Array
+        k: jax.Array
+        m: jax.Array
+
+    @jdc.pytree_dataclass
+    class Actions:
+        force: jax.Array
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_exp_euler_step(self, states, action, static_params):
+    def _ode_solver_step(self, states, action, static_params):
 
-        env_states = states
+        env_states = states.physical_states
         args = (action, static_params)
 
         def vector_field(t, y, args):
             deflection, velocity = y
             action, params = args
-            d_velocity = (action["force"] - params["d"]
-                          * velocity - params["k"]*deflection)/params["m"]
+            d_velocity = (action[0] - params.d
+                          * velocity - params.k*deflection)/params.m
             d_deflection = velocity
             d_y = d_deflection, d_velocity  # [0]
             return d_y
@@ -86,7 +116,7 @@ class MassSpringDamper(core_env.CoreEnvironment):
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple(env_states.values())
+        y0 = tuple([env_states.deflection, env_states.velocity])
         env_state = self._solver.init(term, t0, t1, y0, args)
         y, _, _, env_state, _ = self._solver.step(
             term, t0, t1, y0, args, env_state, made_jump=False)
@@ -94,49 +124,62 @@ class MassSpringDamper(core_env.CoreEnvironment):
         deflection_k1 = y[0]
         velocity_k1 = y[1]
 
-        # env_states_k1 = jnp.hstack((
-        #     deflection_k1,
-        #     velocity_k1,
-        # ))
-        env_states_k1 = {"deflection": deflection_k1, "velocity": velocity_k1}
-
-        return env_states_k1
+        phys = self.PhysicalStates(
+            deflection=deflection_k1, velocity=velocity_k1)
+        opt = None  # Optional(something=...)
+        return self.States(physical_states=phys, PRNGKey=None, optional=None)
 
     @partial(jax.jit, static_argnums=0)
-    def default_reward_func(self, obs, action):
-        return ((obs[0])**2 + 0.1*(obs[1])**2 + 0.1*(action["force"])**2)
+    def init_states(self):
+        """Initial States defined for all batches"""
+        phys = self.PhysicalStates(deflection=jnp.zeros(
+            self.batch_size), velocity=jnp.zeros(self.batch_size))
+        opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        return self.States(physical_states=phys, PRNGKey=None, optional=opt)
 
     @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, states, env_state_constraints):
-        """Returns states."""
-        return (jnp.array(list(states.values()))/jnp.array(list(env_state_constraints.values()))).T
+    def default_reward_func(self, obs, action, action_constraints):
+        """Returns reward for one batch."""
+        reward = (obs[0])**2 + 0.1*(obs[1])**2 + 0.1 * \
+            (action[0]/action_constraints.force)**2
+        return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, states, env_state_constraints):
-        """Returns states."""
-        return jnp.abs((jnp.array(list(states.values()))/jnp.array(list(env_state_constraints.values()))).T) > 1
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, states, reward):
-        """Returns states."""
-        return reward == 0
+    def generate_observation(self, states, physical_constraints):
+        """Returns observation for one batch."""
+        obs = jnp.hstack((
+            states.physical_states.deflection / physical_constraints.deflection,
+            states.physical_states.velocity / physical_constraints.velocity,
+        ))
+        return obs
 
     @property
     def obs_description(self):
-        return self.env_states_name
+        return np.array(["deflection", "velocity"])
 
-    def reset(self, initial_values: jnp.ndarray = jnp.array([])):
-        # TODO
-        # if initial_values.any() != False:
-        #     assert initial_values.shape[
-        #         0] == self.batch_size, f"number of rows is expected to be batch_size, got: {initial_values.shape[0]}"
-        #     assert initial_values.shape[1] == len(
-        #         self.obs_description), f"number of columns is expected to be amount obs_entries: {len(self.obs_description)}, got: {initial_values.shape[0]}"
-        #     states = initial_values
-        # else:
-        #     states = jnp.tile(
-        #         jnp.array(self.env_state_initials), (self.batch_size, 1))
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, states, physical_constraints):
+        """Returns truncated information for one batch."""
+        _states = jnp.hstack((
+            states.physical_states.deflection / physical_constraints.deflection,
+            states.physical_states.velocity / physical_constraints.velocity,
+        ))
+        return jnp.abs(_states) > 1
 
-        # obs = self.generate_observation(states)
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, states, reward):
+        """Returns terminated information for one batch."""
+        return reward == 0
 
-        return  # obs, states
+    def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
+        if initial_values is not None:
+            assert tree_structure(self.init_states()) == tree_structure(
+                initial_values), f"initial_values should have the same dataclass structure as self.init_states()"
+            states = initial_values
+        else:
+            states = self.init_states()
+
+        obs = jax.vmap(self.generate_observation, in_axes=(0, self.in_axes_env_properties.physical_constraints))(
+            states, self.env_properties.physical_constraints)
+
+        return obs, states

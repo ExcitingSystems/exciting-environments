@@ -7,7 +7,8 @@ from abc import ABC
 from abc import abstractmethod
 from exciting_environments import spaces
 import diffrax
-from collections import OrderedDict
+import jax_dataclasses as jdc
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
 
 class CoreEnvironment(ABC):
@@ -15,123 +16,120 @@ class CoreEnvironment(ABC):
     Description:
         Core Structure of provided Environments.
 
-    State Variables:
-        Each environment has got a list of state variables that are defined by the physical system represented.
-
-        Example:
-            ``['theta', 'omega']``
-
-    Action Variable:
-        Each environment has got an action which is applied to the physical system represented.
-
-        Example:
-            ``['torque']``
-
-    Observation Space(State Space):
-        Type: Box()
-            The Observation Space is nothing but the State Space of the pyhsical system.
-            This Space is a normalized, continious, multidimensional box in [-1,1].
-
-    Action Space:
-        Type: Box()
-            The action space of the environments are the action spaces of the physical systems.
-            This Space is a continious, multidimensional box. 
-
-
-    Initial State:
-        Initial state values depend on the physical system.
-
     """
 
-    def __init__(self, batch_size: int, tau: float = 1e-4, solver=diffrax.Euler(), reward_func=None):
+    def __init__(
+            self,
+            batch_size: int,
+            physical_constraints,
+            action_constraints,
+            static_params,
+            tau: float = 1e-4,
+            solver=diffrax.Euler(),
+            reward_func=None
+    ):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration.
+            physical_constraints(jdc.pytree_dataclass): Constraints of physical states of the environment.
+            action_constraints(jdc.pytree_dataclass): Constraints of actions.
+            static_params(jdc.pytree_dataclass): Parameters of environment which do not change during simulation.
             tau(float): Duration of one control step in seconds. Default: 1e-4.
+            solver(diffrax.solver): Solver used to compute states for next step.
+            reward_func(function): Reward function for training. Needs observation matrix, action and action_constraints as Parameters. 
+                                    Default: None (default_reward_func from class) 
         """
         self.batch_size = batch_size
         self.tau = tau
         self._solver = solver
-
+        self.env_properties = self.EnvProperties(
+            physical_constraints=physical_constraints, action_constraints=action_constraints, static_params=static_params)
+        self.in_axes_env_properties = self.create_in_axes_env_properties()
         if reward_func:
             if self._test_rew_func(reward_func):
                 self.reward_func = reward_func
         else:
             self.reward_func = self.default_reward_func
 
-    # @property
-    # def batch_size(self):
-    #     """Returns the batch size of the environment setup."""
-    #     return self._batch_size
-
     @property
     def default_reward_function(self):
         """Returns the default reward function for the given environment."""
         return self.default_reward_func
 
-    # @batch_size.setter
-    # def batch_size(self, batch_size):
-    #     # If batchsize change, update the corresponding dimension
-    #     self._batch_size = batch_size
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class PhysicalStates:
+        pass
 
-    def sim_paras(self, static_params_, env_state_constraints_, env_max_actions_):
-        """Creates or updates static parameters to fit batch_size.
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class Optional:
+        pass
 
-        Creates/Updates:
-            params : Model Parameters.
-        """
-        static_params = static_params_.copy()
-        for key, value in static_params.items():
-            if jnp.isscalar(value):
-                static_params[key] = jnp.full((self.batch_size), value)
-                # self.static_para_dims[key] = None
-            # elif jnp.all(value == value[0]):
-            #     self.static_params[key] = jnp.full(
-            #         (self.batch_size, 1), value[0])
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class StaticParams:
+        pass
+
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class Actions:
+        pass
+
+    @jdc.pytree_dataclass
+    class States:
+        physical_states: jdc.pytree_dataclass  # CoreEnvironment.PhysicalStates
+        PRNGKey: jax.Array
+        optional: jdc.pytree_dataclass
+
+    @jdc.pytree_dataclass
+    class EnvProperties:
+        physical_constraints: jdc.pytree_dataclass
+        action_constraints: jdc.pytree_dataclass
+        static_params: jdc.pytree_dataclass
+
+    def create_in_axes_env_properties(self):
+        """Returns Dataclass for in_axes to use jax.vmap"""
+        values = list(vars(self.env_properties.physical_constraints).values())
+        names = list(vars(self.env_properties.physical_constraints).keys())
+        in_axes_physical = []
+        for v, n in zip(values, names):
+            if jnp.isscalar(v):
+                in_axes_physical.append(None)
             else:
                 assert len(
-                    value) == self.batch_size, f"{key} is expected to be a scalar or a list with len(list)=batch_size"
-                static_params[key] = jnp.array(value)
-                # self.static_para_dims[key] = 0
+                    v) == self.batch_size, f"{n} in physical_constraints is expected to be a scalar or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
+                in_axes_physical.append(0)
 
-        env_state_constraints = env_state_constraints_.copy()
-        for key, value in env_state_constraints.items():
-            if jnp.isscalar(value):
-                env_state_constraints[key] = jnp.full((self.batch_size), value)
-                # self.static_para_dims[key] = None
-            # elif jnp.all(value == value[0]):
-            #     self.static_params[key] = jnp.full(
-            #         (self.batch_size, 1), value[0])
+        physical_axes = self.PhysicalStates(*tuple(in_axes_physical))
+
+        values = list(vars(self.env_properties.action_constraints).values())
+        names = list(vars(self.env_properties.action_constraints).keys())
+        in_axes_actions = []
+        for v, n in zip(values, names):
+            if jnp.isscalar(v):
+                in_axes_actions.append(None)
             else:
                 assert len(
-                    value) == self.batch_size, f"Constraint of {key} is expected to be a scalar or a list with len(list)=batch_size"
-                env_state_constraints[key] = jnp.array(value)
-                # self.static_para_dims[key] = 0
+                    v) == self.batch_size, f"{n} in action_constraints is expected to be a scalar or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
+                in_axes_actions.append(0)
 
-        env_max_actions = env_max_actions_.copy()
-        for key, value in env_max_actions.items():
-            if jnp.isscalar(value):
-                env_max_actions[key] = jnp.full((self.batch_size), value)
-                # self.static_para_dims[key] = None
-            # elif jnp.all(value == value[0]):
-            #     self.static_params[key] = jnp.full(
-            #         (self.batch_size, 1), value[0])
+        action_axes = self.Actions(*tuple(in_axes_actions))
+
+        values = list(vars(self.env_properties.static_params).values())
+        names = list(vars(self.env_properties.static_params).keys())
+        in_axes_params = []
+        for v, n in zip(values, names):
+            if jnp.isscalar(v):
+                in_axes_params.append(None)
             else:
                 assert len(
-                    value) == self.batch_size, f"Constraint of {key} is expected to be a scalar or a list with len(list)=batch_size"
-                env_max_actions[key] = jnp.array(value)
-                # self.static_para_dims[key] = 0
+                    v) == self.batch_size, f"{n} in static_params is expected to be a scalar or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
+                in_axes_params.append(0)
 
-        return static_params, OrderedDict(env_state_constraints), OrderedDict(env_max_actions)
+        param_axes = self.StaticParams(*tuple(in_axes_params))
 
-    # def solver(self):
-    #     """Returns the current solver of the environment setup."""
-    #     return self._solver
-
-    # @solver.setter
-    # def solver(self, solver):
-    #     # TODO:check if solver exists in diffrax ?
-    #     self._solver = solver
+        return self.EnvProperties(physical_axes, action_axes, param_axes)
 
     def _test_rew_func(self, func):
         """Checks if passed reward function is compatible with given environment.
@@ -143,26 +141,52 @@ class CoreEnvironment(ABC):
             compatible(bool): Environment compatibility.
         """
         try:
-            out = func(
-                jnp.zeros([self.batch_size, int(len(self.obs_description))]))
+            out = jax.vmap(func, in_axes=(0, 0, self.in_axes_env_properties.action_constraints))(
+                jnp.zeros((self.batch_size, int(len(self.obs_description)))),
+                jnp.zeros((self.batch_size, int(
+                    len(list(vars(self.env_properties.action_constraints).values()))))),
+                self.env_properties.action_constraints
+            )
         except:
             raise Exception(
-                "Reward function should be using obs matrix as only parameter")
+                "Reward function should be using observation matrix, action and self.env_properties.action_constraints as parameters")
         try:
             if out.shape != (self.batch_size, 1):
                 raise Exception(
-                    "Reward function should be returning vector in shape (batch_size,1)")
+                    "Reward function should be returning vector in shape (1,)")
         except:
             raise Exception(
-                "Reward function should be returning vector in shape (batch_size,1)")
+                "Reward function should be returning vector in shape (1,)")
         return True
 
     @partial(jax.jit, static_argnums=0)
-    def step(self, action, states):
-        """Addtional function in step execution to enable JAX jit.
+    def step(self, states, action, env_properties):
+
+        # ode step
+        states = self._ode_solver_step(
+            states, action, env_properties.static_params)
+
+        # observation
+        obs = self.generate_observation(
+            states, env_properties.physical_constraints)
+
+        # reward
+        reward = self.reward_func(
+            obs, action, env_properties.action_constraints)
+
+        # bound check
+        truncated = self.generate_truncated(
+            states, env_properties.physical_constraints)
+        terminated = self.generate_terminated(states, reward)
+
+        return obs, reward, terminated, truncated, states
+
+    @partial(jax.jit, static_argnums=0)
+    def vmap_step(self, action, states):
+        """JAX jit compiled step for batch_size of environment.
 
         Args:
-            states(ndarray(float)): State Matrix (shape=(batch_size,states)).
+            states(jdc.pytree_dataclass): State Dataclass.
             action_norm(ndarray(float)): Action Matrix (shape=(batch_size,actions)).
 
 
@@ -177,34 +201,20 @@ class CoreEnvironment(ABC):
 
             truncated(ndarray(bool)): Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
 
-            {}: An empty dictionary for consistency with the OpenAi Gym interface.
+            states(jdc.pytree_dataclass): New states for the next step.
 
         """
-        # ode step
-        states = jax.vmap(self._ode_exp_euler_step)(
-            states, action, self.static_params)
-
-        # observation
-        # print(states)
-        # print(self.env_state_constraints)
-        obs = jax.vmap(self.generate_observation)(
-            states, self.env_state_constraints)
-        # reward
-        reward = jax.vmap(self.reward_func)(
-            obs, action, self.env_max_actions).reshape(-1, 1)
-
-        # bound check
-        truncated = jax.vmap(self.generate_truncated)(
-            states, self.env_state_constraints)
-        terminated = jax.vmap(self.generate_terminated)(states, reward)
+        # vmap single operations
+        obs, reward, terminated, truncated, states = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
+            states, action, self.env_properties)
 
         return obs, reward, terminated, truncated, states
 
     @property
     @abstractmethod
     def obs_description(self):
-        """Returns a list of state names of all states in the observation (equal to state space)."""
-        return self.states_description
+        """Returns a list of state names of all states in the observation."""
+        return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
@@ -215,37 +225,37 @@ class CoreEnvironment(ABC):
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_observation(self, states):
-        """Returns states."""
+        """Returns observation."""
         return states
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_truncated(self, states):
-        """Returns states."""
+        """Returns truncated information."""
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_terminated(self, states, reward):
-        """Returns states."""
+        """Returns terminated information."""
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
-    def _ode_exp_euler_step(self, states_norm, action_norm, state_normalizer,  action_normalizer, params):
-        """Implementation of the system equations in the class with Explicit Euler.
+    def _ode_solver_step(self, states_norm, action_norm, state_normalizer,  action_normalizer, params):
+        """Implementation of the system equations solved by a solver.
 
         Args:
-            states_norm(ndarray(float)): State Matrix (shape=(batch_size,states)).
+            states(jdc.pytree_dataclass): State Dataclass.
             action_norm(ndarray(float)): Action Matrix (shape=(batch_size,actions)).
 
 
         Returns:
-            states(ndarray(float)): State Matrix (shape=(batch_size,states)).
+            states(jdc.pytree_dataclass): State Dataclass.
 
         """
         return
 
     @abstractmethod
-    def reset(self, initial_values: jnp.ndarray = jnp.array([])):
+    def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
         return
