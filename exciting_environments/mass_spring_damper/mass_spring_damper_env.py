@@ -181,12 +181,12 @@ class MassSpringDamper(core_env.CoreEnvironment):
         """Returns terminated information for one batch."""
         return reward == 0
 
-    def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
+    def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial values."""
-        if initial_values is not None:
+        if initial_states is not None:
             assert tree_structure(self.init_states()) == tree_structure(
-                initial_values), f"initial_values should have the same dataclass structure as self.init_states()"
-            states = initial_values
+                initial_states), f"initial_states should have the same dataclass structure as self.init_states()"
+            states = initial_states
         else:
             states = self.init_states()
 

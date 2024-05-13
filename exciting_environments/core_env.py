@@ -280,6 +280,6 @@ class CoreEnvironment(ABC):
         return
 
     @abstractmethod
-    def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
+    def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial values."""
         return

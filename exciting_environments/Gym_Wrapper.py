@@ -96,15 +96,15 @@ class GymWrapper(ABC):
 
         return obs, reward, terminated, truncated, states
 
-    def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
+    def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial values."""
         # TODO: rng
 
-        if initial_values is not None:
+        if initial_states is not None:
             assert jnp.array(tree_flatten(self.env.init_states())[
-                             0]).T.shape == initial_values.shape, f"initial_values should have shape={jnp.array(tree_flatten(self.env.init_states())[0]).T.shape}"
-            obs, states = self.env.reset(initial_values=tree_unflatten(
-                self.states_tree_struct, initial_values.T))
+                             0]).T.shape == initial_states.shape, f"initial_states should have shape={jnp.array(tree_flatten(self.env.init_states())[0]).T.shape}"
+            obs, states = self.env.reset(initial_states=tree_unflatten(
+                self.states_tree_struct, initial_states.T))
         else:
             obs, states = self.env.reset()
         self.states = jnp.array(tree_flatten(states)[0]).T
