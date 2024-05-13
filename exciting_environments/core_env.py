@@ -78,18 +78,20 @@ class CoreEnvironment(ABC):
 
     @jdc.pytree_dataclass
     class States:
+        """Dataclass used for simulation which contains environment specific dataclasses."""
         physical_states: jdc.pytree_dataclass  # CoreEnvironment.PhysicalStates
         PRNGKey: jax.Array
         optional: jdc.pytree_dataclass
 
     @jdc.pytree_dataclass
     class EnvProperties:
+        """Dataclass used for simulation which contains environment specific dataclasses."""
         physical_constraints: jdc.pytree_dataclass
         action_constraints: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
 
     def create_in_axes_env_properties(self):
-        """Returns Dataclass for in_axes to use jax.vmap"""
+        """Returns Dataclass for in_axes to use jax.vmap."""
         values = list(vars(self.env_properties.physical_constraints).values())
         names = list(vars(self.env_properties.physical_constraints).keys())
         in_axes_physical = []
@@ -161,6 +163,26 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def step(self, states, action, env_properties):
+        """Computes one simulation step for one batch.
+
+        Args:
+            states: The states from which to calculate states for the next step.
+            action: The action to apply to the environment.
+            env_properties: Contains action/state constraints and static parameter.
+
+        Returns:
+            Multiple Outputs:
+
+            observation: The gathered observations.
+
+            reward: Amount of reward received for the last step.
+
+            terminated: Flag, indicating if Agent has reached the terminal state.
+
+            truncated: Flag, indicating if state has gone out of bounds.
+
+            states: New states for the next step.
+        """
 
         # ode step
         states = self._ode_solver_step(
@@ -183,25 +205,26 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_step(self, action, states):
-        """JAX jit compiled step for batch_size of environment.
+        """JAX jit compiled and vmapped step for batch_size of environment.
 
         Args:
-            states(jdc.pytree_dataclass): State Dataclass.
-            action_norm(ndarray(float)): Action Matrix (shape=(batch_size,actions)).
+            states: The states from which to calculate states for the next step.
+            action: The action to apply to the environment.
+            env_properties: Contains action/state constraints and static parameters.
 
 
         Returns:
             Multiple Outputs:
 
-            observation(ndarray(float)): Observation/State Matrix (shape=(batch_size,states)).
+            observation: The gathered observations (shape=(batch_size,obs_dim)).
 
-            reward(ndarray(float)): Amount of reward received for the last step (shape=(batch_size,1)).
+            reward: Amount of reward received for the last step (shape=(batch_size,1)).
 
-            terminated(bool): Flag, indicating if Agent has reached the terminal state.
+            terminated: Flag, indicating if Agent has reached the terminal state (shape=(batch_size,1)).
 
-            truncated(ndarray(bool)): Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
+            truncated: Flag, indicating if state has gone out of bounds (shape=(batch_size,states_dim)).
 
-            states(jdc.pytree_dataclass): New states for the next step.
+            states: New states for the next step.
 
         """
         # vmap single operations
@@ -243,19 +266,20 @@ class CoreEnvironment(ABC):
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def _ode_solver_step(self, states_norm, action_norm, state_normalizer,  action_normalizer, params):
-        """Implementation of the system equations solved by a solver.
+        """Computes states by simulating one step.
 
         Args:
-            states(jdc.pytree_dataclass): State Dataclass.
-            action_norm(ndarray(float)): Action Matrix (shape=(batch_size,actions)).
-
+            states: The states from which to calculate states for the next step.
+            action: The action to apply to the environment.
+            static_params: Parameter of the environment, that do not change over time.
 
         Returns:
-            states(jdc.pytree_dataclass): State Dataclass.
-
+            states: The states after the one step simulation.
         """
+
         return
 
     @abstractmethod
     def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
+        """Resets environment to default or passed initial values."""
         return

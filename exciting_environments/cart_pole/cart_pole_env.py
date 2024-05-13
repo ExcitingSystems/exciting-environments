@@ -111,6 +111,16 @@ class CartPole(core_env.CoreEnvironment):
 
     @partial(jax.jit, static_argnums=0)
     def _ode_solver_step(self, states, action, static_params):
+        """Computes states by simulating one step.
+
+        Args:
+            states: The states from which to calculate states for the next step.
+            action: The action to apply to the environment.
+            static_params: Parameter of the environment, that do not change over time.
+
+        Returns:
+            states: The states after the one step simulation.
+        """
 
         env_states = states.physical_states
         args = (action, static_params)
@@ -146,10 +156,11 @@ class CartPole(core_env.CoreEnvironment):
         phys = self.PhysicalStates(deflection=deflection_k1, velocity=velocity_k1,
                                    theta=theta_k1, omega=omega_k1)
         opt = None  # Optional(something=...)
-        return self.States(physical_states=phys, PRNGKey=None, optional=None)
+        return self.States(physical_states=phys, PRNGKey=None, optional=opt)
 
     @partial(jax.jit, static_argnums=0)
     def init_states(self):
+        """Returns default initial states for all batches."""
         phys = self.PhysicalStates(deflection=jnp.zeros(self.batch_size), velocity=jnp.zeros(self.batch_size), theta=jnp.full(
             self.batch_size, jnp.pi), omega=jnp.zeros(self.batch_size))
         opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
@@ -194,6 +205,7 @@ class CartPole(core_env.CoreEnvironment):
         return reward == 0
 
     def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
+        """Resets environment to default or passed initial values."""
         if initial_values is not None:
             assert tree_structure(self.init_states()) == tree_structure(
                 initial_values), f"initial_values should have the same dataclass structure as self.init_states()"

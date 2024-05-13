@@ -30,11 +30,12 @@ class GymWrapper(ABC):
 
     @classmethod
     def fromName(cls, env_id: str, **env_kwargs):
+        """Creates GymWrapper with environment based on passed env_id."""
         env = make(env_id, **env_kwargs)
         return cls(env)
 
     def step(self, action):
-        """Perform one simulation step of the environment with an given action.
+        """Performs one simulation step of the environment with a given action.
 
         Args:
             action: Action to play on the environment.
@@ -42,13 +43,13 @@ class GymWrapper(ABC):
         Returns:
             Multiple Outputs:
 
-            observation(ndarray(float)): Observation/State Matrix (shape=(batch_size,states)).
+            observation: The gathered observation (shape=(batch_size,obs_dim)).
 
-            reward(ndarray(float)): Amount of reward received for the last step (shape=(batch_size,1)).
+            reward: Amount of reward received for the last step (shape=(batch_size,1)).
 
-            terminated(bool): Flag, indicating if Agent has reached the terminal state.
+            terminated: Flag, indicating if Agent has reached the terminal state (shape=(batch_size,1)).
 
-            truncated(ndarray(bool)): Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
+            truncated: Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
 
             {}: An empty dictionary for consistency with the OpenAi Gym interface.
         """
@@ -60,7 +61,25 @@ class GymWrapper(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def gym_step(self, action, states):
+        """Jax Jit compiled simulation step using the step function provided by the environment.
 
+        Args:
+            action: The action to apply to the environment.
+            states: The states from which to calculate states for the next step.
+
+        Returns:
+            Multiple Outputs:
+
+            observation: The gathered observations.
+
+            reward: Amount of reward received for the last step.
+
+            terminated: Flag, indicating if Agent has reached the terminal state.
+
+            truncated: Flag, indicating if state has gone out of bounds.
+
+            states: New states for the next step.
+        """
         # denormalize action
         action = action * \
             np.array(
@@ -78,7 +97,7 @@ class GymWrapper(ABC):
         return obs, reward, terminated, truncated, states
 
     def reset(self, rng: chex.PRNGKey = None, initial_values: jdc.pytree_dataclass = None):
-
+        """Resets environment to default or passed initial values."""
         # TODO: rng
 
         if initial_values is not None:
