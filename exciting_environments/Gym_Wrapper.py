@@ -97,7 +97,7 @@ class GymWrapper(ABC):
         return obs, reward, terminated, truncated, states
 
     def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
-        """Resets environment to default or passed initial values."""
+        """Resets environment to default or passed initial states."""
         # TODO: rng
 
         if initial_states is not None:

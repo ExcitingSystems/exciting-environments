@@ -205,7 +205,7 @@ class CartPole(core_env.CoreEnvironment):
         return reward == 0
 
     def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
-        """Resets environment to default or passed initial values."""
+        """Resets environment to default or passed initial states."""
         if initial_states is not None:
             assert tree_structure(self.init_states()) == tree_structure(
                 initial_states), f"initial_states should have the same dataclass structure as self.init_states()"
