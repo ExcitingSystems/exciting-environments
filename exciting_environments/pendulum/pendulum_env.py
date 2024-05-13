@@ -64,7 +64,7 @@ class Pendulum(core_env.CoreEnvironment):
                 m(float): Mass of the pendulum tip. Default: 1
                 g(float): Gravitational acceleration. Default: 9.81
             solver(diffrax.solver): Solver used to compute states for next step.
-            reward_func(function): Reward function for training. Needs observation matrix, action and action_constraints as Parameters. 
+            reward_func(function): Reward function for training. Needs observation vector, action and action_constraints as Parameters. 
                                     Default: None (default_reward_func from class)
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
@@ -107,7 +107,7 @@ class Pendulum(core_env.CoreEnvironment):
             static_params: Parameter of the environment, that do not change over time.
 
         Returns:
-            states: The states after the one step simulation.
+            states: The computed states after the one step simulation.
         """
 
         env_states = states.physical_states

@@ -65,7 +65,7 @@ class MassSpringDamper(core_env.CoreEnvironment):
                 k(float): Spring constant. Default: 100
                 m(float): Mass of the oscillating object. Default: 1
             solver(diffrax.solver): Solver used to compute states for next step.
-            reward_func(function): Reward function for training. Needs observation matrix, action and action_constraints as Parameters. 
+            reward_func(function): Reward function for training. Needs observation vector, action and action_constraints as Parameters. 
                                     Default: None (default_reward_func from class)
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
@@ -108,7 +108,7 @@ class MassSpringDamper(core_env.CoreEnvironment):
             static_params: Parameter of the environment, that do not change over time.
 
         Returns:
-            states: The states after the one step simulation.
+            states: The computed states after the one step simulation.
         """
 
         env_states = states.physical_states
