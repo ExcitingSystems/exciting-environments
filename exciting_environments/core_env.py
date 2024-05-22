@@ -1,14 +1,13 @@
-import numpy as np
 import jax
 import jax.numpy as jnp
-from functools import partial
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+import jax_dataclasses as jdc
+import diffrax
 import chex
+from functools import partial
 from abc import ABC
 from abc import abstractmethod
 from exciting_environments import spaces
-import diffrax
-import jax_dataclasses as jdc
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
 
 class CoreEnvironment(ABC):
@@ -79,7 +78,7 @@ class CoreEnvironment(ABC):
     @jdc.pytree_dataclass
     class States:
         """Dataclass used for simulation which contains environment specific dataclasses."""
-        physical_states: jdc.pytree_dataclass  # CoreEnvironment.PhysicalStates
+        physical_states: jdc.pytree_dataclass
         PRNGKey: jax.Array
         optional: jdc.pytree_dataclass
 
@@ -133,33 +132,33 @@ class CoreEnvironment(ABC):
 
         return self.EnvProperties(physical_axes, action_axes, param_axes)
 
-    def _test_rew_func(self, func):
-        """Checks if passed reward function is compatible with given environment.
+    # def _test_rew_func(self, func):
+    #     """Checks if passed reward function is compatible with given environment.
 
-        Args:
-            func(function): Reward function to test.
+    #     Args:
+    #         func(function): Reward function to test.
 
-        Returns:
-            compatible(bool): Environment compatibility.
-        """
-        try:
-            out = jax.vmap(func, in_axes=(0, 0, self.in_axes_env_properties.action_constraints))(
-                jnp.zeros((self.batch_size, int(len(self.obs_description)))),
-                jnp.zeros((self.batch_size, int(
-                    len(list(vars(self.env_properties.action_constraints).values()))))),
-                self.env_properties.action_constraints
-            )
-        except:
-            raise Exception(
-                "Reward function should be using observation matrix, action and self.env_properties.action_constraints as parameters")
-        try:
-            if out.shape != (self.batch_size, 1):
-                raise Exception(
-                    "Reward function should be returning vector in shape (1,)")
-        except:
-            raise Exception(
-                "Reward function should be returning vector in shape (1,)")
-        return True
+    #     Returns:
+    #         compatible(bool): Environment compatibility.
+    #     """
+    #     try:
+    #         out = jax.vmap(func, in_axes=(0, 0, self.in_axes_env_properties.action_constraints))(
+    #             jnp.zeros((self.batch_size, int(len(self.obs_description)))),
+    #             jnp.zeros((self.batch_size, int(
+    #                 len(list(vars(self.env_properties.action_constraints).values()))))),
+    #             self.env_properties.action_constraints
+    #         )
+    #     except:
+    #         raise Exception(
+    #             "Reward function should be using observation matrix, action and self.env_properties.action_constraints as parameters")
+    #     try:
+    #         if out.shape != (self.batch_size, 1):
+    #             raise Exception(
+    #                 "Reward function should be returning vector in shape (1,)")
+    #     except:
+    #         raise Exception(
+    #             "Reward function should be returning vector in shape (1,)")
+    #     return True
 
     @partial(jax.jit, static_argnums=0)
     def step(self, states, action, env_properties):
@@ -174,32 +173,35 @@ class CoreEnvironment(ABC):
             Multiple Outputs:
 
             observation: The gathered observation.
-
             reward: Amount of reward received for the last step.
-
             terminated: Flag, indicating if Agent has reached the terminal state.
-
-            truncated: Flag, indicating if state has gone out of bounds.
-
+            truncated: Flag, e.g. indicating if state has gone out of bounds.
             states: New states for the next step.
         """
 
         # ode step
         states = self._ode_solver_step(
-            states, action, env_properties.static_params)
+            states, action, env_properties.static_params
+        )
 
         # observation
         obs = self.generate_observation(
-            states, env_properties.physical_constraints)
+            states, env_properties.physical_constraints
+        )
 
         # reward
         reward = self.reward_func(
-            obs, action, env_properties.action_constraints)
+            obs, action, env_properties.action_constraints
+        )
 
         # bound check
         truncated = self.generate_truncated(
-            states, env_properties.physical_constraints)
-        terminated = self.generate_terminated(states, reward)
+            states, env_properties.physical_constraints
+        )
+
+        terminated = self.generate_terminated(
+            states, reward
+        )
 
         return obs, reward, terminated, truncated, states
 
@@ -217,21 +219,37 @@ class CoreEnvironment(ABC):
             Multiple Outputs:
 
             observation: The gathered observations (shape=(batch_size,obs_dim)).
-
             reward: Amount of reward received for the last step (shape=(batch_size,1)).
-
             terminated: Flag, indicating if Agent has reached the terminal state (shape=(batch_size,1)).
-
             truncated: Flag, indicating if state has gone out of bounds (shape=(batch_size,states_dim)).
-
             states: New states for the next step.
 
         """
         # vmap single operations
         obs, reward, terminated, truncated, states = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
-            states, action, self.env_properties)
+            states, action, self.env_properties
+        )
 
         return obs, reward, terminated, truncated, states
+
+    @partial(jax.jit, static_argnums=0)
+    def vmap_simulate_ahead(self, actions, init_states, init_obs):
+
+        def body_fun(carry, action):
+            obs, states = carry
+
+            obs, _, _, _, states = self.vmap_step(
+                action.reshape(-1, 1),
+                states
+            )
+            return (obs, states), obs
+
+        (_, _), observations = jax.lax.scan(
+            body_fun, (init_obs, init_states), actions.T)
+        observations = jnp.concatenate(
+            [init_obs[None, :], observations], axis=0)
+
+        return observations
 
     @property
     @abstractmethod
@@ -249,7 +267,7 @@ class CoreEnvironment(ABC):
     @abstractmethod
     def generate_observation(self, states):
         """Returns observation."""
-        return states
+        return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod

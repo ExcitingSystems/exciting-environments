@@ -1,12 +1,12 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-from functools import partial
-from exciting_environments import core_env
-import diffrax
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 import jax_dataclasses as jdc
 import chex
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+from functools import partial
+import diffrax
+from exciting_environments import core_env
 
 
 class MassSpringDamper(core_env.CoreEnvironment):
@@ -45,9 +45,9 @@ class MassSpringDamper(core_env.CoreEnvironment):
     def __init__(
         self,
         batch_size: int = 8,
-        physical_constraints: dict = {"deflection": 10, "velocity": 10},
-        action_constraints: dict = {"force": 20},
-        static_params: dict = {"k": 100, "d": 1, "m": 1},
+        physical_constraints: dict = None,
+        action_constraints: dict = None,
+        static_params: dict = None,
         solver=diffrax.Euler(),
         reward_func=None,
         tau: float = 1e-4,
@@ -55,12 +55,12 @@ class MassSpringDamper(core_env.CoreEnvironment):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            physical_constraints(jdc.pytree_dataclass): Constraints of physical states of the environment.
+            physical_constraints(dict): Constraints of physical states of the environment.
                 deflection(float): Deflection of the mass. Default: 10
                 velocity(float): Velocity of the mass. Default: 10
-            action_constraints(jdc.pytree_dataclass): Constraints of actions.
+            action_constraints(dict): Constraints of actions.
                 force(float): Maximum force that can be applied to the system as action. Default: 20 
-            static_params(jdc.pytree_dataclass): Parameters of environment which do not change during simulation.
+            static_params(dict): Parameters of environment which do not change during simulation.
                 d(float): Damping constant. Default: 1
                 k(float): Spring constant. Default: 100
                 m(float): Mass of the oscillating object. Default: 1
@@ -72,6 +72,15 @@ class MassSpringDamper(core_env.CoreEnvironment):
         Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.  
         """
 
+        if not physical_constraints:
+            physical_constraints = {"deflection": 10, "velocity": 10}
+
+        if not action_constraints:
+            action_constraints = {"force": 20}
+
+        if not static_params:
+            static_params = {"k": 100, "d": 1, "m": 1}
+
         physical_constraints = self.PhysicalStates(**physical_constraints)
         action_constraints = self.Actions(**action_constraints)
         static_params = self.StaticParams(**static_params)
@@ -81,21 +90,25 @@ class MassSpringDamper(core_env.CoreEnvironment):
 
     @jdc.pytree_dataclass
     class PhysicalStates:
+        """Dataclass containing the physical states of the environment."""
         deflection: jax.Array
         velocity: jax.Array
 
     @jdc.pytree_dataclass
     class Optional:
+        """Dataclass containing additional information for simulation."""
         something: jax.Array
 
     @jdc.pytree_dataclass
     class StaticParams:
+        """Dataclass containing the static parameters of the environment."""
         d: jax.Array
         k: jax.Array
         m: jax.Array
 
     @jdc.pytree_dataclass
     class Actions:
+        """Dataclass containing the actions, that can be applied to the environment."""
         force: jax.Array
 
     @partial(jax.jit, static_argnums=0)
@@ -150,8 +163,8 @@ class MassSpringDamper(core_env.CoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def default_reward_func(self, obs, action, action_constraints):
         """Returns reward for one batch."""
-        reward = (obs[0])**2 + 0.1*(obs[1])**2 + 0.1 * \
-            (action[0]/action_constraints.force)**2
+        reward = ((obs[0])**2 + 0.1*(obs[1])**2
+                  + 0.1 (action[0]/action_constraints.force)**2)
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
@@ -184,13 +197,15 @@ class MassSpringDamper(core_env.CoreEnvironment):
     def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial states."""
         if initial_states is not None:
-            assert tree_structure(self.init_states()) == tree_structure(
-                initial_states), f"initial_states should have the same dataclass structure as self.init_states()"
+            assert tree_structure(self.init_states()) == tree_structure(initial_states), (
+                f"initial_states should have the same dataclass structure as self.init_states()"
+            )
             states = initial_states
         else:
             states = self.init_states()
 
         obs = jax.vmap(self.generate_observation, in_axes=(0, self.in_axes_env_properties.physical_constraints))(
-            states, self.env_properties.physical_constraints)
+            states, self.env_properties.physical_constraints
+        )
 
         return obs, states
