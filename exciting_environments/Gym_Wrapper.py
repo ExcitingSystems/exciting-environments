@@ -42,13 +42,11 @@ class GymWrapper(ABC):
             reward: Amount of reward received for the last step (shape=(batch_size,1)).
             terminated: Flag, indicating if Agent has reached the terminal state (shape=(batch_size,1)).
             truncated: Flag, indicating if state has gone out of bounds (shape=(batch_size,states)).
-            {}: An empty dictionary for consistency with the OpenAi Gym interface.
         """
 
-        obs, reward, terminated, truncated, self.states = self.gym_step(
-            action, self.states)
+        obs, reward, terminated, truncated, self.states = self.gym_step(action, self.states)
 
-        return obs, reward, terminated, truncated, {}
+        return obs, reward, terminated, truncated
 
     @partial(jax.jit, static_argnums=0)
     def gym_step(self, action, states):
@@ -68,16 +66,12 @@ class GymWrapper(ABC):
             states: New states for the next step.
         """
         # denormalize action
-        action = (action *
-                  jnp.array(tree_flatten(
-                      self.env.env_properties.action_constraints)[0]).T
-                  )
+        action = action * jnp.array(tree_flatten(self.env.env_properties.action_constraints)[0]).T
 
         # transform array to dataclass defined in environment
         states = tree_unflatten(self.states_tree_struct, states.T)
 
-        obs, reward, terminated, truncated, states = self.env.vmap_step(
-            action, states)
+        obs, reward, terminated, truncated, states = self.env.vmap_step(action, states)
 
         # transform dataclass to array
         states = jnp.array(tree_flatten(states)[0]).T
@@ -89,14 +83,10 @@ class GymWrapper(ABC):
         # TODO: rng
 
         if initial_states is not None:
-            assert jnp.array(tree_flatten(self.env.init_states())[0]).T.shape == initial_states.shape, (
-                f"initial_states should have shape={jnp.array(tree_flatten(self.env.init_states())[0]).T.shape}"
-            )
-            obs, states = self.env.reset(
-                initial_states=tree_unflatten(
-                    self.states_tree_struct, initial_states.T
-                )
-            )
+            assert (
+                jnp.array(tree_flatten(self.env.init_states())[0]).T.shape == initial_states.shape
+            ), f"initial_states should have shape={jnp.array(tree_flatten(self.env.init_states())[0]).T.shape}"
+            obs, states = self.env.reset(initial_states=tree_unflatten(self.states_tree_struct, initial_states.T))
         else:
             obs, states = self.env.reset()
         self.states = jnp.array(tree_flatten(states)[0]).T
