@@ -9,4 +9,5 @@ gymnasium>=0.28.1
 pytest-cov
 diffrax >= 0.3.1
 jax-dataclasses >= 1.5.0
+sphinx >= 5.0.2
 
