@@ -30,11 +30,8 @@ class Box(Space):
 
     @partial(jax.jit, static_argnums=0)
     def sample(self, rng: chex.PRNGKey):
-        return jax.random.uniform(rng, shape=self.shape, minval=self.low, maxval=self.high
-                                  ).astype(self.dtype)
+        return jax.random.uniform(rng, shape=self.shape, minval=self.low, maxval=self.high).astype(self.dtype)
 
     def contains(self, x: Any) -> bool:
-        in_range = jnp.logical_and(
-            jnp.all(x >= self.low), jnp.all(x <= self.high)
-        )
+        in_range = jnp.logical_and(jnp.all(x >= self.low), jnp.all(x <= self.high))
         return in_range

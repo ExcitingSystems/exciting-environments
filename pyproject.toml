@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exciting_environments"
-version = "0.0.1"
+name = "exciting_environments_test"
+version = "0.0.11"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
 ]
