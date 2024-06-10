@@ -155,7 +155,7 @@ class CartPole(core_env.CoreEnvironment):
             states: The computed states after the one step simulation.
         """
 
-        env_states = states.physical_states
+        physical_states = states.physical_states
         args = (action, static_params)
 
         def vector_field(t, y, args):
@@ -190,10 +190,10 @@ class CartPole(core_env.CoreEnvironment):
         t1 = self.tau
         y0 = tuple(
             [
-                env_states.deflection,
-                env_states.velocity,
-                env_states.theta,
-                env_states.omega,
+                physical_states.deflection,
+                physical_states.velocity,
+                physical_states.theta,
+                physical_states.omega,
             ]
         )
         env_state = self._solver.init(term, t0, t1, y0, args)
@@ -213,6 +213,67 @@ class CartPole(core_env.CoreEnvironment):
         )
         opt = None  # Optional(something=...)
         return self.States(physical_states=phys, PRNGKey=None, optional=opt)
+
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    def _ode_solver_simulate_ahead(self, states, actions, static_params, obs_stepsize, action_stepsize):
+        """Computes states by simulating a trajectory with given actions."""
+
+        physical_states = states.physical_states
+        args = (actions, static_params)
+
+        def force(t, args):
+            actions = args
+            return actions[(t / action_stepsize).astype(int)]
+
+        def vector_field(t, y, args):
+            deflection, velocity, theta, omega = y
+            actions, params = args
+            d_omega = (
+                params.g * jnp.sin(theta)
+                + jnp.cos(theta)
+                * (
+                    (
+                        -force(t, actions)
+                        - params.m_p * params.l * (omega**2) * jnp.sin(theta)
+                        + params.mu_c * jnp.sign(velocity)
+                    )
+                    / (params.m_c + params.m_p)
+                )
+                - (params.mu_p * omega) / (params.m_p * params.l)
+            ) / (params.l * (4 / 3 - (params.m_p * (jnp.cos(theta)) ** 2) / (params.m_c + params.m_p)))
+
+            d_velocity = (
+                force(t, actions)
+                + params.m_p * params.l * ((omega**2) * jnp.sin(theta) - d_omega * jnp.cos(theta))
+                - params.mu_c * jnp.sign(velocity)
+            ) / (params.m_c + params.m_p)
+            d_theta = omega
+            d_deflection = velocity
+            d_y = d_deflection, d_velocity, d_theta, d_omega
+            return d_y
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = action_stepsize * actions.shape[0]
+        physical_states_array, _ = tree_flatten(physical_states)
+        y0 = tuple(physical_states_array)
+        saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))  #
+        sol = diffrax.diffeqsolve(term, self._solver, t0, t1, dt0=obs_stepsize, y0=y0, args=args, saveat=saveat)
+
+        deflection_t = sol.ys[0]
+        velocity_t = sol.ys[1]
+        theta_t = sol.ys[2]
+        omega_t = sol.ys[3]
+
+        # keep theta between -pi and pi
+        theta_t = ((theta_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
+
+        physical_states = self.PhysicalStates(
+            deflection=deflection_t, velocity=velocity_t, theta=theta_t, omega=omega_t
+        )
+        opt = None
+        PRNGKey = None
+        return self.States(physical_states=physical_states, PRNGKey=PRNGKey, optional=opt)
 
     @partial(jax.jit, static_argnums=0)
     def init_states(self):

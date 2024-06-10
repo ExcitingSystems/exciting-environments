@@ -182,6 +182,49 @@ class CoreEnvironment(ABC):
 
         return obs, reward, terminated, truncated, states
 
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    def sim_ahead(self, states, actions, env_properties, obs_stepsize, action_stepsize):
+
+        # compute states trajectory for given actions
+        states_t = self._ode_solver_simulate_ahead(
+            states, actions, env_properties.static_params, obs_stepsize, action_stepsize
+        )
+
+        # generate observations for all timesteps
+        obs = jax.vmap(self.generate_observation, in_axes=(0, self.in_axes_env_properties.physical_constraints))(
+            states_t, self.env_properties.physical_constraints
+        )
+
+        # generate rewards - use obs[1:] because obs[0] is observation for the initial state
+        reward = jax.vmap(self.reward_func, in_axes=(0, 0, self.in_axes_env_properties.action_constraints))(
+            obs[1:],
+            jnp.expand_dims(jnp.repeat(actions, int(action_stepsize / obs_stepsize)), 1),
+            self.env_properties.action_constraints,
+        )
+
+        # generate truncated
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties.physical_constraints))(
+            states_t, self.env_properties.physical_constraints
+        )
+
+        # generate terminated
+        # delete first state because its initial state of simulation and not relevant for terminated
+        states_flatten, struct = tree_flatten(states_t)
+        states_t_1 = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0))(states_t_1, reward)
+
+        return obs, reward, truncated, terminated
+
+    @partial(jax.jit, static_argnums=[0, 3, 4])
+    def vmap_sim_ahead(self, states, actions, obs_stepsize, action_stepsize):
+
+        # vmap single operations
+        obs, rewards, truncated, terminated = jax.vmap(
+            self.sim_ahead, in_axes=(0, 0, self.in_axes_env_properties, None, None)
+        )(states, actions, self.env_properties, obs_stepsize, action_stepsize)
+
+        return obs, rewards, truncated, terminated
+
     @property
     @abstractmethod
     def obs_description(self):
