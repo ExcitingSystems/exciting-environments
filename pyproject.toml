@@ -3,10 +3,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exciting_environments_test"
+name = "exciting_environments"
 version = "0.0.11"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
+  { name="Hendrik Vater", email="vater@lea.uni-paderborn.de" },
 ]
 description = "Physical differential equations wrapped into Gymnasium environments"
 readme = "README.md"
