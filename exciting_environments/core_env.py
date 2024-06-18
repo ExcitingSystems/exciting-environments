@@ -1,15 +1,15 @@
+from abc import ABC
+from abc import abstractmethod
+from functools import partial
+from dataclasses import fields
+from typing import Callable
+
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+from jax.tree_util import tree_flatten, tree_unflatten
 import jax_dataclasses as jdc
 import diffrax
 import chex
-from functools import partial
-from abc import ABC
-from abc import abstractmethod
-from exciting_environments import spaces
-from dataclasses import fields
-from typing import Callable
 
 
 class CoreEnvironment(ABC):
@@ -31,14 +31,14 @@ class CoreEnvironment(ABC):
     ):
         """
         Args:
-            batch_size(int): Number of training examples utilized in one iteration.
-            physical_constraints(jdc.pytree_dataclass): Constraints of physical states of the environment.
-            action_constraints(jdc.pytree_dataclass): Constraints of actions.
-            static_params(jdc.pytree_dataclass): Parameters of environment which do not change during simulation.
-            tau(float): Duration of one control step in seconds. Default: 1e-4.
-            solver(diffrax.solver): Solver used to compute states for next step.
-            reward_func(Callable): Reward function for training. Needs observation vector, action and action_constraints as Parameters.
-                                    Default: None (default_reward_func from class)
+            batch_size (int): Number of parallel environment simulations.
+            physical_constraints (jdc.pytree_dataclass): Constraints of the physical state of the environment.
+            action_constraints (jdc.pytree_dataclass): Constraints of the input/action.
+            static_params (jdc.pytree_dataclass): Parameters of environment which do not change during simulation.
+            tau (float): Duration of one control step in seconds. Default: 1e-4.
+            solver (diffrax.solver): ODE solver used to approximate the ODE solution.
+            reward_func (Callable): Reward function for training. Needs observation vector, action and action_constraints as Parameters.
+                Default: None (default_reward_func from class)
         """
         self.batch_size = batch_size
         self.tau = tau
@@ -61,7 +61,7 @@ class CoreEnvironment(ABC):
 
     @abstractmethod
     @jdc.pytree_dataclass
-    class PhysicalStates:
+    class PhysicalState:
         pass
 
     @abstractmethod
@@ -80,16 +80,16 @@ class CoreEnvironment(ABC):
         pass
 
     @jdc.pytree_dataclass
-    class States:
-        """Dataclass used for simulation which contains environment specific dataclasses."""
+    class State:
+        """Stores the state of the simulation."""
 
-        physical_states: jdc.pytree_dataclass
+        physical_state: jdc.pytree_dataclass
         PRNGKey: jax.Array
         optional: jdc.pytree_dataclass
 
     @jdc.pytree_dataclass
     class EnvProperties:
-        """Dataclass used for simulation which contains environment specific dataclasses."""
+        """Stores properties of the environment that stay constant during simulation."""
 
         physical_constraints: jdc.pytree_dataclass
         action_constraints: jdc.pytree_dataclass
@@ -114,116 +114,105 @@ class CoreEnvironment(ABC):
 
             axes.append(in_axes_physical)
 
-        physical_axes = self.PhysicalStates(*tuple(axes[0]))
+        physical_axes = self.PhysicalState(*tuple(axes[0]))
         action_axes = self.Actions(*tuple(axes[1]))
         param_axes = self.StaticParams(*tuple(axes[2]))
 
         return self.EnvProperties(physical_axes, action_axes, param_axes)
 
     @partial(jax.jit, static_argnums=0)
-    def step(self, states, action, env_properties):
+    def step(self, state, action, env_properties):
         """Computes one simulation step for one batch.
 
         Args:
-            states: The states from which to calculate states for the next step.
+            state: The current state of the simulation from which to calculate the next state.
             action: The action to apply to the environment.
-            env_properties: Contains action/state constraints and static parameter.
+            env_properties: Contains action/state constraints and static parameters.
 
         Returns:
-            Multiple Outputs:
-
             observation: The gathered observation.
             reward: Amount of reward received for the last step.
             terminated: Flag, indicating if Agent has reached the terminal state.
             truncated: Flag, e.g. indicating if state has gone out of bounds.
-            states: New states for the next step.
+            state: New state for the next step.
         """
 
-        # ode step
-        states = self._ode_solver_step(states, action, env_properties.static_params)
-
-        # observation
-        obs = self.generate_observation(states, env_properties.physical_constraints)
-
-        # reward
+        state = self._ode_solver_step(state, action, env_properties.static_params)
+        obs = self.generate_observation(state, env_properties.physical_constraints)
         reward = self.reward_func(obs, action, env_properties.action_constraints)
+        terminated = self.generate_terminated(state, reward)
 
-        # bound check
-        truncated = self.generate_truncated(states, env_properties.physical_constraints)
+        # check constraints
+        truncated = self.generate_truncated(state, env_properties.physical_constraints)
 
-        terminated = self.generate_terminated(states, reward)
-
-        return obs, reward, terminated, truncated, states
+        return obs, reward, terminated, truncated, state
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_step(self, action, states):
+    def vmap_step(self, action, state):
         """JAX jit compiled and vmapped step for batch_size of environment.
 
         Args:
-            states: The states from which to calculate states for the next step.
-            action: The action to apply to the environment.
+            state: The current state of the simulation from which to calculate the next
+                state (shape=(batch_size, state_dim)).
+            action: The action to apply to the environment (shape=batch_size, action_dim).
             env_properties: Contains action/state constraints and static parameters.
 
-
         Returns:
-            Multiple Outputs:
-
             observation: The gathered observations (shape=(batch_size,obs_dim)).
             reward: Amount of reward received for the last step (shape=(batch_size,1)).
             terminated: Flag, indicating if Agent has reached the terminal state (shape=(batch_size,1)).
-            truncated: Flag, indicating if state has gone out of bounds (shape=(batch_size,states_dim)).
-            states: New states for the next step.
-
+            truncated: Flag, indicating if state has gone out of bounds (shape=(batch_size,state_dim)).
+            state: New state for the next step.
         """
-        # vmap single operations
-        obs, reward, terminated, truncated, states = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
-            states, action, self.env_properties
-        )
 
-        return obs, reward, terminated, truncated, states
+        # vmap single operations
+        obs, reward, terminated, truncated, state = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
+            state, action, self.env_properties
+        )
+        return obs, reward, terminated, truncated, state
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
-    def sim_ahead(self, states, actions, env_properties, obs_stepsize, action_stepsize):
-
+    def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):
+        """ """
         # compute states trajectory for given actions
-        states_t = self._ode_solver_simulate_ahead(
-            states, actions, env_properties.static_params, obs_stepsize, action_stepsize
+        states = self._ode_solver_simulate_ahead(
+            init_state, actions, env_properties.static_params, obs_stepsize, action_stepsize
         )
 
         # generate observations for all timesteps
-        obs = jax.vmap(self.generate_observation, in_axes=(0, self.in_axes_env_properties.physical_constraints))(
-            states_t, self.env_properties.physical_constraints
-        )
+        observations = jax.vmap(
+            self.generate_observation, in_axes=(0, self.in_axes_env_properties.physical_constraints)
+        )(states, self.env_properties.physical_constraints)
 
         # generate rewards - use obs[1:] because obs[0] is observation for the initial state
         reward = jax.vmap(self.reward_func, in_axes=(0, 0, self.in_axes_env_properties.action_constraints))(
-            obs[1:],
+            observations[1:],
             jnp.expand_dims(jnp.repeat(actions, int(action_stepsize / obs_stepsize)), 1),
             self.env_properties.action_constraints,
         )
 
         # generate truncated
         truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties.physical_constraints))(
-            states_t, self.env_properties.physical_constraints
+            states, self.env_properties.physical_constraints
         )
 
         # generate terminated
         # delete first state because its initial state of simulation and not relevant for terminated
-        states_flatten, struct = tree_flatten(states_t)
-        states_t_1 = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
-        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0))(states_t_1, reward)
+        states_flatten, struct = tree_flatten(states)
+        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0))(states_without_init_state, reward)
 
-        return obs, reward, truncated, terminated
+        return observations, reward, truncated, terminated
 
     @partial(jax.jit, static_argnums=[0, 3, 4])
-    def vmap_sim_ahead(self, states, actions, obs_stepsize, action_stepsize):
+    def vmap_sim_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
 
         # vmap single operations
-        obs, rewards, truncated, terminated = jax.vmap(
+        observations, rewards, truncated, terminated = jax.vmap(
             self.sim_ahead, in_axes=(0, 0, self.in_axes_env_properties, None, None)
-        )(states, actions, self.env_properties, obs_stepsize, action_stepsize)
+        )(init_state, actions, self.env_properties, obs_stepsize, action_stepsize)
 
-        return obs, rewards, truncated, terminated
+        return observations, rewards, truncated, terminated
 
     @property
     @abstractmethod
@@ -234,44 +223,44 @@ class CoreEnvironment(ABC):
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def default_reward_func(self, obs, action):
-        """Returns the default RewardFunction of the environment."""
+        """Returns the default reward function of the environment."""
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
-    def generate_observation(self, states):
+    def generate_observation(self, state):
         """Returns observation."""
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
-    def generate_truncated(self, states):
+    def generate_truncated(self, state):
         """Returns truncated information."""
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
-    def generate_terminated(self, states, reward):
+    def generate_terminated(self, state, reward):
         """Returns terminated information."""
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
-    def _ode_solver_step(self, states_norm, action_norm, state_normalizer, action_normalizer, params):
-        """Computes states by simulating one step.
+    def _ode_solver_step(self, state, action, static_params):
+        """Computes the next state by simulating one step.
 
         Args:
-            states: The states from which to calculate states for the next step.
-            action: The action to apply to the environment.
+            state: The current state of the simulation from which to calculate the next
+                state with shape=(state_dim,).
+            action: The action to apply to the environment with shape=(action_dim,).
             static_params: Parameter of the environment, that do not change over time.
 
         Returns:
-            states: The computed states after the one step simulation.
+            next_state: The computed state after the one step simulation.
         """
-
         return
 
     @abstractmethod
-    def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
+    def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial values."""
         return
