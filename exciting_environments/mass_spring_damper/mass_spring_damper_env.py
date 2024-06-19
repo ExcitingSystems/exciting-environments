@@ -40,7 +40,7 @@ class MassSpringDamper(core_env.CoreEnvironment):
         >>> gym_msd.reset()
         >>>
         >>> # Perform step
-        >>> obs,reward,terminated,truncated,info= gym_msd.step(action=jnp.ones(4).reshape(-1,1))
+        >>> obs,reward,terminated,truncated = gym_msd.step(action=jnp.ones(4).reshape(-1,1))
         >>>
 
     """

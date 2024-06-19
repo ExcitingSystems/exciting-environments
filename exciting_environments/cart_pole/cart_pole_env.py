@@ -38,7 +38,7 @@ class CartPole(core_env.CoreEnvironment):
         >>> gym_cartpole.reset()
         >>>
         >>> # Perform step
-        >>> obs,reward,terminated,truncated,info= gym_cartpole.step(action=jnp.ones(5).reshape(-1,1))
+        >>> obs,reward,terminated,truncated = gym_cartpole.step(action=jnp.ones(5).reshape(-1,1))
         >>>
 
     """

@@ -31,7 +31,7 @@ class Pendulum(core_env.CoreEnvironment):
         >>> from exciting_environments import GymWrapper
         >>>
         >>> # Create the environment
-        >>> pend=excenvs.Pendulum(batch_size=4,action_constraints={"torque":10})
+        >>> pend=excenvs.Pendulum(batch_size=4, action_constraints={"torque": 10}, tau=2e-2)
         >>>
         >>> # Use GymWrapper for Simulation (optional)
         >>> gym_pend=GymWrapper(env=pend)
@@ -40,7 +40,7 @@ class Pendulum(core_env.CoreEnvironment):
         >>> gym_pend.reset()
         >>>
         >>> # Perform step
-        >>> obs, reward, terminated, truncated, info = gym_pend.step(action=jnp.ones(4).reshape(-1,1))
+        >>> obs, reward, terminated, truncated = gym_pend.step(action=jnp.ones(4).reshape(-1,1))
         >>>
 
     """
