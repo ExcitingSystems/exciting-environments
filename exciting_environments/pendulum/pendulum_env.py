@@ -169,7 +169,7 @@ class Pendulum(core_env.CoreEnvironment):
     def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
         """Computes states by simulating a trajectory with given actions."""
 
-        physical_state = init_state.physical_state
+        init_physical_state = init_state.physical_state
         args = (actions, static_params)
 
         def force(t, args):
@@ -189,8 +189,8 @@ class Pendulum(core_env.CoreEnvironment):
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = action_stepsize * actions.shape[0]
-        physical_state_array, _ = tree_flatten(physical_state)
-        y0 = tuple(physical_state_array)
+        init_physical_state_array, _ = tree_flatten(init_physical_state)
+        y0 = tuple(init_physical_state_array)
         saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))  #
         sol = diffrax.diffeqsolve(term, self._solver, t0, t1, dt0=obs_stepsize, y0=y0, args=args, saveat=saveat)
 
