@@ -54,6 +54,9 @@ class CoreEnvironment(ABC):
         else:
             self.reward_func = self.default_reward_func
 
+        self.action_dim = len(fields(self.Action))
+        self.physical_state_dim = len(fields(self.PhysicalState))
+
     @property
     def default_reward_function(self):
         """Returns the default reward function for the given environment."""
@@ -136,6 +139,16 @@ class CoreEnvironment(ABC):
             truncated: Flag, e.g. indicating if state has gone out of bounds.
             state: New state for the next step.
         """
+        assert action.shape == (self.action_dim,), (
+            f"The action needs to be of shape (action_dim,) which is "
+            + f"{(self.action_dim,)}, but {action.shape} is given"
+        )
+
+        physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
+        assert physical_state_shape == (self.physical_state_dim,), (
+            "The physical state needs to be of shape (physical_state_dim,) which is "
+            + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
+        )
 
         state = self._ode_solver_step(state, action, env_properties.static_params)
         obs = self.generate_observation(state, env_properties.physical_constraints)
@@ -154,7 +167,7 @@ class CoreEnvironment(ABC):
         Args:
             state: The current state of the simulation from which to calculate the next
                 state (shape=(batch_size, state_dim)).
-            action: The action to apply to the environment (shape=batch_size, action_dim).
+            action: The action to apply to the environment (shape=(batch_size, action_dim)).
             env_properties: Contains action/state constraints and static parameters.
 
         Returns:
@@ -164,6 +177,24 @@ class CoreEnvironment(ABC):
             truncated: Flag, indicating if state has gone out of bounds (shape=(batch_size,state_dim)).
             state: New state for the next step.
         """
+        assert action.shape == (
+            self.batch_size,
+            self.action_dim,
+        ), (
+            "The action needs to be of shape (batch_size, action_dim) which is "
+            + f"{(self.batch_size, self.action_dim)}, but {action.shape} is given"
+        )
+
+        physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
+        assert physical_state_shape == (
+            (
+                self.batch_size,
+                self.physical_state_dim,
+            )
+        ), (
+            "The physical state needs to be of shape (batch_size, physical_state_dim) which is "
+            + f"{(self.batch_size, self.physical_state_dim)}, but {physical_state_shape} is given"
+        )
 
         # vmap single operations
         obs, reward, terminated, truncated, state = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
@@ -174,6 +205,17 @@ class CoreEnvironment(ABC):
     @partial(jax.jit, static_argnums=[0, 4, 5])
     def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):
         """ """
+        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+
+        init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
+        assert init_physical_state_shape == (self.physical_state_dim,), (
+            "The initial physical state needs to be of shape (env.physical_state_dim,) which is "
+            + f"{(self.physical_state_dim,)}, but {init_physical_state_shape} is given"
+        )
+
         # compute states trajectory for given actions
         states = self._ode_solver_simulate_ahead(
             init_state, actions, env_properties.static_params, obs_stepsize, action_stepsize
@@ -206,6 +248,20 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=[0, 3, 4])
     def vmap_sim_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
+
+        assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
+        assert (
+            actions.shape[0] == self.batch_size
+        ), f"The first dimension does not correspond to the batch size which is {self.batch_size}, but {actions.shape[0]} is given"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+
+        init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
+        assert init_physical_state_shape == (self.batch_size, self.physical_state_dim), (
+            "The initial physical state needs to be of shape (batch_size, physical_state_dim,) which is "
+            + f"{(self.batch_size, self.physical_state_dim)}, but {init_physical_state_shape} is given"
+        )
 
         # vmap single operations
         observations, rewards, truncated, terminated = jax.vmap(

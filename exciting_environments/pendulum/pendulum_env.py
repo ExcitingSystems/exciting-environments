@@ -174,7 +174,7 @@ class Pendulum(core_env.CoreEnvironment):
 
         def force(t, args):
             actions = args
-            return actions[jnp.array(t / self.tau, int)]
+            return actions[jnp.array(t / self.tau, int), 0]
 
         def vector_field(t, y, args):
             theta, omega = y
