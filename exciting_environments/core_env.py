@@ -76,7 +76,7 @@ class CoreEnvironment(ABC):
 
     @abstractmethod
     @jdc.pytree_dataclass
-    class Actions:
+    class Action:
         pass
 
     @jdc.pytree_dataclass
@@ -115,7 +115,7 @@ class CoreEnvironment(ABC):
             axes.append(in_axes_physical)
 
         physical_axes = self.PhysicalState(*tuple(axes[0]))
-        action_axes = self.Actions(*tuple(axes[1]))
+        action_axes = self.Action(*tuple(axes[1]))
         param_axes = self.StaticParams(*tuple(axes[2]))
 
         return self.EnvProperties(physical_axes, action_axes, param_axes)
@@ -148,7 +148,7 @@ class CoreEnvironment(ABC):
         return obs, reward, terminated, truncated, state
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_step(self, action, state):
+    def vmap_step(self, state, action):
         """JAX jit compiled and vmapped step for batch_size of environment.
 
         Args:
