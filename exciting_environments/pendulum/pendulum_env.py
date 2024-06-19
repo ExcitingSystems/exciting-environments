@@ -4,7 +4,7 @@ from typing import Callable
 import numpy as np
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+from jax.tree_util import tree_flatten, tree_structure
 import jax_dataclasses as jdc
 import diffrax
 import chex

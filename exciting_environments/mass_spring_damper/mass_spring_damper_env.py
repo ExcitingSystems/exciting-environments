@@ -1,13 +1,15 @@
+from functools import partial
+from typing import Callable
+
 import numpy as np
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+from jax.tree_util import tree_flatten, tree_structure
 import jax_dataclasses as jdc
 import chex
-from functools import partial
 import diffrax
+
 from exciting_environments import core_env
-from typing import Callable
 
 
 class MassSpringDamper(core_env.CoreEnvironment):
