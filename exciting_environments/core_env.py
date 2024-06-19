@@ -150,6 +150,9 @@ class CoreEnvironment(ABC):
             + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
         )
 
+        # denormalize action
+        action = action * jnp.array(tree_flatten(self.env_properties.action_constraints)[0]).T
+
         state = self._ode_solver_step(state, action, env_properties.static_params)
         obs = self.generate_observation(state, env_properties.physical_constraints)
         reward = self.reward_func(obs, action, env_properties.action_constraints)
@@ -215,6 +218,9 @@ class CoreEnvironment(ABC):
             "The initial physical state needs to be of shape (env.physical_state_dim,) which is "
             + f"{(self.physical_state_dim,)}, but {init_physical_state_shape} is given"
         )
+
+        # denormalize actions
+        actions = actions * jnp.array(tree_flatten(self.env_properties.action_constraints)[0]).T
 
         # compute states trajectory for given actions
         states = self._ode_solver_simulate_ahead(

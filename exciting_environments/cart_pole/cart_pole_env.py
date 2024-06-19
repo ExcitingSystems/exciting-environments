@@ -25,6 +25,7 @@ class CartPole(core_env.CoreEnvironment):
 
     Example:
         >>> import jax
+        >>> import jax.numpy as jnp
         >>> import exciting_environments as excenvs
         >>> from exciting_environments import GymWrapper
         >>>

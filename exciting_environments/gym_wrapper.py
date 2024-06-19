@@ -63,9 +63,6 @@ class GymWrapper(ABC):
             truncated: Flag, indicating if state has gone out of bounds.
             state: New state for the next step.
         """
-        # denormalize action
-        action = action * jnp.array(tree_flatten(self.env.env_properties.action_constraints)[0]).T
-
         # transform array to dataclass defined in environment
         state = tree_unflatten(self.state_tree_struct, state.T)
 
