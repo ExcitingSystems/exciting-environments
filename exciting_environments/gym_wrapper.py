@@ -1,4 +1,3 @@
-from abc import ABC
 from functools import partial
 
 import jax
@@ -10,7 +9,7 @@ import chex
 from exciting_environments.registration import make
 
 
-class GymWrapper(ABC):
+class GymWrapper:
 
     def __init__(self, env):
 
