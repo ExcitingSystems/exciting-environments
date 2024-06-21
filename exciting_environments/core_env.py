@@ -14,9 +14,23 @@ import chex
 
 class CoreEnvironment(ABC):
     """
-    Description:
-        Core Structure of provided Environments.
+    Core Structure of provided Environments. Any new environments needs to inherit from this class
+    and implement its abstract properties and methods.
 
+    The simulations are all done with physical state space models. That means that the underlying description
+    of the system is given through the differential equation describing the relationship between
+    the change of the physical state x(t) w.r.t. the time as a function of the physical state and the
+    input/action u(t) applied:
+
+    dx(t)/dt = f(x(t), u(t)).
+
+    The actual outputs of these simulations are discretized from this equation through the use of
+    ODE solvers.
+
+    NOTE: There is a difference between the state of the environment and the physical state x(t)
+    of the underlying system. The former can also hold various helper variables such as PRNGKeys
+    for stochastic environments, while the latter is reserved for the actual physical state of the
+    ODE. The physical state is only a part of the full state.
     """
 
     def __init__(
@@ -29,7 +43,8 @@ class CoreEnvironment(ABC):
         solver=diffrax.Euler(),
         reward_func: Callable = None,
     ):
-        """
+        """Initialization of an environment.
+
         Args:
             batch_size (int): Number of parallel environment simulations.
             physical_constraints (jdc.pytree_dataclass): Constraints of the physical state of the environment.
@@ -65,26 +80,51 @@ class CoreEnvironment(ABC):
     @abstractmethod
     @jdc.pytree_dataclass
     class PhysicalState:
+        """The physical state x(t) of the underlying system and whose derivative
+        w.r.t. time is described in the underlying ODE.
+
+        The values stored in this dataclass are expected to be actual physical values
+        that are unnormalized.
+        """
+
         pass
 
     @abstractmethod
     @jdc.pytree_dataclass
     class Optional:
+        """Optional information that can change from iteration to iteration and that is
+        stored in the state of the system"""
+
         pass
 
     @abstractmethod
     @jdc.pytree_dataclass
     class StaticParams:
+        """Static parameters of the environment that stay constant during simulation.
+        This could be the length of a pendulum, the capacitance of a capacitor,
+        the mass of a specific element and similar..
+        """
+
         pass
 
     @abstractmethod
     @jdc.pytree_dataclass
     class Action:
+        """The input/action applied to the environment that is used to influence the
+        dynamics from the outside.
+
+        The values expected as input to the environment are to be normalized in [-1, 1]
+        for each dimension.
+
+        TODO: This kind of normalization is only really feasible for box constraints. This
+        might be subject to change in the future.
+        """
+
         pass
 
     @jdc.pytree_dataclass
     class State:
-        """Stores the state of the simulation."""
+        """Stores the state of the environment."""
 
         physical_state: jdc.pytree_dataclass
         PRNGKey: jax.Array
@@ -125,7 +165,7 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def step(self, state, action, env_properties):
-        """Computes one simulation step for one batch.
+        """Computes one JAX-JIT compiled simulation step for one batch.
 
         Args:
             state: The current state of the simulation from which to calculate the next state.
@@ -165,7 +205,7 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_step(self, state, action):
-        """JAX jit compiled and vmapped step for batch_size of environment.
+        """Computes one JAX-JIT compiled simulation step for multiple (batch_size) batches.
 
         Args:
             state: The current state of the simulation from which to calculate the next
@@ -207,7 +247,21 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):
-        """ """
+        """Computes multiple JAX-JIT compiled simulation steps for one batch.
+
+        The length of the set of inputs together with the action_stepsize determine the
+        overall length of the simulation -> overall_time = actions.shape[0] * action_stepsize
+        The actions are interpolated with zero order hold inbetween their values.
+
+        Args:
+            init_state: The initial state of the simulation
+            actions: A set of actions to be applied to the environment, the value changes every
+            action_stepsize (shape=(n_action_steps, action_dim))
+            env_properties: The constant properties of the simulation
+            obs_stepsize: The sampling time for the observations
+            action_stepsize: The time between changes in the input/action
+        """
+
         assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
         assert (
             actions.shape[-1] == self.action_dim
@@ -254,6 +308,20 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=[0, 3, 4])
     def vmap_sim_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
+        """Computes multiple JAX-JIT compiled simulation steps for multiple (batch_size) batches.
+
+        The length of the set of inputs together with the action_stepsize determine the
+        overall length of the simulation -> overall_time = actions.shape[1] * action_stepsize
+        The actions are interpolated with zero order hold inbetween their values.
+
+        Args:
+            init_state: The initial state of the simulation
+            actions: A set of actions to be applied to the environment, the value changes every
+            action_stepsize (shape=(batch_size, n_action_steps, action_dim))
+            env_properties: The constant properties of the simulation
+            obs_stepsize: The sampling time for the observations
+            action_stepsize: The time between changes in the input/action
+        """
 
         assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
