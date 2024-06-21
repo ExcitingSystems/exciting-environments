@@ -32,3 +32,8 @@ dependencies = [
 
 [project.urls]
 "Homepage" = "https://excitingsystems.github.io/exciting-environments/"
+
+[tool.setuptools]
+py-modules = [
+    "exciting_environments",
+]
