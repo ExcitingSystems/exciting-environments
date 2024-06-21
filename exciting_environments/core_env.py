@@ -302,9 +302,11 @@ class CoreEnvironment(ABC):
         # delete first state because its initial state of simulation and not relevant for terminated
         states_flatten, struct = tree_flatten(states)
         states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+        last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, -1:])
+
         terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0))(states_without_init_state, reward)
 
-        return observations, reward, truncated, terminated
+        return observations, reward, truncated, terminated, last_state
 
     @partial(jax.jit, static_argnums=[0, 3, 4])
     def vmap_sim_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
@@ -338,11 +340,11 @@ class CoreEnvironment(ABC):
         )
 
         # vmap single operations
-        observations, rewards, truncated, terminated = jax.vmap(
+        observations, rewards, truncated, terminated, last_state = jax.vmap(
             self.sim_ahead, in_axes=(0, 0, self.in_axes_env_properties, None, None)
         )(init_state, actions, self.env_properties, obs_stepsize, action_stepsize)
 
-        return observations, rewards, truncated, terminated
+        return observations, rewards, truncated, terminated, last_state
 
     @property
     @abstractmethod
