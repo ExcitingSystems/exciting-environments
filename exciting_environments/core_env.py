@@ -185,6 +185,11 @@ class CoreEnvironment(ABC):
         )
 
         physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
+
+        if physical_state_shape[0] == 1:
+            # allow batch_dim == 1
+            physical_state_shape = physical_state_shape[1:]
+
         assert physical_state_shape == (self.physical_state_dim,), (
             "The physical state needs to be of shape (physical_state_dim,) which is "
             + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
@@ -302,6 +307,8 @@ class CoreEnvironment(ABC):
         # delete first state because its initial state of simulation and not relevant for terminated
         states_flatten, struct = tree_flatten(states)
         states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+
+        # get last state so that the simulation can be continued from the end point
         last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, -1:])
 
         terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0))(states_without_init_state, reward)
