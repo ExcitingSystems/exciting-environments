@@ -33,3 +33,36 @@ print("observations shape:", observations.shape)
 which produces $5$ identical trajectories in parallel:
 
 ![example_trajectory_pendulum](fig/excenvs_pendulum_simulation_example.png)
+
+alternatively, simulate full trajectories:
+
+```py
+import jax.numpy as jnp
+import exciting_environments as excenvs
+import diffrax
+
+env = excenvs.make(
+    "Pendulum-v0", solver=diffrax.Tsit5(), batch_size=5, action_constraints={"torque": 15}, tau=2e-2
+) 
+obs, state = env.reset()
+
+actions = jnp.linspace(start=-1, stop=1, num=2000)[None, :, None]
+actions = actions.repeat(env.batch_size, axis=0)
+
+observations, rewards, terminations, truncations, last_state = env.vmap_sim_ahead(
+    init_state=state,
+    actions=actions,
+    obs_stepsize=env.tau,
+    action_stepsize=env.tau
+)
+
+print("actions shape:", actions.shape)
+print("observations shape:", observations.shape)
+```
+
+which produces $5$ identical trajectories in parallel as well:
+
+![example_trajectory_pendulum](fig/excenvs_pendulum_simulation_example_advanced.png)
+
+Note that in this case the Tsit5 ODE solver instead of the default explicit Euler is used.
+All solvers used here are from the diffrax library (https://docs.kidger.site/diffrax/).
