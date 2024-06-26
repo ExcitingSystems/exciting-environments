@@ -226,7 +226,7 @@ class CartPole(core_env.CoreEnvironment):
 
         def force(t, args):
             actions = args
-            return actions[jnp.array(t / self.tau, int), 0]
+            return actions[jnp.array(t / action_stepsize, int), 0]
 
         def vector_field(t, y, args):
             deflection, velocity, theta, omega = y
