@@ -48,42 +48,42 @@ class CoreEnvironment(ABC):
             action_constraints=action_constraints,
             static_params=static_params,
         )
-        self.in_axes_env_properties = self.create_in_axes_env_properties()
-        if reward_func:
-            self.reward_func = reward_func
-        else:
-            self.reward_func = self.default_reward_func
+        self.in_axes_env_properties = self.create_in_axes_dataclass(self.env_properties)
+        # if reward_func:
+        #     self.reward_func = reward_func
+        # else:
+        #     self.reward_func = self.default_reward_func
 
-    @property
-    def default_reward_function(self):
-        """Returns the default reward function for the given environment."""
-        return self.default_reward_func
+    # @property
+    # def default_reward_function(self):
+    #     """Returns the default reward function for the given environment."""
+    #     return self.default_reward_func
 
-    @abstractmethod
-    @jdc.pytree_dataclass
-    class PhysicalStates:
-        pass
+    # @abstractmethod
+    # @jdc.pytree_dataclass
+    # class PhysicalStates:
+    #     pass
 
-    @abstractmethod
-    @jdc.pytree_dataclass
-    class Optional:
-        pass
+    # @abstractmethod
+    # @jdc.pytree_dataclass
+    # class Optional:
+    #     pass
 
-    @abstractmethod
-    @jdc.pytree_dataclass
-    class StaticParams:
-        pass
+    # @abstractmethod
+    # @jdc.pytree_dataclass
+    # class StaticParams:
+    #     pass
 
-    @abstractmethod
-    @jdc.pytree_dataclass
-    class Actions:
-        pass
+    # @abstractmethod
+    # @jdc.pytree_dataclass
+    # class Actions:
+    #     pass
 
     @jdc.pytree_dataclass
     class States:
         """Dataclass used for simulation which contains environment specific dataclasses."""
 
-        physical_states: jdc.pytree_dataclass
+        physical_state: jdc.pytree_dataclass
         PRNGKey: jax.Array
         optional: jdc.pytree_dataclass
 
@@ -95,30 +95,34 @@ class CoreEnvironment(ABC):
         action_constraints: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
 
-    def create_in_axes_env_properties(self):
-        axes = []
-        """Returns Dataclass for in_axes to use jax.vmap."""
-        for field in fields(self.env_properties):
-
-            values = list(vars(getattr(self.env_properties, field.name)).values())
-            names = list(vars(getattr(self.env_properties, field.name)).keys())
-            in_axes_physical = []
-            for v, n in zip(values, names):
-                if jnp.isscalar(v):
-                    in_axes_physical.append(None)
+    def create_in_axes_dataclass(self, dataclass):
+        with jdc.copy_and_mutate(dataclass, validate=False) as dataclass_in_axes:
+            for field in fields(dataclass_in_axes):
+                name = field.name
+                value = getattr(dataclass_in_axes, name)
+                if jdc.is_dataclass(value):
+                    setattr(dataclass_in_axes, name, self.create_in_axes_dataclass(value))
+                elif jnp.isscalar(value):
+                    setattr(dataclass_in_axes, name, None)
                 else:
                     assert (
-                        len(v) == self.batch_size
-                    ), f"{n} in {field.name} is expected to be a scalar or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
-                    in_axes_physical.append(0)
+                        len(value) == self.batch_size
+                    ), f"{name} is expected to be a scalar a pytree_dataclass or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
+                    setattr(dataclass_in_axes, name, 0)
+        return dataclass_in_axes
 
-            axes.append(in_axes_physical)
-
-        physical_axes = self.PhysicalStates(*tuple(axes[0]))
-        action_axes = self.Actions(*tuple(axes[1]))
-        param_axes = self.StaticParams(*tuple(axes[2]))
-
-        return self.EnvProperties(physical_axes, action_axes, param_axes)
+    # def create_in_axes_dict(self, dict):
+    #     in_axes = dict.copy()
+    #     for k, value in in_axes.items():
+    #         in_axes[k] = 3
+    #         if jnp.isscalar(value):
+    #             in_axes[k] = None
+    #         else:
+    #             assert (
+    #                 len(value) == self.batch_size
+    #             ), f"{k} is expected to be a scalar or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
+    #             in_axes[k] = 0
+    #     return in_axes
 
     @partial(jax.jit, static_argnums=0)
     def step(self, states, action, env_properties):
@@ -188,45 +192,45 @@ class CoreEnvironment(ABC):
         """Returns a list of state names of all states in the observation."""
         return
 
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def default_reward_func(self, obs, action):
-        """Returns the default RewardFunction of the environment."""
-        return
+    # @partial(jax.jit, static_argnums=0)
+    # @abstractmethod
+    # def default_reward_func(self, obs, action):
+    #     """Returns the default RewardFunction of the environment."""
+    #     return
 
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_observation(self, states):
-        """Returns observation."""
-        return
+    # @partial(jax.jit, static_argnums=0)
+    # @abstractmethod
+    # def generate_observation(self, states):
+    #     """Returns observation."""
+    #     return
 
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_truncated(self, states):
-        """Returns truncated information."""
-        return
+    # @partial(jax.jit, static_argnums=0)
+    # @abstractmethod
+    # def generate_truncated(self, states):
+    #     """Returns truncated information."""
+    #     return
 
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_terminated(self, states, reward):
-        """Returns terminated information."""
-        return
+    # @partial(jax.jit, static_argnums=0)
+    # @abstractmethod
+    # def generate_terminated(self, states, reward):
+    #     """Returns terminated information."""
+    #     return
 
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def _ode_solver_step(self, states_norm, action_norm, state_normalizer, action_normalizer, params):
-        """Computes states by simulating one step.
+    # @partial(jax.jit, static_argnums=0)
+    # @abstractmethod
+    # def _ode_solver_step(self, states_norm, action_norm, state_normalizer, action_normalizer, params):
+    #     """Computes states by simulating one step.
 
-        Args:
-            states: The states from which to calculate states for the next step.
-            action: The action to apply to the environment.
-            static_params: Parameter of the environment, that do not change over time.
+    #     Args:
+    #         states: The states from which to calculate states for the next step.
+    #         action: The action to apply to the environment.
+    #         static_params: Parameter of the environment, that do not change over time.
 
-        Returns:
-            states: The computed states after the one step simulation.
-        """
+    #     Returns:
+    #         states: The computed states after the one step simulation.
+    #     """
 
-        return
+    #     return
 
     @abstractmethod
     def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
