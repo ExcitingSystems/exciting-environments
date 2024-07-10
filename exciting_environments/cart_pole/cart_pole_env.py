@@ -6,11 +6,11 @@ import jax_dataclasses as jdc
 import chex
 from functools import partial
 import diffrax
-from exciting_environments import core_env
+from exciting_environments import classic_core_env
 from typing import Callable
 
 
-class CartPole(core_env.CoreEnvironment):
+class CartPole(classic_core_env.ClassicCoreEnvironment):
     """
     State Variables
         ``['deflection', 'velocity', 'theta', 'omega']``
