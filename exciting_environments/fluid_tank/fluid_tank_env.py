@@ -107,6 +107,11 @@ class FluidTank(core_env.CoreEnvironment):
         y, _, _, env_state, _ = self._solver.step(term, t0, t1, y0, args, env_state, made_jump=False)
 
         h_k1 = y[0]
+
+        # clip to 0 because tank cannot be more empty than empty
+        # necessary because of ODE solver approximation
+        h_k1 = jnp.clip(h_k1, min=0)
+
         phys = self.PhysicalState(height=h_k1)
         opt = None  # Optional(something=...)
         return self.State(physical_state=phys, PRNGKey=None, optional=None)
