@@ -7,12 +7,7 @@ import chex
 from functools import partial
 import diffrax
 from exciting_environments import CoreEnvironment
-import exciting_environments as exc_envs
 from typing import Callable
-from scipy.io import loadmat
-from scipy.interpolate import RegularGridInterpolator, griddata
-from pathlib import Path
-import os
 
 
 t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])  # only for alpha/beta -> abc
@@ -108,7 +103,7 @@ class PMSM_Physical:
         tau: float = 1e-4,
         solver: Callable = diffrax.Euler(),
         control_state="torque",
-        saturated=False,
+        control_set="fcs",
     ):
 
         if not params:
@@ -119,20 +114,8 @@ class PMSM_Physical:
                 "l_q": 1.2e-3,
                 "psi_p": 65.6e-3,
                 "u_dc": 400,
-                "i_n": 250,
+                "i_n": 400,
                 "omega_el": 100 / 60 * 2 * jnp.pi,
-            }
-
-        if not params and saturated:
-            params = {
-                "p": 3,
-                "r_s": 15e-3,
-                "l_d": 0.37e-3,
-                "l_q": 1.2e-3,
-                "psi_p": 65.6e-3,
-                "u_dc": 400,
-                "i_n": 250,
-                "omega_el": 3000 / 60 * 2 * jnp.pi,
             }
 
         # self.params = params #TODO: In the future, params will be part of the state because they can change over time
@@ -140,48 +123,27 @@ class PMSM_Physical:
         self.tau = tau
         self._solver = solver
 
-        self._action_description = ["u_d", "u_q"]
-        if saturated:
-            saturated_quants = [
-                "L_dd",
-                "L_dq",
-                "L_qd",
-                "L_qq",
-                "Psi_d",
-                "Psi_q",
-            ]
-            self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_data.mat")
-            for q in saturated_quants:
-                qmap = self.pmsm_lut[q]
-                x, y = np.indices(qmap.shape)
-                nan_mask = np.isnan(qmap)
-                qmap[nan_mask] = griddata(
-                    (x[~nan_mask], y[~nan_mask]),  # points we know
-                    qmap[~nan_mask],  # values we know
-                    (x[nan_mask], y[nan_mask]),  # points to interpolate
-                    method="nearest",
-                )  # extrapolation can only do nearest
-                self.pmsm_lut[q] = qmap
-
-            i_max = params["i_n"]
-            assert i_max == 250, "LUT_data was generated with i_max=250"
-
-            n_grid_points_y, n_grid_points_x = self.pmsm_lut[saturated_quants[0]].shape
-            x, y = np.linspace(-i_max, 0, n_grid_points_x), np.linspace(-i_max, i_max, n_grid_points_y)
-            self.LUT_interpolators = {
-                q: jax.scipy.interpolate.RegularGridInterpolator(
-                    (x, y), self.pmsm_lut[q][:, :].T, method="linear", bounds_error=False, fill_value=None
-                )
-                for q in saturated_quants
-            }
+        if control_set == "ccs":
+            self._action_description = ["u_d", "u_q"]
+        elif control_set == "fcs":
+            self._action_description = ["switching_state"]
 
         params = self.PhysicalParams(**params)
         self.properties = self.Properties(
-            control_state=control_state, physical_params=params, deadtime=deadtime, saturated=saturated
+            control_set=control_set, control_state=control_state, physical_params=params, deadtime=deadtime
         )
 
         if deadtime > 0:
-            self.initial_action_buffer = jnp.zeros((self.batch_size, deadtime, 2))
+            if control_set == "ccs":
+                self.initial_action_buffer = jnp.zeros((self.batch_size, deadtime, 2))
+            elif control_set == "fcs":
+                initial_switching_state = jnp.zeros((self.batch_size, 1), dtype=int)
+                initial_eps = jnp.zeros((self.batch_size, 1))
+                initial_u_dq = jax.vmap(switching_state_to_dq, in_axes=(0, None, 0))(
+                    initial_switching_state, params.u_dc, initial_eps
+                )
+                initial_u_dq_expanded = initial_u_dq[:, None, :]  # Reshape to (8, 1, 2)
+                self.initial_action_buffer = jnp.tile(initial_u_dq_expanded, (1, deadtime, 1))
         else:
             self.initial_action_buffer = None
 
@@ -213,9 +175,9 @@ class PMSM_Physical:
     class Properties:
         """Dataclass containing the physical parameters of the environment."""
 
-        saturated: bool
         deadtime: jax.Array
         control_state: jax.Array
+        control_set: jax.Array
         physical_params: jdc.pytree_dataclass
 
     @partial(jax.jit, static_argnums=0)
@@ -234,48 +196,28 @@ class PMSM_Physical:
     def reset(self):
         return self.init_states()
 
-    def ode_step(self, system_state, u_dq, properties):
+    def ode_step(self, system_state, u_dq, static_params):
 
         omega_el = system_state.omega
         i_d = system_state.i_d
         i_q = system_state.i_q
         eps = system_state.epsilon
 
-        args = (u_dq, properties.physical_params)
-        if properties.saturated:
+        args = (u_dq, static_params)
 
-            def vector_field(t, y, args):
-                i_d, i_q = y
-                u_dq, params = args
-                p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
-                L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
-                psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]])
-                L_diff_inv = jnp.linalg.inv(L_diff)
-                J_k = jnp.array([[0, -1], [1, 0]])
-                i_dq = jnp.array([i_d, i_q]).reshape(-1, 1)
-                r_s = params.r_s
-                A_k = -L_diff_inv * r_s
-                B_k = L_diff_inv
-                E_k = -L_diff_inv @ J_k @ psi_dq.reshape(-1, 1) * omega_el
-                i_dq_diff = A_k @ i_dq + B_k @ u_dq.reshape(-1, 1) + E_k
-                d_y = i_dq_diff[0][0], i_dq_diff[0][1]  # [0]
-                return d_y
-
-        else:
-
-            def vector_field(t, y, args):
-                i_d, i_q = y
-                u_dq, params = args
-                u_d = u_dq[0]
-                u_q = u_dq[1]
-                l_d = params.l_d
-                l_q = params.l_q
-                psi_p = params.psi_p
-                r_s = params.r_s
-                i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
-                i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
-                d_y = i_d_diff, i_q_diff  # [0]
-                return d_y
+        def vector_field(t, y, args):
+            i_d, i_q = y
+            u_dq, params = args
+            u_d = u_dq[0]
+            u_q = u_dq[1]
+            l_d = params.l_d
+            l_q = params.l_q
+            psi_p = params.psi_p
+            r_s = params.r_s
+            i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
+            i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
+            d_y = i_d_diff, i_q_diff  # [0]
+            return d_y
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
@@ -286,37 +228,14 @@ class PMSM_Physical:
 
         i_d_k1 = y[0]
         i_q_k1 = y[1]
-
-        p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
-        L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
-        psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]])
-        L_diff_inv = jnp.linalg.inv(L_diff)
-        J_k = jnp.array([[0, -1], [1, 0]])
-        i_dq = jnp.array([i_d, i_q]).reshape(-1, 1)
-        r_s = properties.physical_params.r_s
-        A_k = -L_diff_inv * r_s
-        B_k = L_diff_inv
-        E_k = -L_diff_inv @ J_k @ psi_dq.reshape(-1, 1) * omega_el
-        i_dq_diff = A_k @ i_dq + B_k @ u_dq.reshape(-1, 1) + E_k
-
-        print(L_diff)
-
-        i_d_k1 = i_d + i_dq_diff[0][0] * self.tau
-        i_q_k1 = i_q + i_dq_diff[0][1] * self.tau
-
         with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
             system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
             system_state_next.i_d = i_d_k1
-            system_state_next.i_q = L_diff[0, 1]  # i_q_k1
+            system_state_next.i_q = i_q_k1
             system_state_next.torque = jnp.array(
                 [
                     currents_to_torque(
-                        i_d_k1,
-                        i_q_k1,
-                        properties.physical_params.p,
-                        properties.physical_params.psi_p,
-                        properties.physical_params.l_d,
-                        properties.physical_params.l_q,
+                        i_d_k1, i_q_k1, static_params.p, static_params.psi_p, static_params.l_d, static_params.l_q
                     )
                 ]
             )[0]
@@ -329,26 +248,33 @@ class PMSM_Physical:
 
         if properties.deadtime > 0:
 
-            # advanced_eps = step_eps(eps, system_state.omega, self.tau, tau_scale=properties.deadtime)
+            advanced_eps = step_eps(eps, system_state.omega, self.tau, tau_scale=properties.deadtime)
 
-            future_u_dq = action
+            if properties.control_set == "fcs":
+                future_u_dq = switching_state_to_dq(action, properties.physical_params.u_dc, advanced_eps)
+            else:
+                future_u_dq = action
 
             updated_buffer = jnp.concatenate([action_buffer[1:, :], future_u_dq[None, :]], axis=0)
             u_dq = action_buffer[0, :]
         else:
             updated_buffer = action_buffer
 
-            u_dq = action
+            if properties.control_set == "fcs":
+                u_dq = switching_state_to_dq(action, properties.physical_params.u_dc, eps)
+            else:
+                u_dq = action
 
-        u_dq = clip_in_abc_coordinates(
-            u_dq=u_dq,
-            u_dc=properties.physical_params.u_dc,
-            omega_el=system_state.omega,
-            eps=system_state.epsilon,
-            tau=self.tau,
-        )
+        if properties.control_set == "ccs":
+            u_dq = clip_in_abc_coordinates(
+                u_dq=u_dq,
+                u_dc=properties.physical_params.u_dc,
+                omega_el=system_state.omega,
+                eps=system_state.epsilon,
+                tau=self.tau,
+            )
 
-        next_system_state = self.ode_step(system_state, u_dq, properties)
+        next_system_state = self.ode_step(system_state, u_dq, properties.physical_params)
         with jdc.copy_and_mutate(next_system_state, validate=True) as next_system_state_update:
             next_system_state_update.action_buffer = updated_buffer
 
@@ -620,8 +546,8 @@ class PMSM(CoreEnvironment):
         return omegas, omegas_add, omegas_count, subkey
 
     def step(self, system_state, actions, env_properties):
-
-        actions *= env_properties.action_constraints.u_dq
+        if env_properties.static_params.physical_properties.control_set == "ccs":
+            actions *= env_properties.action_constraints.u_dq
         next_physical_state = self.pmsm_physical.simulation_step(
             system_state.physical_state, actions, env_properties.static_params.physical_properties
         )
@@ -633,12 +559,12 @@ class PMSM(CoreEnvironment):
             env_properties.static_params.p_reset,
         )
         # omegas = jnp.zeros((self.batch_size, 1)) + 0.2 #TODO: Remove
-        if env_properties.static_params.physical_properties.control_state == "currents":
+        if env_properties.static_params.physical_properties.control_set == "currents":
             i_d_ref, keys = self.update_reference(
-                system_state.optional.references[0], keys, env_properties.static_params.p_reference
+                system_state.optional.reference[0], keys, env_properties.static_params.p_reference
             )
             i_q_ref, keys = self.update_reference(
-                system_state.optional.references[1], keys, env_properties.static_params.p_reference
+                system_state.optional.reference[1], keys, env_properties.static_params.p_reference
             )
             references = jnp.hstack((i_d_ref, i_q_ref))
         else:

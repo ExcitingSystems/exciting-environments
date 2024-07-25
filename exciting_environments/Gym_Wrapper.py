@@ -71,12 +71,25 @@ class GymWrapper(ABC):
         # transform array to dataclass defined in environment
         states = tree_unflatten(self.states_tree_struct, states.T)
 
-        obs, reward, terminated, truncated, states = self.env.vmap_step(action, states)
+        obs, truncated, states = self.env.vmap_step(states, action)
 
+        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.env.in_axes_env_properties.action_constraints))(
+            obs, action, self.env.env_properties.action_constraints
+        )
+
+        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0))(states, reward)
         # transform dataclass to array
         states = jnp.array(tree_flatten(states)[0]).T
 
         return obs, reward, terminated, truncated, states
+
+    def generate_reward(self, obs, action, action_constraints):
+        reward = self.env.reward_func(obs, action, action_constraints)
+        return reward
+
+    def generate_terminated(self, states, reward):
+        terminated = self.env.generate_terminated(states, reward)
+        return terminated
 
     def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial states."""

@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import jax_dataclasses as jdc
+from jax import tree_flatten
 import diffrax
 import chex
 from functools import partial
@@ -109,6 +110,8 @@ class ClassicCoreEnvironment(CoreEnvironment):
             truncated: Flag, e.g. indicating if state has gone out of bounds.
             states: New states for the next step.
         """
+        # denormalize action
+        action = action * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
 
         # ode step
         states = self._ode_solver_step(states, action, env_properties.static_params)
@@ -116,15 +119,15 @@ class ClassicCoreEnvironment(CoreEnvironment):
         # observation
         obs = self.generate_observation(states, env_properties.physical_constraints)
 
-        # reward
-        reward = self.reward_func(obs, action, env_properties.action_constraints)
+        # # reward
+        # reward = self.reward_func(obs, action, env_properties.action_constraints)
 
         # bound check
         truncated = self.generate_truncated(states, env_properties.physical_constraints)
 
-        terminated = self.generate_terminated(states, reward)
+        # terminated = self.generate_terminated(states, reward)
 
-        return obs, reward, terminated, truncated, states
+        return obs, truncated, states
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
