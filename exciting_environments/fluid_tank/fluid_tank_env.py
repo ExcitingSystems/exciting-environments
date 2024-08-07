@@ -93,6 +93,8 @@ class FluidTank(core_env.CoreEnvironment):
             h = y[0]
             inflow, params = args
 
+            h = jnp.clip(h, min=0)
+
             dh_dt = inflow[0] / params.base_area - params.c_d * params.orifice_area / params.base_area * jnp.sqrt(
                 2 * params.g * h
             )
