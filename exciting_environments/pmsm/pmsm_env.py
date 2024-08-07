@@ -31,6 +31,14 @@ inverter_t_abc = jnp.array(
     ]
 )
 
+ROTATION_MAP = np.ones((2, 2, 2), dtype=np.complex64)
+ROTATION_MAP[1, 0, 1] = 0.5 * (1 + np.sqrt(3) * 1j)
+ROTATION_MAP[1, 1, 0] = 0.5 * (1 - np.sqrt(3) * 1j)
+ROTATION_MAP[0, 1, 0] = 0.5 * (-1 - np.sqrt(3) * 1j)
+ROTATION_MAP[0, 1, 1] = -1
+ROTATION_MAP[0, 0, 1] = 0.5 * (-1 + np.sqrt(3) * 1j)
+ROTATION_MAP = jnp.array(ROTATION_MAP)
+
 
 def t_dq_alpha_beta(eps):
     cos = jnp.cos(eps)
@@ -72,6 +80,19 @@ def step_eps(eps, omega_el, tau, tau_scale=1.0):
     return eps
 
 
+def apply_hex_constraint(u_albet):
+    """Clip voltages in alpha/beta coordinates into the voltage hexagon"""
+    u_albet_c = u_albet[0] + 1j * u_albet[1]
+    idx = (jnp.sin(jnp.angle(u_albet_c)[..., jnp.newaxis] - 2 / 3 * jnp.pi * jnp.arange(3)) >= 0).astype(int)
+    rot_vec = ROTATION_MAP[idx[0], idx[1], idx[2]]
+    # rotate sectors upwards
+    u_albet_c = jnp.multiply(u_albet_c, rot_vec)
+    u_albet_c = jnp.clip(u_albet_c.real, -2 / 3, 2 / 3) + 1j * u_albet_c.imag
+    u_albet_c = u_albet_c.real + 1j * jnp.clip(u_albet_c.imag, 0, 2 / 3 * jnp.sqrt(3))
+    u_albet_c = jnp.multiply(u_albet_c, jnp.conjugate(rot_vec))  # rotate back
+    return jnp.column_stack([u_albet_c.real, u_albet_c.imag])
+
+
 def clip_in_abc_coordinates(u_dq, u_dc, omega_el, eps, tau):
     eps_advanced = step_eps(eps, omega_el, tau, 0.5)
     u_abc = dq2abc(u_dq, eps_advanced)
@@ -111,18 +132,6 @@ class PMSM_Physical:
         saturated=False,
     ):
 
-        if not params:
-            params = {
-                "p": 3,
-                "r_s": 1,
-                "l_d": 0.37e-3,
-                "l_q": 1.2e-3,
-                "psi_p": 65.6e-3,
-                "u_dc": 400,
-                "i_n": 250,
-                "omega_el": 100 / 60 * 2 * jnp.pi,
-            }
-
         if not params and saturated:
             params = {
                 "p": 3,
@@ -133,6 +142,18 @@ class PMSM_Physical:
                 "u_dc": 400,
                 "i_n": 250,
                 "omega_el": 3000 / 60 * 2 * jnp.pi,
+            }
+
+        if not params:
+            params = {
+                "p": 3,
+                "r_s": 1,
+                "l_d": 0.37e-3,
+                "l_q": 1.2e-3,
+                "psi_p": 65.6e-3,
+                "u_dc": 400,
+                "i_n": 250,
+                "omega_el": 100 / 60 * 2 * jnp.pi,
             }
 
         # self.params = params #TODO: In the future, params will be part of the state because they can change over time
@@ -183,7 +204,7 @@ class PMSM_Physical:
         if deadtime > 0:
             self.initial_action_buffer = jnp.zeros((self.batch_size, deadtime, 2))
         else:
-            self.initial_action_buffer = None
+            self.initial_action_buffer = jnp.zeros((self.batch_size, 0, 2))  # None
 
     @jdc.pytree_dataclass
     class PhysicalParams:
@@ -234,9 +255,15 @@ class PMSM_Physical:
     def reset(self):
         return self.init_states()
 
+    @staticmethod
+    def t_dq_alpha_beta(eps):
+        cos = jnp.cos(eps)
+        sin = jnp.sin(eps)
+        return jnp.column_stack((cos, sin, -sin, cos)).reshape(2, 2)
+
     def ode_step(self, system_state, u_dq, properties):
 
-        omega_el = system_state.omega
+        omega_el = properties.physical_params.omega_el  # system_state.omega
         i_d = system_state.i_d
         i_q = system_state.i_q
         eps = system_state.epsilon
@@ -247,18 +274,24 @@ class PMSM_Physical:
             def vector_field(t, y, args):
                 i_d, i_q = y
                 u_dq, params = args
+
+                J_k = jnp.array([[0, -1], [1, 0]])
+                i_dq = jnp.array([i_d, i_q])  # .reshape(-1, 1)
+                q = self.t_dq_alpha_beta(self.tau * omega_el)
+                # print(self.eps)
                 p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
                 L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
-                psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]])
                 L_diff_inv = jnp.linalg.inv(L_diff)
-                J_k = jnp.array([[0, -1], [1, 0]])
-                i_dq = jnp.array([i_d, i_q]).reshape(-1, 1)
-                r_s = params.r_s
-                A_k = -L_diff_inv * r_s
-                B_k = L_diff_inv
-                E_k = -L_diff_inv @ J_k @ psi_dq.reshape(-1, 1) * omega_el
-                i_dq_diff = A_k @ i_dq + B_k @ u_dq.reshape(-1, 1) + E_k
-                d_y = i_dq_diff[0][0], i_dq_diff[0][1]  # [0]
+                psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]]).reshape(-1)
+                di_dq_1 = jnp.einsum(
+                    "ij,j->i",
+                    (-L_diff_inv * properties.physical_params.r_s),
+                    i_dq,
+                )
+                di_dq_2 = jnp.einsum("ik,k->i", L_diff_inv, u_dq)
+                di_dq_3 = jnp.einsum("ij,jk,k->i", -L_diff_inv, J_k, psi_dq) * omega_el
+                i_dq_diff = di_dq_1 + di_dq_2 + di_dq_3
+                d_y = i_dq_diff[0], i_dq_diff[1]
                 return d_y
 
         else:
@@ -287,27 +320,29 @@ class PMSM_Physical:
         i_d_k1 = y[0]
         i_q_k1 = y[1]
 
+        i_dq = jnp.array([i_d, i_q])  # .reshape(-1, 1)
+        q = self.t_dq_alpha_beta(self.tau * omega_el)
+        # print(self.eps)
         p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
         L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
-        psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]])
         L_diff_inv = jnp.linalg.inv(L_diff)
-        J_k = jnp.array([[0, -1], [1, 0]])
-        i_dq = jnp.array([i_d, i_q]).reshape(-1, 1)
-        r_s = properties.physical_params.r_s
-        A_k = -L_diff_inv * r_s
-        B_k = L_diff_inv
-        E_k = -L_diff_inv @ J_k @ psi_dq.reshape(-1, 1) * omega_el
-        i_dq_diff = A_k @ i_dq + B_k @ u_dq.reshape(-1, 1) + E_k
+        psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]]).reshape(-1)
+        di_dq_1 = jnp.einsum(
+            "ij,j->i",
+            (jnp.eye(2, 2) - L_diff_inv * properties.physical_params.r_s * self.tau),
+            i_dq,
+        )
+        di_dq_2 = jnp.einsum("ij,jk,k->i", L_diff_inv, q, u_dq * self.tau)
+        di_dq_3 = jnp.einsum("ij,jk,k->i", L_diff_inv, (q - jnp.eye(2, 2)), psi_dq)
+        i_dq_k1 = di_dq_1 + di_dq_2 + di_dq_3
 
-        print(L_diff)
-
-        i_d_k1 = i_d + i_dq_diff[0][0] * self.tau
-        i_q_k1 = i_q + i_dq_diff[0][1] * self.tau
+        i_d_k1 = i_dq_k1[0]  # i_d + i_dq_diff[0][0] * self.tau
+        i_q_k1 = i_dq_k1[1]  # i_q + i_dq_diff[0][1] * self.tau
 
         with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
             system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
             system_state_next.i_d = i_d_k1
-            system_state_next.i_q = L_diff[0, 1]  # i_q_k1
+            system_state_next.i_q = i_q_k1  # L_diff[0, 1]  # i_q_k1
             system_state_next.torque = jnp.array(
                 [
                     currents_to_torque(
@@ -340,13 +375,13 @@ class PMSM_Physical:
 
             u_dq = action
 
-        u_dq = clip_in_abc_coordinates(
-            u_dq=u_dq,
-            u_dc=properties.physical_params.u_dc,
-            omega_el=system_state.omega,
-            eps=system_state.epsilon,
-            tau=self.tau,
-        )
+        # u_dq = clip_in_abc_coordinates(
+        #     u_dq=u_dq,
+        #     u_dc=properties.physical_params.u_dc,
+        #     omega_el=system_state.omega,
+        #     eps=system_state.epsilon,
+        #     tau=self.tau,
+        # )
 
         next_system_state = self.ode_step(system_state, u_dq, properties)
         with jdc.copy_and_mutate(next_system_state, validate=True) as next_system_state_update:
@@ -407,7 +442,7 @@ class PMSM(CoreEnvironment):
                 "p_omega": 0.00005,
                 "p_reference": 0.0002,
                 "p_reset": 1.0,
-                "i_lim_multiplier": 1.2,
+                "i_lim_multiplier": 1,  # 1.2,
                 "omega_ramp_min": 20000,
                 "omega_ramp_max": 25000,
             }
@@ -619,9 +654,25 @@ class PMSM(CoreEnvironment):
 
         return omegas, omegas_add, omegas_count, subkey
 
-    def step(self, system_state, actions, env_properties):
+    def constraint_denormalization(self, u_dq, system_state, env_properties):
+        u_albet_norm = dq2albet(
+            u_dq,
+            step_eps(
+                system_state.physical_state.epsilon,
+                0.5,
+                self.tau,
+                env_properties.static_params.physical_properties.physical_params.omega_el / 3,  # todo
+            ),
+        )  # system_state.physical_state
+        u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
+        u_albet = u_albet_norm_clip * env_properties.action_constraints.u_dq
+        u_dq = albet2dq(u_albet, system_state.physical_state.epsilon)
+        return u_dq[0]
 
-        actions *= env_properties.action_constraints.u_dq
+    def step(self, system_state, actions_norm, env_properties):
+
+        actions = self.constraint_denormalization(actions_norm, system_state, env_properties)
+
         next_physical_state = self.pmsm_physical.simulation_step(
             system_state.physical_state, actions, env_properties.static_params.physical_properties
         )

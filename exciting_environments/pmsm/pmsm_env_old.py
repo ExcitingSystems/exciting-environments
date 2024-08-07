@@ -117,7 +117,7 @@ class FastPMSM:
 
     @staticmethod
     def step_eps(eps):
-        eps += 0.01 * np.pi
+        eps += 0.01 * np.pi  # 0.01= el_omega*tau
         eps %= 2 * np.pi
         eps[eps > np.pi] -= 2 * np.pi
         return eps
