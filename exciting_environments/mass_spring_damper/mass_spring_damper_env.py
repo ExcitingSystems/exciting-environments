@@ -226,6 +226,10 @@ class MassSpringDamper(core_env.CoreEnvironment):
     def obs_description(self):
         return np.array(["deflection", "velocity"])
 
+    @property
+    def action_description(self):
+        return np.array(["force"])
+
     @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, physical_constraints):
         """Returns truncated information for one batch."""
@@ -253,3 +257,133 @@ class MassSpringDamper(core_env.CoreEnvironment):
         )(state, self.env_properties.physical_constraints)
 
         return obs, state
+
+
+class MassSpringDamperCart(MassSpringDamper):
+    """A mass spring damper cart system. ODE is from [Kiss2024]."""
+
+    def __init__(
+        self,
+        batch_size: int = 8,
+        physical_constraints: dict | None = None,
+        action_constraints: dict | None = None,
+        static_params: dict | None = None,
+        solver=diffrax.Euler(),
+        reward_func: Callable = None,
+        tau: float = 1e-4,
+    ):
+
+        if physical_constraints is None:
+            physical_constraints = {"deflection": 2, "velocity": 20}
+
+        if not action_constraints:
+            action_constraints = {"force": 20}
+
+        if static_params is None:
+            static_params = {"d": 10, "s": 800, "l": 0.17, "a": 0.25, "m": 5}
+
+        super().__init__(
+            batch_size,
+            physical_constraints,
+            action_constraints,
+            static_params,
+            solver=solver,
+            reward_func=reward_func,
+            tau=tau,
+        )
+
+    @jdc.pytree_dataclass
+    class StaticParams:
+        """Dataclass containing the static parameters of the environment."""
+
+        d: jax.Array
+        s: jax.Array
+        l: jax.Array
+        a: jax.Array
+        m: jax.Array
+
+    @partial(jax.jit, static_argnums=0)
+    def _ode_solver_step(self, state, action, static_params):
+        """Computes state by simulating one step.
+
+        Args:
+            state: The state from which to calculate state for the next step.
+            action: The action to apply to the environment.
+            static_params: Parameter of the environment, that do not change over time.
+
+        Returns:
+            state: The computed state after the one step simulation.
+        """
+
+        physical_state = state.physical_state
+        args = (action, static_params)
+
+        def vector_field(t, y, args):
+            deflection, velocity = y
+            action, params = args
+
+            d_velocity = (
+                action[0]
+                - params.s * deflection
+                + deflection * (params.s * params.l) / (jnp.sqrt(deflection**2 + params.a**2))
+                - params.d * velocity
+            ) / params.m
+            d_deflection = velocity
+
+            d_y = d_deflection, d_velocity  # [0]
+            return d_y
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = self.tau
+        y0 = tuple([physical_state.deflection, physical_state.velocity])
+        env_state = self._solver.init(term, t0, t1, y0, args)
+        y, _, _, env_state, _ = self._solver.step(term, t0, t1, y0, args, env_state, made_jump=False)
+
+        deflection_k1 = y[0]
+        velocity_k1 = y[1]
+
+        phys = self.PhysicalState(deflection=deflection_k1, velocity=velocity_k1)
+        opt = None  # Optional(something=...)
+        return self.State(physical_state=phys, PRNGKey=None, optional=None)
+
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+        """Computes states by simulating a trajectory with given actions."""
+
+        init_physical_state = init_state.physical_state
+        args = (actions, static_params)
+
+        def force(t, args):
+            actions = args
+            return actions[jnp.array(t / action_stepsize, int), 0]
+
+        def vector_field(t, y, args):
+            deflection, velocity = y
+            actions, params = args
+
+            d_velocity = (
+                force(t, actions)
+                - params.d * velocity
+                - deflection * params.s * params.l / (jnp.sqrt(deflection**2 + params.a**2))
+            ) / params.m
+            d_deflection = velocity
+
+            d_y = d_deflection, d_velocity
+            return d_y
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = action_stepsize * actions.shape[0]
+        init_physical_state_array, _ = tree_flatten(init_physical_state)
+        y0 = tuple(init_physical_state_array)
+        saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))  #
+        sol = diffrax.diffeqsolve(term, self._solver, t0, t1, dt0=obs_stepsize, y0=y0, args=args, saveat=saveat)
+
+        deflection_t = sol.ys[0]
+        velocity_t = sol.ys[1]
+
+        physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t)
+        opt = None
+        PRNGKey = None
+        return self.State(physical_state=physical_states, PRNGKey=PRNGKey, optional=opt)
