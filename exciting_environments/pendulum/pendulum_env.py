@@ -232,6 +232,10 @@ class Pendulum(core_env.CoreEnvironment):
     def obs_description(self):
         return np.array(["theta", "omega"])
 
+    @property
+    def action_description(self):
+        return np.array(["torque"])
+
     @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, physical_constraints):
         """Returns truncated information for one batch."""

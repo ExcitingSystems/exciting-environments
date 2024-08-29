@@ -52,7 +52,7 @@ class CartPole(core_env.CoreEnvironment):
         static_params: dict = None,
         solver=diffrax.Euler(),
         reward_func: Callable = None,
-        tau: float = 1e-4,
+        tau: float = 2e-2,
     ):
         """
         Args:
@@ -81,23 +81,25 @@ class CartPole(core_env.CoreEnvironment):
 
         if not physical_constraints:
             physical_constraints = {
-                "deflection": 10,
-                "velocity": 10,
+                "deflection": 2.4,
+                "velocity": 8,
                 "theta": jnp.pi,
-                "omega": 10,
+                "omega": 8,
             }
         if not action_constraints:
             action_constraints = {"force": 20}
 
         if not static_params:
-            static_params = {
-                "mu_p": 0,
-                "mu_c": 0,
-                "l": 1,
-                "m_p": 1,
-                "m_c": 1,
-                "g": 9.81,
-            }
+            static_params = (
+                {  # typical values from Source with DOI: 10.1109/TSMC.1983.6313077
+                    "mu_p": 0.000002,
+                    "mu_c": 0.0005,
+                    "l": 0.5,
+                    "m_p": 0.1,
+                    "m_c": 1,
+                    "g": 9.81,
+                },
+            )
 
         physical_constraints = self.PhysicalState(**physical_constraints)
         action_constraints = self.Action(**action_constraints)
@@ -148,6 +150,8 @@ class CartPole(core_env.CoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def _ode_solver_step(self, state, action, static_params):
         """Computes state by simulating one step.
+
+        Source DOI: 10.1109/TSMC.1983.6313077
 
         Args:
             state: The state from which to calculate state for the next step.
@@ -271,9 +275,7 @@ class CartPole(core_env.CoreEnvironment):
         # keep theta between -pi and pi
         theta_t = ((theta_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
-        physical_states = self.PhysicalState(
-            deflection=deflection_t, velocity=velocity_t, theta=theta_t, omega=omega_t
-        )
+        physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t, theta=theta_t, omega=omega_t)
         opt = None
         PRNGKey = None
         return self.State(physical_state=physical_states, PRNGKey=PRNGKey, optional=opt)
@@ -314,6 +316,10 @@ class CartPole(core_env.CoreEnvironment):
             )
         )
         return obs
+
+    @property
+    def action_description(self):
+        return np.array(["force"])
 
     @property
     def obs_description(self):
