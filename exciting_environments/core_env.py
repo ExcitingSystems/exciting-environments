@@ -56,7 +56,7 @@ class CoreEnvironment(ABC):
         return dataclass_in_axes
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_step(self, states, action):
+    def vmap_step(self, states, actions):
         """JAX jit compiled and vmapped step for batch_size of environment.
 
         Args:
@@ -76,5 +76,4 @@ class CoreEnvironment(ABC):
 
         """
         # vmap single operations
-
-        return jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(states, action, self.env_properties)
+        return jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(states, actions, self.env_properties)

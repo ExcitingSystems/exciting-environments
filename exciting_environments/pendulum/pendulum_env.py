@@ -48,13 +48,12 @@ class Pendulum(classic_core_env.ClassicCoreEnvironment):
         action_constraints: dict = None,
         static_params: dict = None,
         solver=diffrax.Euler(),
-        reward_func: Callable = None,
         tau: float = 1e-4,
     ):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            physical_constraints(dict): Constraints of physical states of the environment.
+            physical_constraints(dict): Constraints of physical state of the environment.
                 theta(float): Rotation angle. Default: jnp.pi
                 omega(float): Angular velocity. Default: 10
             action_constraints(dict): Constraints of actions.
@@ -63,9 +62,7 @@ class Pendulum(classic_core_env.ClassicCoreEnvironment):
                 l(float): Length of the pendulum. Default: 1
                 m(float): Mass of the pendulum tip. Default: 1
                 g(float): Gravitational acceleration. Default: 9.81
-            solver(diffrax.solver): Solver used to compute states for next step.
-            reward_func(Callable): Reward function for training. Needs observation vector, action and action_constraints as Parameters.
-                                    Default: None (default_reward_func from class)
+            solver(diffrax.solver): Solver used to compute state for next step.
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
         Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.
@@ -80,7 +77,7 @@ class Pendulum(classic_core_env.ClassicCoreEnvironment):
         if not static_params:
             static_params = {"g": 9.81, "l": 2, "m": 1}
 
-        physical_constraints = self.PhysicalStates(**physical_constraints)
+        physical_constraints = self.PhysicalState(**physical_constraints)
         action_constraints = self.Actions(**action_constraints)
         static_params = self.StaticParams(**static_params)
 
@@ -91,18 +88,17 @@ class Pendulum(classic_core_env.ClassicCoreEnvironment):
             static_params,
             tau=tau,
             solver=solver,
-            reward_func=reward_func,
         )
 
     @jdc.pytree_dataclass
-    class PhysicalStates:
-        """Dataclass containing the physical states of the environment."""
+    class PhysicalState:
+        """Dataclass containing the physical state of the environment."""
 
         theta: jax.Array
         omega: jax.Array
 
     @jdc.pytree_dataclass
-    class Optional:
+    class Additions:
         """Dataclass containing additional information for simulation."""
 
         something: jax.Array
@@ -122,19 +118,19 @@ class Pendulum(classic_core_env.ClassicCoreEnvironment):
         torque: jax.Array
 
     @partial(jax.jit, static_argnums=0)
-    def _ode_solver_step(self, states, action, static_params):
-        """Computes states by simulating one step.
+    def _ode_solver_step(self, state, action, static_params):
+        """Computes state by simulating one step.
 
         Args:
-            states: The states from which to calculate states for the next step.
+            state: The state from which to calculate state for the next step.
             action: The action to apply to the environment.
             static_params: Parameter of the environment, that do not change over time.
 
         Returns:
-            states: The computed states after the one step simulation.
+            state: The computed state after the one step simulation.
         """
 
-        env_states = states.physical_states
+        env_state = state.physical_state
         args = (action, static_params)
 
         def vector_field(t, y, args):
@@ -148,7 +144,7 @@ class Pendulum(classic_core_env.ClassicCoreEnvironment):
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([env_states.theta, env_states.omega])
+        y0 = tuple([env_state.theta, env_state.omega])
         env_state = self._solver.init(term, t0, t1, y0, args)
         y, _, _, env_state, _ = self._solver.step(term, t0, t1, y0, args, env_state, made_jump=False)
 
@@ -156,62 +152,65 @@ class Pendulum(classic_core_env.ClassicCoreEnvironment):
         omega_k1 = y[1]
         theta_k1 = ((theta_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
-        phys = self.PhysicalStates(theta=theta_k1, omega=omega_k1)
+        phys = self.PhysicalState(theta=theta_k1, omega=omega_k1)
         opt = None  # Optional(something=...)
-        return self.States(physical_states=phys, PRNGKey=None, optional=None)
+        return self.State(physical_state=phys, PRNGKey=None, additions=None)
 
     @partial(jax.jit, static_argnums=0)
-    def init_states(self):
-        """Returns default initial states for all batches."""
-        phys = self.PhysicalStates(theta=jnp.full(self.batch_size, jnp.pi), omega=jnp.zeros(self.batch_size))
+    def init_state(self):
+        """Returns default initial state for all batches."""
+        phys = self.PhysicalState(theta=jnp.full(self.batch_size, jnp.pi), omega=jnp.zeros(self.batch_size))
         opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
-        return self.States(physical_states=phys, PRNGKey=None, optional=opt)
+        return self.State(physical_state=phys, PRNGKey=None, additions=opt)
 
     @partial(jax.jit, static_argnums=0)
-    def default_reward_func(self, obs, action, action_constraints):
+    def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
+        action_constraints = env_properties.action_constraints
+        obs = self.generate_observation(state, env_properties)
         reward = (obs[0]) ** 2 + 0.1 * (obs[1]) ** 2 + 0.1 * (action[0] / action_constraints.torque) ** 2
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, states, physical_constraints):
+    def generate_observation(self, state, env_properties):
         """Returns observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
         obs = jnp.hstack(
             (
-                states.physical_states.theta / physical_constraints.theta,
-                states.physical_states.omega / physical_constraints.omega,
+                state.physical_state.theta / physical_constraints.theta,
+                state.physical_state.omega / physical_constraints.omega,
             )
         )
         return obs
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, state, env_properties):
+        """Returns truncated information for one batch."""
+        obs = self.generate_observation(state, env_properties)
+        return jnp.abs(obs) > 1
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, state, reward, env_properties):
+        """Returns terminated information for one batch."""
+        return reward == 0
 
     @property
     def obs_description(self):
         return np.array(["theta", "omega"])
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, states, physical_constraints):
-        """Returns truncated information for one batch."""
-        obs = self.generate_observation(states, physical_constraints)
-        return jnp.abs(obs) > 1
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, states, reward):
-        """Returns terminated information for one batch."""
-        return reward == 0
-
-    def reset(self, rng: chex.PRNGKey = None, initial_states: jdc.pytree_dataclass = None):
-        """Resets environment to default or passed initial states."""
-        if initial_states is not None:
-            assert tree_structure(self.init_states()) == tree_structure(
-                initial_states
-            ), f"initial_states should have the same dataclass structure as self.init_states()"
-            states = initial_states
+    def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
+        """Resets environment to default or passed initial state."""
+        if initial_state is not None:
+            assert tree_structure(self.init_state()) == tree_structure(
+                initial_state
+            ), f"initial_state should have the same dataclass structure as self.init_state()"
+            state = initial_state
         else:
-            states = self.init_states()
+            state = self.init_state()
 
         obs = jax.vmap(
             self.generate_observation,
-            in_axes=(0, self.in_axes_env_properties.physical_constraints),
-        )(states, self.env_properties.physical_constraints)
+            in_axes=(0, self.in_axes_env_properties),
+        )(state, self.env_properties)
 
-        return obs, states
+        return obs, state
