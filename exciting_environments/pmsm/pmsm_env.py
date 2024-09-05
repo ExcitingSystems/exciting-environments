@@ -113,6 +113,10 @@ def currents_to_torque(i_d, i_q, p, psi_p, l_d, l_q):
     return torque
 
 
+# def currents_to_torque_saturated(Psi_d, Psi_q, i_d, i_q):
+#     return Psi_d * i_q - Psi_q * i_d
+
+
 def calc_max_torque(l_d, l_q, i_n, psi_p, p):
     i_d = jnp.where(l_d == l_q, 0, -psi_p / (4 * (l_d - l_q)) - jnp.sqrt((psi_p / (4 * (l_d - l_q))) ** 2 + i_n**2 / 2))
     i_q = jnp.sqrt(i_n**2 - i_d**2)
@@ -156,7 +160,6 @@ class PMSM_Physical:
                 "max_omega_el": 100 / 60 * 2 * jnp.pi,
             }
 
-        # self.params = params #TODO: In the future, params will be part of the state because they can change over time
         self.batch_size = batch_size
         self.tau = tau
         self._solver = solver
@@ -205,7 +208,7 @@ class PMSM_Physical:
         if deadtime > 0:
             self.initial_action_buffer = jnp.zeros((self.batch_size, deadtime, 2))
         else:
-            self.initial_action_buffer = jnp.zeros((self.batch_size, 0, 2))  # None
+            self.initial_action_buffer = jnp.zeros((self.batch_size, 0, 2))
 
     @jdc.pytree_dataclass
     class PhysicalParams:
@@ -256,15 +259,19 @@ class PMSM_Physical:
     def reset(self):
         return self.init_state()
 
-    @staticmethod
-    def t_dq_alpha_beta(eps):
-        cos = jnp.cos(eps)
-        sin = jnp.sin(eps)
-        return jnp.column_stack((cos, sin, -sin, cos)).reshape(2, 2)
-
     def ode_step(self, system_state, u_dq, properties):
+        """Computes state by simulating one step.
 
-        omega_el = system_state.omega  # properties.physical_params.omega_el
+        Args:
+            system_state: The state from which to calculate state for the next step.
+            u_dq: The action to apply to the environment.
+            properties: Parameters and settings of the environment, that do not change over time.
+
+        Returns:
+            state: The computed state after the one step simulation.
+        """
+
+        omega_el = system_state.omega
         i_d = system_state.i_d
         i_q = system_state.i_q
         eps = system_state.epsilon
@@ -339,8 +346,17 @@ class PMSM_Physical:
         return system_state_next
 
     def simulation_step(self, system_state, action, properties):
+        """Computes state by simulating one step taking the deadtime into account.
+
+        Args:
+            system_state: The state from which to calculate state for the next step.
+            action: The action to apply to the environment.
+            properties: Parameters and settings of the environment, that do not change over time.
+
+        Returns:
+            state: The computed state after the one step simulation.
+        """
         action_buffer = system_state.action_buffer
-        # eps = system_state.epsilon
 
         if properties.deadtime > 0:
 
@@ -368,37 +384,43 @@ class PMSM(CoreEnvironment):
     def __init__(
         self,
         pmsm_physical: PMSM_Physical,
-        gamma: float,
         batch_size: int = 8,
         physical_constraints: dict = None,
         action_constraints: dict = None,
         static_params: dict = None,
         solver=diffrax.Euler(),
-        reward_func: Callable = None,
         tau: float = 1e-4,
     ):
         """
-        Args: #TODO
+        Args:
+            pmsm_physical(PMSM_Physical): Physical part of the pmsm environment.
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
             physical_constraints(dict): Constraints of physical state of the environment.
-                theta(float): Rotation angle. Default: jnp.pi
-                omega(float): Angular velocity. Default: 10
+                action_buffer(float): Rotation angle. Default: jnp.pi
+                epsilon(float): Angular velocity. Default: 10
+                i_d(float):
+                i_q(float):
+                omega(float):
+                torque(float):
             action_constraints(dict): Constraints of actions.
-                torque(float): Maximum torque that can be applied to the system as action. Default: 20
+                u_d(float):
+                u_q(float):
             static_params(dict): Parameters of environment which do not change during simulation.
-                l(float): Length of the pendulum. Default: 1
-                m(float): Mass of the pendulum tip. Default: 1
-                g(float): Gravitational acceleration. Default: 9.81
+                p_omega(float):
+                p_reference(float):
+                p_reset(float):
+                i_lim_multiplier(float):
+                constant_omega(bool):
+                omega_ramp_min(float):
+                omega_ramp_max(float):
+                gamma(float):
             solver(diffrax.solver): Solver used to compute state for next step.
-            reward_func(Callable): Reward function for training. Needs observation vector, action and action_constraints as Parameters.
-                                    Default: None (default_reward_func from class)
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
         Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
 
         self.pmsm_physical = pmsm_physical
-        self.gamma = gamma
         self.batch_size = batch_size
         assert self.batch_size == self.pmsm_physical.batch_size
 
@@ -411,6 +433,7 @@ class PMSM(CoreEnvironment):
                 "constant_omega": False,
                 "omega_ramp_min": 20000,
                 "omega_ramp_max": 25000,
+                "gamma": 0.85,
             }
             if self.pmsm_physical.properties.saturated:
                 static_params["i_lim_multiplier"] = 1.0
@@ -456,16 +479,38 @@ class PMSM(CoreEnvironment):
             }
 
         if not action_constraints:
-            action_constraints = {"u_dq": 2 * static_params.physical_properties.physical_params.u_dc / 3}
+            action_constraints = {
+                "u_d": 2 * static_params.physical_properties.physical_params.u_dc / 3,
+                "u_q": 2 * static_params.physical_properties.physical_params.u_dc / 3,
+            }
 
         physical_constraints = self.pmsm_physical.PhysicalState(**physical_constraints)
         action_constraints = self.Actions(**action_constraints)
 
         if static_params.physical_properties.control_state == "currents":
-            self._obs_description = ["i_d", "i_q", "cos_eps", "sin_eps", "omega_el", "i_d_ref", "i_q_ref"]
+            self._obs_description = [
+                "i_d",
+                "i_q",
+                "cos_eps",
+                "sin_eps",
+                "omega_el",
+                "torque",
+                "i_d_ref",
+                "i_q_ref",
+                "action_buffer",
+            ]
 
         elif static_params.physical_properties.control_state == "torque":
-            self._obs_description = ["i_d", "i_q", "cos_eps", "sin_eps", "omega_el", "torque_ref"]
+            self._obs_description = [
+                "i_d",
+                "i_q",
+                "cos_eps",
+                "sin_eps",
+                "omega_el",
+                "torque",
+                "torque_ref",
+                "action_buffer",
+            ]
 
         env_properties = self.EnvProperties(
             physical_constraints=physical_constraints,
@@ -493,13 +538,15 @@ class PMSM(CoreEnvironment):
         constant_omega: jax.Array
         omega_ramp_min: jax.Array
         omega_ramp_max: jax.Array
+        gamma: jax.Array
         physical_properties: jdc.pytree_dataclass
 
     @jdc.pytree_dataclass
     class Actions:
         """Dataclass containing the actions, that can be applied to the environment."""
 
-        u_dq: jax.Array
+        u_d: jax.Array
+        u_q: jax.Array
 
     @jdc.pytree_dataclass
     class State:
@@ -517,10 +564,12 @@ class PMSM(CoreEnvironment):
         action_constraints: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self, random_key):
+    def init_state(self, random_key=None):
         """Returns default initial state for all batches."""
         physical_state = self.pmsm_physical.init_state()
+        if random_key == None:
+            random_seed = np.random.randint(0, 2**31)  # TODO
+            random_key = jax.random.PRNGKey(seed=random_seed)
         keys = jax.random.split(jnp.uint32(random_key), self.batch_size)
         references = jnp.zeros((self.batch_size, 1))
         if self.env_properties.static_params.physical_properties.control_state == "currents":
@@ -555,11 +604,15 @@ class PMSM(CoreEnvironment):
 
         return system_state
 
-    def reset(self, random_key=None):
-        if random_key == None:
-            random_seed = np.random.randint(0, 2**31)
-            random_key = jax.random.PRNGKey(seed=random_seed)
-        system_state = self.init_state(random_key)
+    def reset(self, random_key=None, initial_state: jdc.pytree_dataclass = None):
+        """Resets environment to default or passed initial state."""
+        if initial_state is not None:
+            assert tree_structure(self.init_state()) == tree_structure(
+                initial_state
+            ), f"initial_state should have the same dataclass structure as self.init_state()"
+            system_state = initial_state
+        else:
+            system_state = self.init_state(random_key)
         observations = jax.vmap(
             self.generate_observation,
             in_axes=(0, self.in_axes_env_properties),
@@ -568,6 +621,7 @@ class PMSM(CoreEnvironment):
         return observations, system_state
 
     def update_reference(self, reference, key, p):
+        """Generates random reference values"""
         random_bool = jax.random.bernoulli(key, p=p)
         key, subkey = jax.random.split(key)
         new_reference = jnp.where(random_bool, jax.random.uniform(subkey, minval=-1.0, maxval=1.0), reference)
@@ -575,6 +629,7 @@ class PMSM(CoreEnvironment):
         return new_reference, subkey
 
     def update_omega(self, omega, omega_add, omega_count, key, p):
+        """Updates omega randomly in a smooth fashion and detached from the actual ODE calculations"""
         random_bool = jax.random.bernoulli(key, p=p)
         key, subkey = jax.random.split(key)
 
@@ -612,22 +667,34 @@ class PMSM(CoreEnvironment):
         return omega, omega_add, omega_count, subkey
 
     def constraint_denormalization(self, u_dq, system_state, env_properties):
+        """Denormalizes the u_dq and clips it with respect to the hexagon."""
         u_albet_norm = dq2albet(
             u_dq,
             step_eps(
                 system_state.physical_state.epsilon,
                 self.env_properties.static_params.physical_properties.deadtime + 0.5,
                 self.tau,
-                system_state.physical_state.omega,  # / 3
+                system_state.physical_state.omega,
             ),
         )
         u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
-        u_albet = u_albet_norm_clip * env_properties.action_constraints.u_dq
-        u_dq = albet2dq(u_albet, system_state.physical_state.epsilon)
+        u_dq = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon) * jnp.hstack(
+            [env_properties.action_constraints.u_d, env_properties.action_constraints.u_q]
+        )
         return u_dq[0]
 
     def step(self, system_state, actions_norm, env_properties):
+        """Computes state and observation by simulating one step.
 
+        Args:
+            system_state: The state from which to calculate state for the next step.
+            action_norm: The normalized action to apply to the environment.
+            env_properties: Parameters and settings of the environment, that do not change over time.
+
+        Returns:
+            observation: The observation after the step.
+            state: The computed state after the one step simulation.
+        """
         actions = self.constraint_denormalization(actions_norm, system_state, env_properties)
 
         next_physical_state = self.pmsm_physical.simulation_step(
@@ -640,7 +707,7 @@ class PMSM(CoreEnvironment):
                 system_state.additions.omega_add,
                 system_state.additions.omega_count,
                 jnp.uint32(system_state.PRNGKey),
-                env_properties.static_params.p_reset,
+                env_properties.static_params.p_omega,
             )
         else:
             omega = system_state.physical_state.omega / env_properties.physical_constraints.omega
@@ -672,6 +739,7 @@ class PMSM(CoreEnvironment):
         return observations, next_system_state
 
     def generate_observation(self, system_state, env_properties):
+        """Returns observation for one batch."""
         physical_constraints = env_properties.physical_constraints
         eps = system_state.physical_state.epsilon
         cos_eps = jnp.cos(eps)
@@ -681,6 +749,7 @@ class PMSM(CoreEnvironment):
                 system_state.physical_state.i_d / physical_constraints.i_d,
                 system_state.physical_state.i_q / physical_constraints.i_q,
                 system_state.physical_state.omega / physical_constraints.omega,
+                system_state.physical_state.torque / physical_constraints.torque,
                 cos_eps,
                 sin_eps,
                 system_state.additions.references,
@@ -690,6 +759,7 @@ class PMSM(CoreEnvironment):
         return obs
 
     def generate_truncated(self, system_state, env_properties):
+        """Returns truncated information for one batch."""
         physical_constraints = env_properties.physical_constraints
         physical_state = system_state.physical_state
         i_d_norm = physical_state.i_d / physical_constraints.i_d
@@ -698,9 +768,11 @@ class PMSM(CoreEnvironment):
         return i_s > 1
 
     def generate_terminated(self, system_state, reward, env_properties):
+        """Returns terminated information for one batch."""
         return self.generate_truncated(system_state, env_properties)
 
     def generate_reward(self, system_state, action, env_properties):
+        """Returns reward for one batch."""
         physical_state = system_state.physical_state
         references = system_state.additions.references
         if env_properties.static_params.physical_properties.control_state == "currents":
@@ -709,6 +781,7 @@ class PMSM(CoreEnvironment):
                 physical_state.i_q / env_properties.physical_constraints.i_q,
                 references[0],
                 references[1],
+                env_properties.static_params.gamma,
             )
         elif env_properties.static_params.physical_properties.control_state == "torque":
             reward = self.torque_reward_func(
@@ -717,15 +790,16 @@ class PMSM(CoreEnvironment):
                 (physical_state.torque / (env_properties.physical_constraints.torque)),
                 references,
                 env_properties.static_params.i_lim_multiplier,
+                env_properties.static_params.gamma,
             )
 
         return reward
 
-    def current_reward_func(self, i_d, i_q, i_d_ref, i_q_ref):
+    def current_reward_func(self, i_d, i_q, i_d_ref, i_q_ref, gamma):
         mse = 0.5 * (i_d - i_d_ref) ** 2 + 0.5 * (i_q - i_q_ref) ** 2
-        return -1 * (mse * (1 - self.gamma))
+        return -1 * (mse * (1 - gamma))
 
-    def torque_reward_func(self, i_d, i_q, torque, torque_ref, i_lim_multiplier):
+    def torque_reward_func(self, i_d, i_q, torque, torque_ref, i_lim_multiplier, gamma):
         i_s = jnp.sqrt(i_d**2 + i_q**2)
         i_n = 1 / i_lim_multiplier
         i_d_plus = 0.2 * i_n
@@ -742,7 +816,7 @@ class PMSM(CoreEnvironment):
         rew = jnp.where(
             (i_s < i_n) & (i_d < i_d_plus) & (jnp.abs(torque - torque_ref) < torque_tol), 1 - 0.5 * i_s, rew
         )
-        return rew * (1 - self.gamma)
+        return rew * (1 - gamma)
 
     @property
     def action_description(self):

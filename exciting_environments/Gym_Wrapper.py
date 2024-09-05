@@ -97,11 +97,10 @@ class GymWrapper(ABC):
         # TODO: rng
 
         if initial_state is not None:
-            assert (
-                tree_flatten(self.env.init_state())[0]
-            ).shape == initial_state.shape, (
-                f"initial_state should have shape={(tree_flatten(self.env.init_state())[0]).shape}"
-            )
+            try:
+                _, _ = self.env.reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
+            except:
+                print("initial_state should have the same structure as tree_flatten(self.env.init_state())")
             obs, state = self.env.reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
         else:
             obs, state = self.env.reset(rng)
