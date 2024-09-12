@@ -83,25 +83,24 @@ class CoreEnvironment(ABC):
             observation: The gathered observations (shape=(batch_size,obs_dim)).
             state: New state for the next step.
         """
-        # TODO Adapt Size check
-        # assert action.shape == (
-        #     self.batch_size,
-        #     self.action_dim,
-        # ), (
-        #     "The action needs to be of shape (batch_size, action_dim) which is "
-        #     + f"{(self.batch_size, self.action_dim)}, but {action.shape} is given"
-        # )
+        assert action.shape == (
+            self.batch_size,
+            self.action_dim,
+        ), (
+            "The action needs to be of shape (batch_size, action_dim) which is "
+            + f"{(self.batch_size, self.action_dim)}, but {action.shape} is given"
+        )
 
-        # physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
-        # assert physical_state_shape == (
-        #     (
-        #         self.batch_size,
-        #         self.physical_state_dim,
-        #     )
-        # ), (
-        #     "The physical state needs to be of shape (batch_size, physical_state_dim) which is "
-        #     + f"{(self.batch_size, self.physical_state_dim)}, but {physical_state_shape} is given"
-        # )
+        physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
+        assert physical_state_shape == (
+            (
+                self.batch_size,
+                self.physical_state_dim,
+            )
+        ), (
+            "The physical state needs to be of shape (batch_size, physical_state_dim) which is "
+            + f"{(self.batch_size, self.physical_state_dim)}, but {physical_state_shape} is given"
+        )
 
         # vmap single operations
         obs, state = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
@@ -123,20 +122,20 @@ class CoreEnvironment(ABC):
             obs_stepsize: The sampling time for the observations
             action_stepsize: The time between changes in the input/action
         """
-        # TODO Adapt Size check
-        # assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
-        # assert (
-        #     actions.shape[0] == self.batch_size
-        # ), f"The first dimension does not correspond to the batch size which is {self.batch_size}, but {actions.shape[0]} is given"
-        # assert (
-        #     actions.shape[-1] == self.action_dim
-        # ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
 
-        # init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
-        # assert init_physical_state_shape == (self.batch_size, self.physical_state_dim), (
-        #     "The initial physical state needs to be of shape (batch_size, physical_state_dim,) which is "
-        #     + f"{(self.batch_size, self.physical_state_dim)}, but {init_physical_state_shape} is given"
-        # )
+        assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
+        assert (
+            actions.shape[0] == self.batch_size
+        ), f"The first dimension does not correspond to the batch size which is {self.batch_size}, but {actions.shape[0]} is given"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+
+        init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
+        assert init_physical_state_shape == (self.batch_size, self.physical_state_dim), (
+            "The initial physical state needs to be of shape (batch_size, physical_state_dim,) which is "
+            + f"{(self.batch_size, self.physical_state_dim)}, but {init_physical_state_shape} is given"
+        )
 
         # vmap single operations
         observations, rewards, truncated, terminated, last_state = jax.vmap(
