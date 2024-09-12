@@ -3,7 +3,7 @@ import exciting_environments as excenvs
 import jax
 import jax.numpy as jnp
 
-env_ids = ["Pendulum-v0", "MassSpringDamper-v0", "CartPole-v0"]
+env_ids = ["Pendulum-v0", "MassSpringDamper-v0", "CartPole-v0", "FluidTank-v0"]
 
 
 @pytest.mark.parametrize("env_id", env_ids)
@@ -18,7 +18,7 @@ def test_tau(env_id, tau):
 def test_execution(env_id, no_of_steps):
     env = excenvs.make(env_id)
     gym_env = excenvs.GymWrapper(env=env)
-    terminated = True
+    terminated = False
     for _ in range(no_of_steps):
         if jnp.any(terminated):
             observation = gym_env.reset()
