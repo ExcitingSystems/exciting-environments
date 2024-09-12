@@ -9,10 +9,10 @@ import jax_dataclasses as jdc
 import chex
 import diffrax
 
-from exciting_environments import core_env
+from exciting_environments import ClassicCoreEnvironment
 
 
-class FluidTank(core_env.CoreEnvironment):
+class FluidTank(ClassicCoreEnvironment):
     """Fluid tank based on torricelli's principle.
 
     Based on ex. 7.3.2 on p. 355 of "System Dynamics" from Palm, William III.
@@ -25,7 +25,6 @@ class FluidTank(core_env.CoreEnvironment):
         action_constraints: dict = None,
         static_params: dict = None,
         solver=diffrax.Euler(),
-        reward_func: Callable = None,
         tau: float = 1e-3,
     ):
         if not physical_constraints:
@@ -49,7 +48,6 @@ class FluidTank(core_env.CoreEnvironment):
             static_params,
             tau=tau,
             solver=solver,
-            reward_func=reward_func,
         )
 
     @jdc.pytree_dataclass
@@ -59,7 +57,7 @@ class FluidTank(core_env.CoreEnvironment):
         height: jax.Array
 
     @jdc.pytree_dataclass
-    class Optional:
+    class Additions:
         """Dataclass containing additional information for simulation."""
 
         something: jax.Array
@@ -93,7 +91,7 @@ class FluidTank(core_env.CoreEnvironment):
             h = y[0]
             inflow, params = args
 
-            h = jnp.clip(h, min=0)
+            h = jnp.clip(h, 0)
 
             dh_dt = inflow[0] / params.base_area - params.c_d * params.orifice_area / params.base_area * jnp.sqrt(
                 2 * params.g * h
@@ -112,27 +110,44 @@ class FluidTank(core_env.CoreEnvironment):
 
         # clip to 0 because tank cannot be more empty than empty
         # necessary because of ODE solver approximation
-        h_k1 = jnp.clip(h_k1, min=0)
+        h_k1 = jnp.clip(h_k1, 0)
 
         phys = self.PhysicalState(height=h_k1)
-        opt = None  # Optional(something=...)
-        return self.State(physical_state=phys, PRNGKey=None, optional=None)
+        additions = None  # Additions(something=...)
+        return self.State(physical_state=phys, PRNGKey=None, additions=None)
+
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+        """Computes states by simulating a trajectory with given actions."""
+        raise NotImplementedError("To be implemented!")
 
     @partial(jax.jit, static_argnums=0)
-    def default_reward_func(self, obs, action, action_constraints):
-        return 0
+    def init_state(self):
+        phys = self.PhysicalState(height=jnp.full(self.batch_size, self.env_properties.physical_constraints.height / 2))
+        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        return self.State(physical_state=phys, PRNGKey=None, additions=additions)
 
     @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, states, physical_constraints):
-        return (states.physical_state.height - physical_constraints.height / 2) / (physical_constraints.height / 2)
+    def generate_reward(self, obs, action, env_properties):
+        """Returns reward for one batch."""
+        return jnp.array([0])
 
     @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, states, physical_constraints):
-        return 0
+    def generate_observation(self, states, env_properties):
+        """Returns observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
+        obs = (states.physical_state.height - physical_constraints.height / 2) / (physical_constraints.height / 2)[None]
+        return obs
 
     @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, states, reward):
-        return False
+    def generate_truncated(self, state, env_properties):
+        """Returns truncated information for one batch."""
+        return jnp.array([0])
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, state, reward, env_properties):
+        """Returns terminated information for one batch."""
+        return jnp.array([False])
 
     @property
     def obs_description(self):
@@ -146,12 +161,6 @@ class FluidTank(core_env.CoreEnvironment):
     def action_description(self):
         return np.array(["inflow"])
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self):
-        phys = self.PhysicalState(height=jnp.full(self.batch_size, self.env_properties.physical_constraints.height / 2))
-        opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
-        return self.State(physical_state=phys, PRNGKey=None, optional=opt)
-
     def reset(self, rng: jax.random.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         if initial_state is not None:
             assert tree_structure(self.init_state()) == tree_structure(
@@ -163,8 +172,8 @@ class FluidTank(core_env.CoreEnvironment):
 
         obs = jax.vmap(
             self.generate_observation,
-            in_axes=(0, self.in_axes_env_properties.physical_constraints),
-        )(state, self.env_properties.physical_constraints)
+            in_axes=(0, self.in_axes_env_properties),
+        )(state, self.env_properties)
 
         # TODO: this [None] looks off -> investigate
-        return obs[None], state
+        return obs, state

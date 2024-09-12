@@ -5,18 +5,25 @@ import jax.numpy as jnp
 import jax_dataclasses as jdc
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 import chex
+from abc import ABC
 
 from exciting_environments.registration import make
 
 
-class GymWrapper:
+class GymWrapper(ABC):
 
-    def __init__(self, env):
+    def __init__(self, env, generate_reward=None, generate_terminated=None, generate_truncated=None):
 
         self.env = env
-        self.state = jnp.array(tree_flatten(self.env.init_state())[0]).T
-        self.state_tree_struct = tree_structure(self.env.init_state())
-
+        _, init_state = self.env.reset()
+        self.state = tree_flatten(init_state)[0]  # jnp.array(tree_flatten(init_state)[0]).T
+        self.state_tree_struct = tree_structure(init_state)
+        if not generate_reward:
+            self.generate_reward = self.env.generate_reward
+        if not generate_truncated:
+            self.generate_truncated = self.env.generate_truncated
+        if not generate_terminated:
+            self.generate_terminated = self.env.generate_terminated
         # TODO action and observation space for gym interface
         # self.action_space = spaces.Box(
         #     low=-1.0, high=1.0, shape=(self.env.batch_size, len(list(self.env.env_max_actions.values()))), dtype=jnp.float32)
@@ -37,6 +44,8 @@ class GymWrapper:
             action: Action to play on the environment.
 
         Returns:
+            Multiple Outputs:
+
             observation: The gathered observation (shape=(batch_size,obs_dim)).
             reward: Amount of reward received for the last step (shape=(batch_size,1)).
             terminated: Flag, indicating if Agent has reached the terminal state (shape=(batch_size,1)).
@@ -56,6 +65,8 @@ class GymWrapper:
             state: The state from which to calculate state for the next step.
 
         Returns:
+            Multiple Outputs:
+
             observation: The gathered observations.
             reward: Amount of reward received for the last step.
             terminated: Flag, indicating if Agent has reached the terminal state.
@@ -63,12 +74,22 @@ class GymWrapper:
             state: New state for the next step.
         """
         # transform array to dataclass defined in environment
-        state = tree_unflatten(self.state_tree_struct, state.T)
+        state = tree_unflatten(self.state_tree_struct, state)  # state.T
 
-        obs, reward, terminated, truncated, state = self.env.vmap_step(state, action)
+        obs, state = self.env.vmap_step(state, action)
 
+        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.env.in_axes_env_properties))(
+            obs, action, self.env.env_properties
+        )
+
+        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.env.in_axes_env_properties))(
+            state, reward, self.env.env_properties
+        )
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.env.in_axes_env_properties))(
+            state, self.env.env_properties
+        )
         # transform dataclass to array
-        state = jnp.array(tree_flatten(state)[0]).T
+        state = tree_flatten(state)[0]  # jnp.array(tree_flatten(state)[0]).T
 
         return obs, reward, terminated, truncated, state
 
@@ -77,13 +98,14 @@ class GymWrapper:
         # TODO: rng
 
         if initial_state is not None:
-            assert (
-                jnp.array(tree_flatten(self.env.init_state())[0]).T.shape == initial_state.shape
-            ), f"initial_state should have shape={jnp.array(tree_flatten(self.env.init_state())[0]).T.shape}"
-            obs, state = self.env.reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state.T))
+            try:
+                _, _ = self.env.reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
+            except:
+                print("initial_state should have the same structure as tree_flatten(self.env.init_state())")
+            obs, state = self.env.reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
         else:
-            obs, state = self.env.reset()
-        self.state = jnp.array(tree_flatten(state)[0]).T
+            obs, state = self.env.reset(rng)
+        self.state = tree_flatten(state)[0]  # jnp.array(tree_flatten(state)[0]).T
         return obs, {}
 
     def render(self, *_, **__):

@@ -9,10 +9,10 @@ import jax_dataclasses as jdc
 import chex
 import diffrax
 
-from exciting_environments import core_env
+from exciting_environments import ClassicCoreEnvironment
 
 
-class CartPole(core_env.CoreEnvironment):
+class CartPole(ClassicCoreEnvironment):
     """
     State Variables
         ``['deflection', 'velocity', 'theta', 'omega']``
@@ -51,7 +51,6 @@ class CartPole(core_env.CoreEnvironment):
         action_constraints: dict = None,
         static_params: dict = None,
         solver=diffrax.Euler(),
-        reward_func: Callable = None,
         tau: float = 2e-2,
     ):
         """
@@ -72,8 +71,6 @@ class CartPole(core_env.CoreEnvironment):
                 m_c(float): Mass of the cart. Default: 1
                 g(float): Gravitational acceleration. Default: 9.81
             solver(diffrax.solver): Solver used to compute state for next step.
-            reward_func(Callable): Reward function for training. Needs observation vector, action and action_constraints as Parameters.
-                                    Default: None (default_reward_func from class)
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
         Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.
@@ -90,16 +87,14 @@ class CartPole(core_env.CoreEnvironment):
             action_constraints = {"force": 20}
 
         if not static_params:
-            static_params = (
-                {  # typical values from Source with DOI: 10.1109/TSMC.1983.6313077
-                    "mu_p": 0.000002,
-                    "mu_c": 0.0005,
-                    "l": 0.5,
-                    "m_p": 0.1,
-                    "m_c": 1,
-                    "g": 9.81,
-                },
-            )
+            static_params = {  # typical values from Source with DOI: 10.1109/TSMC.1983.6313077
+                "mu_p": 0.000002,
+                "mu_c": 0.0005,
+                "l": 0.5,
+                "m_p": 0.1,
+                "m_c": 1,
+                "g": 9.81,
+            }
 
         physical_constraints = self.PhysicalState(**physical_constraints)
         action_constraints = self.Action(**action_constraints)
@@ -112,7 +107,6 @@ class CartPole(core_env.CoreEnvironment):
             static_params,
             tau=tau,
             solver=solver,
-            reward_func=reward_func,
         )
 
     @jdc.pytree_dataclass
@@ -125,7 +119,7 @@ class CartPole(core_env.CoreEnvironment):
         omega: jax.Array
 
     @jdc.pytree_dataclass
-    class Optional:
+    class Additions:
         """Dataclass containing additional information for simulation."""
 
         something: jax.Array
@@ -218,8 +212,8 @@ class CartPole(core_env.CoreEnvironment):
             theta=theta_k1,
             omega=omega_k1,
         )
-        opt = None  # Optional(something=...)
-        return self.State(physical_state=phys, PRNGKey=None, optional=opt)
+        additions = None  # Optional(something=...)
+        return self.State(physical_state=phys, PRNGKey=None, additions=additions)
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
@@ -276,9 +270,9 @@ class CartPole(core_env.CoreEnvironment):
         theta_t = ((theta_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
         physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t, theta=theta_t, omega=omega_t)
-        opt = None
+        additions = None
         PRNGKey = None
-        return self.State(physical_state=physical_states, PRNGKey=PRNGKey, optional=opt)
+        return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions)
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self):
@@ -290,11 +284,12 @@ class CartPole(core_env.CoreEnvironment):
             omega=jnp.zeros(self.batch_size),
         )
         opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
-        return self.State(physical_state=phys, PRNGKey=None, optional=opt)
+        return self.State(physical_state=phys, PRNGKey=None, additions=opt)
 
     @partial(jax.jit, static_argnums=0)
-    def default_reward_func(self, obs, action, action_constraints):
+    def generate_reward(self, obs, action, env_properties):
         """Returns reward for one batch."""
+        action_constraints = env_properties.action_constraints
         reward = (
             (0.01 * obs[0]) ** 2
             + 0.1 * (obs[1]) ** 2
@@ -305,8 +300,9 @@ class CartPole(core_env.CoreEnvironment):
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, state, physical_constraints):
+    def generate_observation(self, state, env_properties):
         """Returns observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
         obs = jnp.hstack(
             (
                 state.physical_state.deflection / physical_constraints.deflection,
@@ -317,6 +313,17 @@ class CartPole(core_env.CoreEnvironment):
         )
         return obs
 
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, state, env_properties):
+        """Returns truncated information for one batch."""
+        obs = self.generate_observation(state, env_properties)
+        return jnp.abs(obs) > 1
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, state, reward, env_properties):
+        """Returns terminated information for one batch."""
+        return reward == 0
+
     @property
     def action_description(self):
         return np.array(["force"])
@@ -324,17 +331,6 @@ class CartPole(core_env.CoreEnvironment):
     @property
     def obs_description(self):
         return np.array(["deflection", "velocity", "theta", "omega"])
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, state, physical_constraints):
-        """Returns truncated information for one batch."""
-        obs = self.generate_observation(state, physical_constraints)
-        return jnp.abs(obs) > 1
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, state, reward):
-        """Returns terminated information for one batch."""
-        return reward == 0
 
     def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial state."""
@@ -348,7 +344,7 @@ class CartPole(core_env.CoreEnvironment):
 
         obs = jax.vmap(
             self.generate_observation,
-            in_axes=(0, self.in_axes_env_properties.physical_constraints),
-        )(state, self.env_properties.physical_constraints)
+            in_axes=(0, self.in_axes_env_properties),
+        )(state, self.env_properties)
 
         return obs, state

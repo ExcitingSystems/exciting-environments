@@ -9,10 +9,10 @@ import jax_dataclasses as jdc
 import diffrax
 import chex
 
-from exciting_environments import core_env
+from exciting_environments import ClassicCoreEnvironment
 
 
-class Pendulum(core_env.CoreEnvironment):
+class Pendulum(ClassicCoreEnvironment):
     """
     State Variables:
         ``['theta', 'omega']``
@@ -52,7 +52,6 @@ class Pendulum(core_env.CoreEnvironment):
         action_constraints: dict = None,
         static_params: dict = None,
         solver=diffrax.Euler(),
-        reward_func: Callable = None,
         tau: float = 1e-4,
     ):
         """
@@ -68,8 +67,6 @@ class Pendulum(core_env.CoreEnvironment):
                 m (float): Mass of the pendulum tip. Default: 1
                 g (float): Gravitational acceleration. Default: 9.81
             solver (diffrax.solver): Solver used to compute state for next step.
-            reward_func (Callable): Reward function for training. Needs observation vector, action
-                and action_constraints as Parameters. Default: None (default_reward_func from class)
             tau (float): Duration of one control step in seconds. Default: 1e-4.
 
         Note: Attributes of physical_constraints, action_constraints and static_params can also be
@@ -96,7 +93,6 @@ class Pendulum(core_env.CoreEnvironment):
             static_params,
             tau=tau,
             solver=solver,
-            reward_func=reward_func,
         )
 
     @jdc.pytree_dataclass
@@ -107,7 +103,7 @@ class Pendulum(core_env.CoreEnvironment):
         omega: jax.Array
 
     @jdc.pytree_dataclass
-    class Optional:
+    class Additions:
         """Dataclass containing additional information for simulation."""
 
         something: jax.Array
@@ -163,7 +159,7 @@ class Pendulum(core_env.CoreEnvironment):
 
         phys = self.PhysicalState(theta=theta_k1, omega=omega_k1)
         opt = None  # Optional(something=...)
-        return self.State(physical_state=phys, PRNGKey=None, optional=None)
+        return self.State(physical_state=phys, PRNGKey=None, additions=None)
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
@@ -202,24 +198,26 @@ class Pendulum(core_env.CoreEnvironment):
         physical_states = self.PhysicalState(theta=theta_t, omega=omega_t)
         opt = None
         PRNGKey = None
-        return self.State(physical_state=physical_states, PRNGKey=PRNGKey, optional=opt)
+        return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=opt)
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self):
         """Returns default initial state for all batches."""
         phys = self.PhysicalState(theta=jnp.full(self.batch_size, jnp.pi), omega=jnp.zeros(self.batch_size))
         opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
-        return self.State(physical_state=phys, PRNGKey=None, optional=opt)
+        return self.State(physical_state=phys, PRNGKey=None, additions=opt)
 
     @partial(jax.jit, static_argnums=0)
-    def default_reward_func(self, obs, action, action_constraints):
+    def generate_reward(self, obs, action, env_properties):
         """Returns reward for one batch."""
+        action_constraints = env_properties.action_constraints
         reward = (obs[0]) ** 2 + 0.1 * (obs[1]) ** 2 + 0.1 * (action[0] / action_constraints.torque) ** 2
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, state, physical_constraints):
+    def generate_observation(self, state, env_properties):
         """Returns observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
         obs = jnp.hstack(
             (
                 state.physical_state.theta / physical_constraints.theta,
@@ -228,6 +226,17 @@ class Pendulum(core_env.CoreEnvironment):
         )
         return obs
 
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, state, env_properties):
+        """Returns truncated information for one batch."""
+        obs = self.generate_observation(state, env_properties)
+        return jnp.abs(obs) > 1
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, state, reward, env_properties):
+        """Returns terminated information for one batch."""
+        return reward == 0
+
     @property
     def obs_description(self):
         return np.array(["theta", "omega"])
@@ -235,17 +244,6 @@ class Pendulum(core_env.CoreEnvironment):
     @property
     def action_description(self):
         return np.array(["torque"])
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, state, physical_constraints):
-        """Returns truncated information for one batch."""
-        obs = self.generate_observation(state, physical_constraints)
-        return jnp.abs(obs) > 1
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, state, reward):
-        """Returns terminated information for one batch."""
-        return reward == 0
 
     def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial state."""
@@ -259,7 +257,7 @@ class Pendulum(core_env.CoreEnvironment):
 
         obs = jax.vmap(
             self.generate_observation,
-            in_axes=(0, self.in_axes_env_properties.physical_constraints),
-        )(state, self.env_properties.physical_constraints)
+            in_axes=(0, self.in_axes_env_properties),
+        )(state, self.env_properties)
 
         return obs, state
