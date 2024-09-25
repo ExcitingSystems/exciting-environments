@@ -104,6 +104,7 @@ class ClassicCoreEnvironment(CoreEnvironment):
         physical_state: jdc.pytree_dataclass
         PRNGKey: jax.Array
         additions: jdc.pytree_dataclass
+        reference: jdc.pytree_dataclass
 
     @jdc.pytree_dataclass
     class EnvProperties:
@@ -195,12 +196,16 @@ class ClassicCoreEnvironment(CoreEnvironment):
             states, self.env_properties
         )
 
-        # generate rewards - use obs[1:] because obs[0] is observation for the initial state
+        # delete first state because its initial state of simulation and not relevant for terminated
+        states_flatten, struct = tree_flatten(states)
+        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.in_axes_env_properties))(
-            observations[1:],
+            states_without_init_state,
             jnp.expand_dims(jnp.repeat(actions, int(action_stepsize / obs_stepsize)), 1),
             self.env_properties,
         )
+        # reward = 0
 
         # generate truncated
         truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties))(
@@ -208,9 +213,6 @@ class ClassicCoreEnvironment(CoreEnvironment):
         )
 
         # generate terminated
-        # delete first state because its initial state of simulation and not relevant for terminated
-        states_flatten, struct = tree_flatten(states)
-        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
 
         # get last state so that the simulation can be continued from the end point
         last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, -1:])

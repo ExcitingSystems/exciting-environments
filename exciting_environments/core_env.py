@@ -59,14 +59,16 @@ class CoreEnvironment(ABC):
             for field in fields(dataclass_in_axes):
                 name = field.name
                 value = getattr(dataclass_in_axes, name)
-                if jdc.is_dataclass(value):
+                if value == None:
+                    setattr(dataclass_in_axes, name, None)
+                elif jdc.is_dataclass(value):
                     setattr(dataclass_in_axes, name, self.create_in_axes_dataclass(value))
                 elif jnp.isscalar(value):
                     setattr(dataclass_in_axes, name, None)
                 else:
                     assert (
                         len(value) == self.batch_size
-                    ), f"{name} is expected to be a scalar a pytree_dataclass or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
+                    ), f"{name} is expected to be a scalar, a pytree_dataclass or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
                     setattr(dataclass_in_axes, name, 0)
         return dataclass_in_axes
 
