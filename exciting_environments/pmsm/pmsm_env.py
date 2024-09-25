@@ -113,8 +113,8 @@ def currents_to_torque(i_d, i_q, p, psi_p, l_d, l_q):
     return torque
 
 
-# def currents_to_torque_saturated(Psi_d, Psi_q, i_d, i_q):
-#     return Psi_d * i_q - Psi_q * i_d
+def currents_to_torque_saturated(Psi_d, Psi_q, i_d, i_q):
+    return Psi_d * i_q - Psi_q * i_d
 
 
 def calc_max_torque(l_d, l_q, i_n, psi_p, p):
@@ -124,47 +124,37 @@ def calc_max_torque(l_d, l_q, i_n, psi_p, p):
     return max_torque
 
 
-class PMSM_Physical:
+class PMSM(CoreEnvironment):
     def __init__(
         self,
         batch_size: int = 8,
-        params: dict = None,
-        deadtime: int = 1,
-        tau: float = 1e-4,
-        solver: Callable = diffrax.Euler(),
-        control_state="torque",
         saturated=False,
+        physical_constraints: dict = None,
+        action_constraints: dict = None,
+        static_params: dict = None,
+        solver=diffrax.Euler(),
+        tau: float = 1e-4,
     ):
-
-        if not params and saturated:
-            params = {
-                "p": 3,
-                "r_s": 15e-3,
-                "l_d": 0.37e-3,
-                "l_q": 1.2e-3,
-                "psi_p": 65.6e-3,
-                "u_dc": 400,
-                "i_n": 250,
-                "max_omega_el": 1500 / 60 * 2 * jnp.pi,
-            }
-
-        if not params:
-            params = {
-                "p": 3,
-                "r_s": 1,
-                "l_d": 0.37e-3,
-                "l_q": 1.2e-3,
-                "psi_p": 65.6e-3,
-                "u_dc": 400,
-                "i_n": 250,
-                "max_omega_el": 100 / 60 * 2 * jnp.pi,
-            }
 
         self.batch_size = batch_size
         self.tau = tau
         self._solver = solver
 
-        self._action_description = ["u_d", "u_q"]
+        if not physical_constraints:
+            physical_constraints = {
+                "action_buffer": 2 * 400 / 3,
+                "epsilon": jnp.pi,
+                "i_d": 250,
+                "i_q": 250,
+                "omega_el": 3000 / 60 * 2 * jnp.pi,
+                "torque": 200,
+            }
+
+        if not action_constraints:
+            action_constraints = {
+                "u_d": 2 * 400 / 3,
+                "u_q": 2 * 400 / 3,
+            }
 
         if saturated:
             saturated_quants = [
@@ -188,7 +178,7 @@ class PMSM_Physical:
                 )  # extrapolation can only do nearest
                 self.pmsm_lut[q] = qmap
 
-            i_max = params["i_n"]
+            i_max = physical_constraints["i_d"]
             assert i_max == 250, "LUT_data was generated with i_max=250"
 
             n_grid_points_y, n_grid_points_x = self.pmsm_lut[saturated_quants[0]].shape
@@ -200,18 +190,79 @@ class PMSM_Physical:
                 for q in saturated_quants
             }
 
-        params = self.PhysicalParams(**params)
-        self.properties = self.Properties(
-            control_state=control_state, physical_params=params, deadtime=deadtime, saturated=saturated
-        )
+        if not static_params and saturated:
+            static_params = {
+                "p": 3,
+                "r_s": 15e-3,
+                "l_d": 0,  # TODO change to None
+                "l_q": 0,
+                "psi_p": 0,
+                "deadtime": 1,
+            }
 
-        if deadtime > 0:
-            self.initial_action_buffer = jnp.zeros((self.batch_size, deadtime, 2))
-        else:
-            self.initial_action_buffer = jnp.zeros((self.batch_size, 0, 2))
+        if not static_params:
+            static_params = {
+                "p": 3,
+                "r_s": 1,
+                "l_d": 0.37e-3,
+                "l_q": 1.2e-3,
+                "psi_p": 65.6e-3,
+                "deadtime": 1,
+            }
+
+        static_params = self.StaticParams(**static_params)
+        physical_constraints = self.PhysicalState(**physical_constraints)
+        action_constraints = self.Actions(**action_constraints)
+
+        # in_axes_phys_prop = self.create_in_axes_dataclass(static_params)
+        # values, _ = tree_flatten(in_axes_phys_prop)
+        # if values:
+        #     max_torque = jax.vmap(
+        #         calc_max_torque,
+        #         in_axes=(
+        #             in_axes_phys_prop.l_d,
+        #             in_axes_phys_prop.l_q,
+        #             in_axes_phys_prop.i_n,
+        #             in_axes_phys_prop.psi_p,
+        #             in_axes_phys_prop.p,
+        #         ),
+        #     )(
+        #         static_params.physical_properties.static_params.l_d,
+        #         static_params.physical_properties.static_params.l_q,
+        #         static_params.physical_properties.static_params.i_n,
+        #         static_params.physical_properties.static_params.psi_p,
+        #         static_params.physical_properties.static_params.p,
+        #     )
+        # else:
+        #     max_torque = calc_max_torque(
+        #         static_params.physical_properties.static_params.l_d,
+        #         static_params.physical_properties.static_params.l_q,
+        #         static_params.physical_properties.static_params.i_n,
+        #         static_params.physical_properties.static_params.psi_p,
+        #         static_params.physical_properties.static_params.p,
+        #     )
+
+        env_properties = self.EnvProperties(
+            saturated=saturated,
+            physical_constraints=physical_constraints,
+            action_constraints=action_constraints,
+            static_params=static_params,
+        )
+        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
+
+        self._action_description = ["u_d", "u_q"]
+        self._obs_description = [
+            "i_d",
+            "i_q",
+            "cos_eps",
+            "sin_eps",
+            "omega_el",
+            "torque",
+            "action_buffer",
+        ]
 
     @jdc.pytree_dataclass
-    class PhysicalParams:
+    class StaticParams:
         """Dataclass containing the physical parameters of the environment."""
 
         p: jax.Array
@@ -219,9 +270,7 @@ class PMSM_Physical:
         l_d: jax.Array
         l_q: jax.Array
         psi_p: jax.Array
-        u_dc: jax.Array
-        i_n: jax.Array
-        max_omega_el: jax.Array
+        deadtime: jax.Array
 
     @jdc.pytree_dataclass
     class PhysicalState:
@@ -232,34 +281,51 @@ class PMSM_Physical:
         i_d: jax.Array
         i_q: jax.Array
         torque: jax.Array
-        omega: jax.Array
+        omega_el: jax.Array
 
     @jdc.pytree_dataclass
-    class Properties:
-        """Dataclass containing the properties of the physical pmsm environment."""
+    class Additions:
+        pass
 
-        saturated: bool
-        deadtime: jax.Array
-        control_state: jax.Array
-        physical_params: jdc.pytree_dataclass
+    @jdc.pytree_dataclass
+    class Actions:
+        """Dataclass containing the actions, that can be applied to the environment."""
+
+        u_d: jax.Array
+        u_q: jax.Array
+
+    @jdc.pytree_dataclass
+    class State:
+        """Dataclass used for simulation which contains environment specific dataclasses."""
+
+        physical_state: jdc.pytree_dataclass
+        PRNGKey: jax.Array
+        additions: jdc.pytree_dataclass
+
+    @jdc.pytree_dataclass
+    class EnvProperties:
+        """Dataclass used for simulation which contains environment specific dataclasses."""
+
+        saturated: jax.Array
+        physical_constraints: jdc.pytree_dataclass
+        action_constraints: jdc.pytree_dataclass
+        static_params: jdc.pytree_dataclass
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self):
         """Returns default initial state for all batches."""
         state = self.PhysicalState(
-            action_buffer=self.initial_action_buffer,
+            action_buffer=jnp.zeros((self.batch_size, self.env_properties.static_params.deadtime, 2)),
             epsilon=jnp.zeros(self.batch_size),
             i_d=jnp.zeros(self.batch_size),
             i_q=jnp.zeros(self.batch_size),
             torque=jnp.zeros(self.batch_size),
-            omega=jnp.zeros(self.batch_size),
+            omega_el=jnp.full(self.batch_size, self.env_properties.physical_constraints.omega_el),
         )
-        return state
 
-    def reset(self):
-        return self.init_state()
+        return self.State(physical_state=state, PRNGKey=None, additions=None)
 
-    def ode_step(self, system_state, u_dq, properties):
+    def ode_step(self, state, u_dq, properties):
         """Computes state by simulating one step.
 
         Args:
@@ -270,13 +336,13 @@ class PMSM_Physical:
         Returns:
             state: The computed state after the one step simulation.
         """
-
-        omega_el = system_state.omega
+        system_state = state.physical_state
+        omega_el = system_state.omega_el
         i_d = system_state.i_d
         i_q = system_state.i_q
         eps = system_state.epsilon
 
-        args = (u_dq, properties.physical_params)
+        args = (u_dq, properties.static_params)
         if properties.saturated:
 
             def vector_field(t, y, args):
@@ -291,7 +357,7 @@ class PMSM_Physical:
                 psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]]).reshape(-1)
                 di_dq_1 = jnp.einsum(
                     "ij,j->i",
-                    (-L_diff_inv * properties.physical_params.r_s),
+                    (-L_diff_inv * properties.static_params.r_s),
                     i_dq,
                 )
                 di_dq_2 = jnp.einsum("ik,k->i", L_diff_inv, u_dq)
@@ -326,26 +392,57 @@ class PMSM_Physical:
         i_d_k1 = y[0]
         i_q_k1 = y[1]
 
-        with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
-            system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
-            system_state_next.i_d = i_d_k1
-            system_state_next.i_q = i_q_k1
-            system_state_next.torque = jnp.array(
+        if properties.saturated:
+            torque = jnp.array(
+                [
+                    currents_to_torque_saturated(
+                        Psi_d=self.LUT_interpolators["Psi_d"](jnp.array([i_d_k1, i_q_k1])),
+                        Psi_q=self.LUT_interpolators["Psi_q"](jnp.array([i_d_k1, i_q_k1])),
+                        i_d=i_d_k1,
+                        i_q=i_q_k1,
+                    )
+                ]
+            )[0]
+        else:
+            torque = jnp.array(
                 [
                     currents_to_torque(
                         i_d_k1,
                         i_q_k1,
-                        properties.physical_params.p,
-                        properties.physical_params.psi_p,
-                        properties.physical_params.l_d,
-                        properties.physical_params.l_q,
+                        properties.static_params.p,
+                        properties.static_params.psi_p,
+                        properties.static_params.l_d,
+                        properties.static_params.l_q,
                     )
                 ]
             )[0]
 
-        return system_state_next
+        with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
+            system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
+            system_state_next.i_d = i_d_k1
+            system_state_next.i_q = i_q_k1
+            system_state_next.torque = torque[0]
 
-    def simulation_step(self, system_state, action, properties):
+        return self.State(physical_state=system_state_next, PRNGKey=None, additions=None)
+
+    def constraint_denormalization(self, u_dq, system_state, env_properties):
+        """Denormalizes the u_dq and clips it with respect to the hexagon."""
+        u_albet_norm = dq2albet(
+            u_dq,
+            step_eps(
+                system_state.physical_state.epsilon,
+                self.env_properties.static_params.deadtime + 0.5,
+                self.tau,
+                system_state.physical_state.omega_el,
+            ),
+        )
+        u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
+        u_dq = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon) * jnp.hstack(
+            [env_properties.action_constraints.u_d, env_properties.action_constraints.u_q]
+        )
+        return u_dq[0]
+
+    def step(self, state, action, env_properties):
         """Computes state by simulating one step taking the deadtime into account.
 
         Args:
@@ -356,9 +453,12 @@ class PMSM_Physical:
         Returns:
             state: The computed state after the one step simulation.
         """
-        action_buffer = system_state.action_buffer
 
-        if properties.deadtime > 0:
+        action = self.constraint_denormalization(action, state, env_properties)
+
+        action_buffer = state.physical_state.action_buffer
+
+        if env_properties.static_params.deadtime > 0:
 
             future_u_dq = action
 
@@ -369,240 +469,20 @@ class PMSM_Physical:
 
             u_dq = action
 
-        next_system_state = self.ode_step(system_state, u_dq, properties)
-        with jdc.copy_and_mutate(next_system_state, validate=True) as next_system_state_update:
-            next_system_state_update.action_buffer = updated_buffer
+        next_state = self.ode_step(state, u_dq, env_properties)
+        with jdc.copy_and_mutate(next_state, validate=True) as next_state_update:
+            next_state_update.physical_state.action_buffer = updated_buffer
 
-        return next_system_state_update
+        observation = self.generate_observation(next_state_update, env_properties)
+        return observation, next_state_update
 
     @property
     def action_description(self):
         return self._action_description
 
-
-class PMSM(CoreEnvironment):
-    def __init__(
-        self,
-        pmsm_physical: PMSM_Physical,
-        batch_size: int = 8,
-        physical_constraints: dict = None,
-        action_constraints: dict = None,
-        static_params: dict = None,
-        solver=diffrax.Euler(),
-        tau: float = 1e-4,
-    ):
-        """
-        Args:
-            pmsm_physical(PMSM_Physical): Physical part of the pmsm environment.
-            batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            physical_constraints(dict): Constraints of physical state of the environment.
-                action_buffer(float): Rotation angle. Default: jnp.pi
-                epsilon(float): Angular velocity. Default: 10
-                i_d(float):
-                i_q(float):
-                omega(float):
-                torque(float):
-            action_constraints(dict): Constraints of actions.
-                u_d(float):
-                u_q(float):
-            static_params(dict): Parameters of environment which do not change during simulation.
-                p_omega(float):
-                p_reference(float):
-                p_reset(float):
-                i_lim_multiplier(float):
-                constant_omega(bool):
-                omega_ramp_min(float):
-                omega_ramp_max(float):
-                gamma(float):
-            solver(diffrax.solver): Solver used to compute state for next step.
-            tau(float): Duration of one control step in seconds. Default: 1e-4.
-
-        Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.
-        """
-
-        self.pmsm_physical = pmsm_physical
-        self.batch_size = batch_size
-        assert self.batch_size == self.pmsm_physical.batch_size
-
-        if not static_params:
-            static_params = {
-                "p_omega": 0.00005,
-                "p_reference": 0.0002,
-                "p_reset": 1.0,
-                "i_lim_multiplier": 1.2,
-                "constant_omega": False,
-                "omega_ramp_min": 20000,
-                "omega_ramp_max": 25000,
-                "gamma": 0.85,
-            }
-            if self.pmsm_physical.properties.saturated:
-                static_params["i_lim_multiplier"] = 1.0
-
-        static_params = self.StaticParams(**static_params, physical_properties=self.pmsm_physical.properties)
-
-        in_axes_phys_prop = self.create_in_axes_dataclass(static_params.physical_properties.physical_params)
-        values, _ = tree_flatten(in_axes_phys_prop)
-        if values:
-            max_torque = jax.vmap(
-                calc_max_torque,
-                in_axes=(
-                    in_axes_phys_prop.l_d,
-                    in_axes_phys_prop.l_q,
-                    in_axes_phys_prop.i_n,
-                    in_axes_phys_prop.psi_p,
-                    in_axes_phys_prop.p,
-                ),
-            )(
-                static_params.physical_properties.physical_params.l_d,
-                static_params.physical_properties.physical_params.l_q,
-                static_params.physical_properties.physical_params.i_n,
-                static_params.physical_properties.physical_params.psi_p,
-                static_params.physical_properties.physical_params.p,
-            )
-        else:
-            max_torque = calc_max_torque(
-                static_params.physical_properties.physical_params.l_d,
-                static_params.physical_properties.physical_params.l_q,
-                static_params.physical_properties.physical_params.i_n,
-                static_params.physical_properties.physical_params.psi_p,
-                static_params.physical_properties.physical_params.p,
-            )
-
-        if not physical_constraints:
-            physical_constraints = {
-                "action_buffer": 2 * static_params.physical_properties.physical_params.u_dc / 3,
-                "epsilon": jnp.pi,
-                "i_d": static_params.physical_properties.physical_params.i_n * static_params.i_lim_multiplier,
-                "i_q": static_params.physical_properties.physical_params.i_n * static_params.i_lim_multiplier,
-                "omega": static_params.physical_properties.physical_params.max_omega_el,
-                "torque": max_torque,
-            }
-
-        if not action_constraints:
-            action_constraints = {
-                "u_d": 2 * static_params.physical_properties.physical_params.u_dc / 3,
-                "u_q": 2 * static_params.physical_properties.physical_params.u_dc / 3,
-            }
-
-        physical_constraints = self.pmsm_physical.PhysicalState(**physical_constraints)
-        action_constraints = self.Actions(**action_constraints)
-
-        if static_params.physical_properties.control_state == "currents":
-            self._obs_description = [
-                "i_d",
-                "i_q",
-                "cos_eps",
-                "sin_eps",
-                "omega_el",
-                "torque",
-                "i_d_ref",
-                "i_q_ref",
-                "action_buffer",
-            ]
-
-        elif static_params.physical_properties.control_state == "torque":
-            self._obs_description = [
-                "i_d",
-                "i_q",
-                "cos_eps",
-                "sin_eps",
-                "omega_el",
-                "torque",
-                "torque_ref",
-                "action_buffer",
-            ]
-
-        env_properties = self.EnvProperties(
-            physical_constraints=physical_constraints,
-            action_constraints=action_constraints,
-            static_params=static_params,
-        )
-        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
-
-    @jdc.pytree_dataclass
-    class Additions:
-        """Dataclass containing additional information for simulation."""
-
-        omega_add: jax.Array
-        omega_count: jax.Array
-        references: jax.Array
-
-    @jdc.pytree_dataclass
-    class StaticParams:
-        """Dataclass containing the static parameters of the environment."""
-
-        p_omega: jax.Array
-        p_reference: jax.Array
-        p_reset: jax.Array
-        i_lim_multiplier: jax.Array
-        constant_omega: jax.Array
-        omega_ramp_min: jax.Array
-        omega_ramp_max: jax.Array
-        gamma: jax.Array
-        physical_properties: jdc.pytree_dataclass
-
-    @jdc.pytree_dataclass
-    class Actions:
-        """Dataclass containing the actions, that can be applied to the environment."""
-
-        u_d: jax.Array
-        u_q: jax.Array
-
-    @jdc.pytree_dataclass
-    class State:
-        """Dataclass used for simulation which contains environment specific dataclasses."""
-
-        physical_state: jdc.pytree_dataclass
-        PRNGKey: jax.Array
-        additions: jdc.pytree_dataclass
-
-    @jdc.pytree_dataclass
-    class EnvProperties:
-        """Dataclass used for simulation which contains environment specific dataclasses."""
-
-        physical_constraints: jdc.pytree_dataclass
-        action_constraints: jdc.pytree_dataclass
-        static_params: jdc.pytree_dataclass
-
-    def init_state(self, random_key=None):
-        """Returns default initial state for all batches."""
-        physical_state = self.pmsm_physical.init_state()
-        if random_key == None:
-            random_seed = np.random.randint(0, 2**31)  # TODO
-            random_key = jax.random.PRNGKey(seed=random_seed)
-        keys = jax.random.split(jnp.uint32(random_key), self.batch_size)
-        references = jnp.zeros((self.batch_size, 1))
-        if self.env_properties.static_params.physical_properties.control_state == "currents":
-            i_d_ref, keys = jax.vmap(self.update_reference, in_axes=(0, 0, None))(
-                references, keys, self.env_properties.static_params.p_reset
-            )
-            i_q_ref, keys = jax.vmap(self.update_reference, in_axes=(0, 0, None))(
-                references, keys, self.env_properties.static_params.p_reset
-            )
-            references = jnp.hstack((i_d_ref, i_q_ref))
-        else:
-            references, keys = jax.vmap(self.update_reference, in_axes=(0, 0, None))(
-                references, keys, self.env_properties.static_params.p_reset
-            )
-        if self.env_properties.static_params.constant_omega:
-            omega = jnp.ones(self.batch_size)
-            omega_add = None
-            omega_count = None
-        else:
-            omega = jnp.zeros((self.batch_size))
-            omega_add = jnp.zeros((self.batch_size))
-            omega_count = jnp.zeros((self.batch_size))
-            omega, omega_add, omega_count, keys = jax.vmap(self.update_omega, in_axes=(0, 0, 0, 0, None))(
-                omega, omega_add, omega_count, keys, self.env_properties.static_params.p_reset
-            )
-
-        with jdc.copy_and_mutate(physical_state, validate=True) as physical_state_upd:
-            physical_state_upd.omega = omega * self.env_properties.physical_constraints.omega
-
-        opt = self.Additions(omega_add=omega_add, omega_count=omega_count, references=references)
-        system_state = self.State(physical_state=physical_state_upd, PRNGKey=jnp.float32(keys), additions=opt)
-
-        return system_state
+    @property
+    def obs_description(self):
+        return self._obs_description
 
     def reset(self, random_key=None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial state."""
@@ -612,131 +492,13 @@ class PMSM(CoreEnvironment):
             ), f"initial_state should have the same dataclass structure as self.init_state()"
             system_state = initial_state
         else:
-            system_state = self.init_state(random_key)
+            system_state = self.init_state()
         observations = jax.vmap(
             self.generate_observation,
             in_axes=(0, self.in_axes_env_properties),
         )(system_state, self.env_properties)
 
         return observations, system_state
-
-    def update_reference(self, reference, key, p):
-        """Generates random reference values"""
-        random_bool = jax.random.bernoulli(key, p=p)
-        key, subkey = jax.random.split(key)
-        new_reference = jnp.where(random_bool, jax.random.uniform(subkey, minval=-1.0, maxval=1.0), reference)
-        key, subkey = jax.random.split(subkey)
-        return new_reference, subkey
-
-    def update_omega(self, omega, omega_add, omega_count, key, p):
-        """Updates omega randomly in a smooth fashion and detached from the actual ODE calculations"""
-        random_bool = jax.random.bernoulli(key, p=p)
-        key, subkey = jax.random.split(key)
-
-        # Add value to omega
-        omega += omega_add
-
-        # If new target omega has been reached stop adding values in the future
-        omega_count = jnp.where(omega_count > 0, omega_count - 1, omega_count)
-        omega_add = jnp.where(omega_count == 0, 0.0, omega_add)
-
-        # Generate new omega targets and define the ramp
-        key, subkey = jax.random.split(subkey)
-        omega_new = jnp.where(
-            random_bool & (omega_add == 0.0), jax.random.uniform(subkey, minval=-1.0, maxval=1.0), omega
-        )
-
-        key, subkey = jax.random.split(subkey)
-        omega_count = jnp.where(
-            omega_new != omega,
-            jax.random.choice(
-                subkey,
-                jnp.arange(
-                    self.env_properties.static_params.omega_ramp_min, self.env_properties.static_params.omega_ramp_max
-                ),  # TODO change to passed parameter so vmappable
-                replace=True,
-                axis=0,
-            ),
-            omega_count,
-        )
-
-        omega_add += jnp.where(omega_new != omega, (omega_new - omega) / omega_count, 0.0)
-
-        key, subkey = jax.random.split(subkey)
-
-        return omega, omega_add, omega_count, subkey
-
-    def constraint_denormalization(self, u_dq, system_state, env_properties):
-        """Denormalizes the u_dq and clips it with respect to the hexagon."""
-        u_albet_norm = dq2albet(
-            u_dq,
-            step_eps(
-                system_state.physical_state.epsilon,
-                self.env_properties.static_params.physical_properties.deadtime + 0.5,
-                self.tau,
-                system_state.physical_state.omega,
-            ),
-        )
-        u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
-        u_dq = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon) * jnp.hstack(
-            [env_properties.action_constraints.u_d, env_properties.action_constraints.u_q]
-        )
-        return u_dq[0]
-
-    def step(self, system_state, actions_norm, env_properties):
-        """Computes state and observation by simulating one step.
-
-        Args:
-            system_state: The state from which to calculate state for the next step.
-            action_norm: The normalized action to apply to the environment.
-            env_properties: Parameters and settings of the environment, that do not change over time.
-
-        Returns:
-            observation: The observation after the step.
-            state: The computed state after the one step simulation.
-        """
-        actions = self.constraint_denormalization(actions_norm, system_state, env_properties)
-
-        next_physical_state = self.pmsm_physical.simulation_step(
-            system_state.physical_state, actions, env_properties.static_params.physical_properties
-        )
-
-        if not env_properties.static_params.constant_omega:
-            omega, omega_add, omega_count, keys = self.update_omega(
-                system_state.physical_state.omega / env_properties.physical_constraints.omega,
-                system_state.additions.omega_add,
-                system_state.additions.omega_count,
-                jnp.uint32(system_state.PRNGKey),
-                env_properties.static_params.p_omega,
-            )
-        else:
-            omega = system_state.physical_state.omega / env_properties.physical_constraints.omega
-            omega_add = system_state.additions.omega_add
-            omega_count = system_state.additions.omega_count
-            keys = jnp.uint32(system_state.PRNGKey)
-
-        if env_properties.static_params.physical_properties.control_state == "currents":
-            i_d_ref, keys = self.update_reference(
-                system_state.additions.references[0], keys, env_properties.static_params.p_reference
-            )
-            i_q_ref, keys = self.update_reference(
-                system_state.additions.references[1], keys, env_properties.static_params.p_reference
-            )
-            references = jnp.hstack((i_d_ref, i_q_ref))
-        else:
-            references, keys = self.update_reference(
-                system_state.additions.references, keys, env_properties.static_params.p_reference
-            )
-
-        with jdc.copy_and_mutate(next_physical_state, validate=True) as next_physical_state_upd:
-            next_physical_state_upd.omega = omega * self.env_properties.physical_constraints.omega
-
-        opt = self.Additions(omega_add=omega_add, omega_count=omega_count, references=references)
-        next_system_state = self.State(physical_state=next_physical_state_upd, PRNGKey=jnp.float32(keys), additions=opt)
-
-        observations = self.generate_observation(next_system_state, env_properties)
-
-        return observations, next_system_state
 
     def generate_observation(self, system_state, env_properties):
         """Returns observation for one batch."""
@@ -748,11 +510,10 @@ class PMSM(CoreEnvironment):
             (
                 system_state.physical_state.i_d / physical_constraints.i_d,
                 system_state.physical_state.i_q / physical_constraints.i_q,
-                system_state.physical_state.omega / physical_constraints.omega,
+                system_state.physical_state.omega_el / physical_constraints.omega_el,
                 system_state.physical_state.torque / physical_constraints.torque,
                 cos_eps,
                 sin_eps,
-                system_state.additions.references,
                 system_state.physical_state.action_buffer.reshape(-1) / physical_constraints.action_buffer,
             )
         )
@@ -772,28 +533,28 @@ class PMSM(CoreEnvironment):
         return self.generate_truncated(system_state, env_properties)
 
     def generate_reward(self, system_state, action, env_properties):
-        """Returns reward for one batch."""
-        physical_state = system_state.physical_state
-        references = system_state.additions.references
-        if env_properties.static_params.physical_properties.control_state == "currents":
-            reward = self.current_reward_func(
-                physical_state.i_d / env_properties.physical_constraints.i_d,
-                physical_state.i_q / env_properties.physical_constraints.i_q,
-                references[0],
-                references[1],
-                env_properties.static_params.gamma,
-            )
-        elif env_properties.static_params.physical_properties.control_state == "torque":
-            reward = self.torque_reward_func(
-                (physical_state.i_d * (env_properties.physical_constraints.i_d) ** -1),
-                (physical_state.i_q * (env_properties.physical_constraints.i_q) ** -1),
-                (physical_state.torque / (env_properties.physical_constraints.torque)),
-                references,
-                env_properties.static_params.i_lim_multiplier,
-                env_properties.static_params.gamma,
-            )
+        # """Returns reward for one batch."""
+        # physical_state = system_state.physical_state
+        # references = system_state.additions.references
+        # if env_properties.static_params.physical_properties.control_state == "currents":
+        #     reward = self.current_reward_func(
+        #         physical_state.i_d / env_properties.physical_constraints.i_d,
+        #         physical_state.i_q / env_properties.physical_constraints.i_q,
+        #         references[0],
+        #         references[1],
+        #         0.85,  # gamma
+        #     )
+        # elif env_properties.static_params.physical_properties.control_state == "torque":
+        #     reward = self.torque_reward_func(
+        #         (physical_state.i_d * (env_properties.physical_constraints.i_d) ** -1),
+        #         (physical_state.i_q * (env_properties.physical_constraints.i_q) ** -1),
+        #         (physical_state.torque / (env_properties.physical_constraints.torque)),
+        #         references,
+        #         env_properties.static_params.i_lim_multiplier,
+        #         0.85,  # gamma
+        #     )
 
-        return reward
+        return 0  # reward
 
     def current_reward_func(self, i_d, i_q, i_d_ref, i_q_ref, gamma):
         mse = 0.5 * (i_d - i_d_ref) ** 2 + 0.5 * (i_q - i_q_ref) ** 2
@@ -817,15 +578,3 @@ class PMSM(CoreEnvironment):
             (i_s < i_n) & (i_d < i_d_plus) & (jnp.abs(torque - torque_ref) < torque_tol), 1 - 0.5 * i_s, rew
         )
         return rew * (1 - gamma)
-
-    @property
-    def action_description(self):
-        return self.pmsm._action_description
-
-    @property
-    def obs_description(self):
-        return self._obs_description
-
-    @property
-    def control_state(self):
-        return self.pmsm.control_state

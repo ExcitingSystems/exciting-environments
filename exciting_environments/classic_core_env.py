@@ -76,6 +76,7 @@ class ClassicCoreEnvironment(CoreEnvironment):
         physical_state: jdc.pytree_dataclass
         PRNGKey: jax.Array
         additions: jdc.pytree_dataclass
+        reference: jdc.pytree_dataclass
 
     @jdc.pytree_dataclass
     class EnvProperties:
