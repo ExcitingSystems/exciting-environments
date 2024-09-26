@@ -13,7 +13,7 @@ from scipy.io import loadmat
 from scipy.interpolate import RegularGridInterpolator, griddata
 from pathlib import Path
 import os
-
+from dataclasses import fields
 
 t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])  # only for alpha/beta -> abc
 t23 = 2 / 3 * jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]]).T  # only for abc -> alpha/beta
@@ -212,13 +212,13 @@ class PMSM(CoreEnvironment):
             }
 
         if not control_state:
-            control_state = ["i_d", "i_q"]
+            control_state = []  # "i_d", "i_q"
 
         self.control_state = control_state
 
         static_params = self.StaticParams(**static_params)
         physical_constraints = self.PhysicalState(**physical_constraints)
-        action_constraints = self.Actions(**action_constraints)
+        action_constraints = self.Action(**action_constraints)
 
         # in_axes_phys_prop = self.create_in_axes_dataclass(static_params)
         # values, _ = tree_flatten(in_axes_phys_prop)
@@ -266,6 +266,8 @@ class PMSM(CoreEnvironment):
             "torque",
             "action_buffer",
         ]
+        self.action_dim = len(fields(self.Action))
+        self.physical_state_dim = len(fields(self.PhysicalState))
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -294,7 +296,7 @@ class PMSM(CoreEnvironment):
         pass
 
     @jdc.pytree_dataclass
-    class Actions:
+    class Action:
         """Dataclass containing the actions, that can be applied to the environment."""
 
         u_d: jax.Array
@@ -318,31 +320,31 @@ class PMSM(CoreEnvironment):
         action_constraints: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self):
-        """Returns default initial state for all batches."""
-        state = self.PhysicalState(
-            action_buffer=jnp.zeros((self.batch_size, self.env_properties.static_params.deadtime, 2)),
-            epsilon=jnp.zeros(self.batch_size),
-            i_d=jnp.zeros(self.batch_size),
-            i_q=jnp.zeros(self.batch_size),
-            torque=jnp.zeros(self.batch_size),
-            omega_el=jnp.full(self.batch_size, self.env_properties.physical_constraints.omega_el),
-        )
+    # @partial(jax.jit, static_argnums=0)
+    # def init_state(self):
+    #     """Returns default initial state for all batches."""
+    #     state = self.PhysicalState(
+    #         action_buffer=jnp.zeros((self.batch_size, self.env_properties.static_params.deadtime, 2)),
+    #         epsilon=jnp.zeros(self.batch_size),
+    #         i_d=jnp.zeros(self.batch_size),
+    #         i_q=jnp.zeros(self.batch_size),
+    #         torque=jnp.zeros(self.batch_size),
+    #         omega_el=jnp.full(self.batch_size, self.env_properties.physical_constraints.omega_el),
+    #     )
 
-        return self.State(physical_state=state, PRNGKey=None, additions=None)
+    #     return self.State(physical_state=state, PRNGKey=None, additions=None)
 
     @partial(jax.jit, static_argnums=[0, 1])
-    def init_state(self, env_properties, rng: chex.PRNGKey = None):
+    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
         """Returns default initial state for all batches."""
         if rng is None:
             phys = self.PhysicalState(
-                action_buffer=jnp.zeros((self.batch_size, self.env_properties.static_params.deadtime, 2)),
-                epsilon=jnp.zeros(self.batch_size),
-                i_d=jnp.zeros(self.batch_size),
-                i_q=jnp.zeros(self.batch_size),
-                torque=jnp.zeros(self.batch_size),
-                omega_el=jnp.full(self.batch_size, self.env_properties.physical_constraints.omega_el),
+                action_buffer=jnp.array([[0.0, 0.0]]),
+                epsilon=0.0,
+                i_d=0.0,
+                i_q=0.0,
+                torque=0.0,
+                omega_el=(env_properties.physical_constraints.omega_el),
             )
             subkey = None
         else:
@@ -397,7 +399,9 @@ class PMSM(CoreEnvironment):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_init_state(self, rng: chex.PRNGKey = None):
-        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0))(self.env_properties, rng)
+        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
+            self.env_properties, rng, jnp.ones(self.batch_size)
+        )
 
     def ode_step(self, state, u_dq, properties):
         """Computes state by simulating one step.

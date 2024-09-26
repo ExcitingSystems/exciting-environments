@@ -25,11 +25,11 @@ class GymWrapper(ABC):
 
         self.env = env
 
-        if not control_state:
-            print(f"No chosen control state. Reward will be 0.")
-            self.control_state = control_state
-            self.env.control_state = control_state
+        if control_state is None:
+            print(f"No chosen control state. Control state is set to {self.env.control_state}.")
+            self.control_state = self.env.control_state
         else:
+            assert type(control_state) == list, f"Control state has to be a list."
             for i in control_state:
                 assert i in list(
                     self.env.PhysicalState.__match_args__
