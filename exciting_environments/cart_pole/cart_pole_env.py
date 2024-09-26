@@ -303,7 +303,7 @@ class CartPole(ClassicCoreEnvironment):
             )
             key, subkey = jax.random.split(rng)
         additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
-        ref = self.PhysicalState(deflection=None, velocity=None, theta=None, omega=None)
+        ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
         return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=0)
@@ -317,7 +317,14 @@ class CartPole(ClassicCoreEnvironment):
         """Returns reward for one batch."""
         reward = 0
         for name in self.control_state:
-            reward += (getattr(state.physical_state, name) - getattr(state.reference, name)) ** 2
+            reward += (
+                4
+                - (
+                    (getattr(state.physical_state, name) - getattr(state.reference, name))
+                    / (getattr(env_properties.physical_constraints, name)).astype(float)
+                )
+                ** 2
+            )
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
@@ -333,7 +340,12 @@ class CartPole(ClassicCoreEnvironment):
             )
         )
         for name in self.control_state:
-            obs = jnp.hstack((obs, getattr(state.reference, name)))
+            obs = jnp.hstack(
+                (
+                    obs,
+                    (getattr(state.reference, name) / (getattr(physical_constraints, name)).astype(float)),
+                )
+            )
         return obs
 
     @partial(jax.jit, static_argnums=0)

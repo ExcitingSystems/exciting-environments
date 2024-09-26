@@ -26,7 +26,7 @@ class GymWrapper(ABC):
         self.env = env
 
         if control_state is None:
-            print(f"No chosen control state. No reward for reference tracking. Reward=0 for all timesteps.")
+            print(f"No chosen control state. Control state is set to {self.env.control_state}.")
             self.control_state = self.env.control_state
         else:
             assert type(control_state) == list, f"Control state has to be a list."
