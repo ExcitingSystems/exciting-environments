@@ -132,6 +132,7 @@ class PMSM(CoreEnvironment):
         physical_constraints: dict = None,
         action_constraints: dict = None,
         static_params: dict = None,
+        control_state: list = None,
         solver=diffrax.Euler(),
         tau: float = 1e-4,
     ):
@@ -209,6 +210,11 @@ class PMSM(CoreEnvironment):
                 "psi_p": 65.6e-3,
                 "deadtime": 1,
             }
+
+        if not control_state:
+            control_state = ["i_d", "i_q"]
+
+        self.control_state = control_state
 
         static_params = self.StaticParams(**static_params)
         physical_constraints = self.PhysicalState(**physical_constraints)
@@ -301,6 +307,7 @@ class PMSM(CoreEnvironment):
         physical_state: jdc.pytree_dataclass
         PRNGKey: jax.Array
         additions: jdc.pytree_dataclass
+        reference: jdc.pytree_dataclass
 
     @jdc.pytree_dataclass
     class EnvProperties:
@@ -324,6 +331,72 @@ class PMSM(CoreEnvironment):
         )
 
         return self.State(physical_state=state, PRNGKey=None, additions=None)
+
+    @partial(jax.jit, static_argnums=0)
+    def init_state(self, env_properties, rng: chex.PRNGKey = None):
+        """Returns default initial state for all batches."""
+        if rng is None:
+            phys = self.PhysicalState(
+                action_buffer=jnp.zeros((self.batch_size, self.env_properties.static_params.deadtime, 2)),
+                epsilon=jnp.zeros(self.batch_size),
+                i_d=jnp.zeros(self.batch_size),
+                i_q=jnp.zeros(self.batch_size),
+                torque=jnp.zeros(self.batch_size),
+                omega_el=jnp.full(self.batch_size, self.env_properties.physical_constraints.omega_el),
+            )
+            subkey = None
+        else:
+            state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(6,))
+            i_d = (state_norm[0] * env_properties.physical_constraints.i_d,)
+            i_q = (state_norm[1] * env_properties.physical_constraints.i_q,)
+            if env_properties.saturated:
+                torque = jnp.array(
+                    [
+                        currents_to_torque_saturated(
+                            Psi_d=self.LUT_interpolators["Psi_d"](jnp.array([i_d_k1, i_q_k1])),
+                            Psi_q=self.LUT_interpolators["Psi_q"](jnp.array([i_d_k1, i_q_k1])),
+                            i_d=i_d,
+                            i_q=i_q,
+                        )
+                    ]
+                )[0]
+            else:
+                torque = jnp.array(
+                    [
+                        currents_to_torque(
+                            i_d,
+                            i_q,
+                            env_properties.static_params.p,
+                            env_properties.static_params.psi_p,
+                            env_properties.static_params.l_d,
+                            env_properties.static_params.l_q,
+                        )
+                    ]
+                )[0]
+            phys = self.PhysicalState(
+                action_buffer=jnp.array([state_norm[2], state_norm[3]])
+                * env_properties.physical_constraints.action_buffer,
+                epsilon=state_norm[4] * env_properties.physical_constraints.epsilon,
+                i_d=i_d,
+                i_q=i_q,
+                torque=torque,
+                omega_el=jnp.abs(state_norm[5]) * env_properties.physical_constraints.omega_el,
+            )
+            key, subkey = jax.random.split(rng)
+        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        ref = self.PhysicalState(
+            action_buffer=None,
+            epsilon=None,
+            i_d=None,
+            i_q=None,
+            torque=None,
+            omega_el=None,
+        )
+        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+
+    @partial(jax.jit, static_argnums=0)
+    def vmap_init_state(self, rng: chex.PRNGKey = None):
+        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0))(self.env_properties, rng)
 
     def ode_step(self, state, u_dq, properties):
         """Computes state by simulating one step.
@@ -417,11 +490,11 @@ class PMSM(CoreEnvironment):
                 ]
             )[0]
 
-        with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
+        with jdc.copy_and_mutate(system_state, validate=False) as system_state_next:
             system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
             system_state_next.i_d = i_d_k1
             system_state_next.i_q = i_q_k1
-            system_state_next.torque = torque[0]
+            system_state_next.torque = torque  # [0]
 
         return self.State(physical_state=system_state_next, PRNGKey=None, additions=None)
 
@@ -484,21 +557,22 @@ class PMSM(CoreEnvironment):
     def obs_description(self):
         return self._obs_description
 
-    def reset(self, random_key=None, initial_state: jdc.pytree_dataclass = None):
+    def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment to default or passed initial state."""
         if initial_state is not None:
-            assert tree_structure(self.init_state()) == tree_structure(
+            assert tree_structure(self.vmap_init_state()) == tree_structure(
                 initial_state
-            ), f"initial_state should have the same dataclass structure as self.init_state()"
-            system_state = initial_state
+            ), f"initial_state should have the same dataclass structure as self.vmap_init_state()"
+            state = initial_state
         else:
-            system_state = self.init_state()
-        observations = jax.vmap(
+            state = self.vmap_init_state(rng)
+
+        obs = jax.vmap(
             self.generate_observation,
             in_axes=(0, self.in_axes_env_properties),
-        )(system_state, self.env_properties)
+        )(state, self.env_properties)
 
-        return observations, system_state
+        return obs, state
 
     def generate_observation(self, system_state, env_properties):
         """Returns observation for one batch."""
@@ -517,6 +591,8 @@ class PMSM(CoreEnvironment):
                 system_state.physical_state.action_buffer.reshape(-1) / physical_constraints.action_buffer,
             )
         )
+        for name in self.control_state:
+            obs = jnp.hstack((obs, getattr(system_state.reference, name)))
         return obs
 
     def generate_truncated(self, system_state, env_properties):
@@ -532,29 +608,48 @@ class PMSM(CoreEnvironment):
         """Returns terminated information for one batch."""
         return self.generate_truncated(system_state, env_properties)
 
-    def generate_reward(self, system_state, action, env_properties):
-        # """Returns reward for one batch."""
-        # physical_state = system_state.physical_state
-        # references = system_state.additions.references
-        # if env_properties.static_params.physical_properties.control_state == "currents":
-        #     reward = self.current_reward_func(
-        #         physical_state.i_d / env_properties.physical_constraints.i_d,
-        #         physical_state.i_q / env_properties.physical_constraints.i_q,
-        #         references[0],
-        #         references[1],
-        #         0.85,  # gamma
-        #     )
-        # elif env_properties.static_params.physical_properties.control_state == "torque":
-        #     reward = self.torque_reward_func(
-        #         (physical_state.i_d * (env_properties.physical_constraints.i_d) ** -1),
-        #         (physical_state.i_q * (env_properties.physical_constraints.i_q) ** -1),
-        #         (physical_state.torque / (env_properties.physical_constraints.torque)),
-        #         references,
-        #         env_properties.static_params.i_lim_multiplier,
-        #         0.85,  # gamma
-        #     )
+    # def generate_reward(self, system_state, action, env_properties):
+    #     # """Returns reward for one batch."""
+    #     # physical_state = system_state.physical_state
+    #     # references = system_state.additions.references
+    #     # if env_properties.static_params.physical_properties.control_state == "currents":
+    #     #     reward = self.current_reward_func(
+    #     #         physical_state.i_d / env_properties.physical_constraints.i_d,
+    #     #         physical_state.i_q / env_properties.physical_constraints.i_q,
+    #     #         references[0],
+    #     #         references[1],
+    #     #         0.85,  # gamma
+    #     #     )
+    #     # elif env_properties.static_params.physical_properties.control_state == "torque":
+    #     #     reward = self.torque_reward_func(
+    #     #         (physical_state.i_d * (env_properties.physical_constraints.i_d) ** -1),
+    #     #         (physical_state.i_q * (env_properties.physical_constraints.i_q) ** -1),
+    #     #         (physical_state.torque / (env_properties.physical_constraints.torque)),
+    #     #         references,
+    #     #         env_properties.static_params.i_lim_multiplier,
+    #     #         0.85,  # gamma
+    #     #     )
 
-        return 0  # reward
+    #     return 0  # reward
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_reward(self, state, action, env_properties):
+        """Returns reward for one batch."""
+        reward = 0
+        if "i_d" in self.control_state and "i_q" in self.control_state:
+            reward += self.current_reward_func(
+                state.physical_state.i_d, state.physical_state.i_q, state.reference.i_d, state.reference.i_q, 0.85
+            )
+        if "torque" in self.control_state:
+            reward += self.torque_reward_func(
+                state.physical_state.i_d,
+                state.physical_state.i_q,
+                state.physical_state.torque,
+                state.reference.torque,
+                env_properties.static_params.i_lim_multiplier,
+                0.85,
+            )
+        return jnp.array([reward])
 
     def current_reward_func(self, i_d, i_q, i_d_ref, i_q_ref, gamma):
         mse = 0.5 * (i_d - i_d_ref) ** 2 + 0.5 * (i_q - i_q_ref) ** 2
