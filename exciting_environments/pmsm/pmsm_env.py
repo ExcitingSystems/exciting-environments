@@ -332,7 +332,7 @@ class PMSM(CoreEnvironment):
 
         return self.State(physical_state=state, PRNGKey=None, additions=None)
 
-    @partial(jax.jit, static_argnums=0)
+    @partial(jax.jit, static_argnums=[0, 1])
     def init_state(self, env_properties, rng: chex.PRNGKey = None):
         """Returns default initial state for all batches."""
         if rng is None:
@@ -347,14 +347,14 @@ class PMSM(CoreEnvironment):
             subkey = None
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(6,))
-            i_d = (state_norm[0] * env_properties.physical_constraints.i_d,)
-            i_q = (state_norm[1] * env_properties.physical_constraints.i_q,)
+            i_d = state_norm[0] * env_properties.physical_constraints.i_d
+            i_q = state_norm[1] * env_properties.physical_constraints.i_q
             if env_properties.saturated:
                 torque = jnp.array(
                     [
                         currents_to_torque_saturated(
-                            Psi_d=self.LUT_interpolators["Psi_d"](jnp.array([i_d_k1, i_q_k1])),
-                            Psi_q=self.LUT_interpolators["Psi_q"](jnp.array([i_d_k1, i_q_k1])),
+                            Psi_d=self.LUT_interpolators["Psi_d"](jnp.array([i_d, i_q])),
+                            Psi_q=self.LUT_interpolators["Psi_q"](jnp.array([i_d, i_q])),
                             i_d=i_d,
                             i_q=i_q,
                         )
@@ -374,8 +374,9 @@ class PMSM(CoreEnvironment):
                     ]
                 )[0]
             phys = self.PhysicalState(
-                action_buffer=jnp.array([state_norm[2], state_norm[3]])
-                * env_properties.physical_constraints.action_buffer,
+                action_buffer=(
+                    jnp.array([[state_norm[2], state_norm[3]]]) * env_properties.physical_constraints.action_buffer
+                ),
                 epsilon=state_norm[4] * env_properties.physical_constraints.epsilon,
                 i_d=i_d,
                 i_q=i_q,
@@ -496,7 +497,9 @@ class PMSM(CoreEnvironment):
             system_state_next.i_q = i_q_k1
             system_state_next.torque = torque  # [0]
 
-        return self.State(physical_state=system_state_next, PRNGKey=None, additions=None)
+        with jdc.copy_and_mutate(state, validate=False) as state_next:
+            state_next.physical_state = system_state_next
+        return state_next
 
     def constraint_denormalization(self, u_dq, system_state, env_properties):
         """Denormalizes the u_dq and clips it with respect to the hexagon."""
