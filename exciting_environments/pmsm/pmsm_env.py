@@ -108,15 +108,6 @@ def switching_state_to_dq(switching_state, u_dc, eps):
     return u_dq[0]
 
 
-def currents_to_torque(i_d, i_q, p, psi_p, l_d, l_q):
-    torque = 1.5 * p * (psi_p + (l_d - l_q) * i_d) * i_q
-    return torque
-
-
-def currents_to_torque_saturated(Psi_d, Psi_q, i_d, i_q):
-    return Psi_d * i_q - Psi_q * i_d
-
-
 def calc_max_torque(l_d, l_q, i_n, psi_p, p):
     i_d = jnp.where(l_d == l_q, 0, -psi_p / (4 * (l_d - l_q)) - jnp.sqrt((psi_p / (4 * (l_d - l_q))) ** 2 + i_n**2 / 2))
     i_q = jnp.sqrt(i_n**2 - i_d**2)
@@ -157,15 +148,15 @@ class PMSM(CoreEnvironment):
                 "u_q": 2 * 400 / 3,
             }
 
+        saturated_quants = [
+            "L_dd",
+            "L_dq",
+            "L_qd",
+            "L_qq",
+            "Psi_d",
+            "Psi_q",
+        ]
         if saturated:
-            saturated_quants = [
-                "L_dd",
-                "L_dq",
-                "L_qd",
-                "L_qq",
-                "Psi_d",
-                "Psi_q",
-            ]
             self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_jax_grad.mat")  # "\\LUT_data.mat"
             for q in saturated_quants:
                 qmap = self.pmsm_lut[q]
@@ -190,14 +181,16 @@ class PMSM(CoreEnvironment):
                 )
                 for q in saturated_quants
             }
+        else:
+            self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
 
         if not static_params and saturated:
             static_params = {
                 "p": 3,
                 "r_s": 15e-3,
-                "l_d": 0,  # TODO change to None
-                "l_q": 0,
-                "psi_p": 0,
+                "l_d": jnp.nan,
+                "l_q": jnp.nan,
+                "psi_p": jnp.nan,
                 "deadtime": 1,
             }
 
@@ -212,7 +205,7 @@ class PMSM(CoreEnvironment):
             }
 
         if not control_state:
-            control_state = []  # "i_d", "i_q"
+            control_state = []
 
         self.control_state = control_state
 
@@ -334,7 +327,23 @@ class PMSM(CoreEnvironment):
 
     #     return self.State(physical_state=state, PRNGKey=None, additions=None)
 
-    @partial(jax.jit, static_argnums=[0, 1])
+    def currents_to_torque(self, i_d, i_q, env_properties):
+        torque = (
+            1.5
+            * env_properties.static_params.p
+            * (
+                env_properties.static_params.psi_p
+                + (env_properties.static_params.l_d - env_properties.static_params.l_q) * i_d
+            )
+            * i_q
+        )
+        return torque
+
+    def currents_to_torque_saturated(self, i_d, i_q, env_properties):
+        Psi_d = self.LUT_interpolators["Psi_d"](jnp.array([i_d, i_q]))
+        Psi_q = self.LUT_interpolators["Psi_q"](jnp.array([i_d, i_q]))
+        return (Psi_d * i_q - Psi_q * i_d)[0]
+
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
         """Returns default initial state for all batches."""
         if rng is None:
@@ -351,30 +360,39 @@ class PMSM(CoreEnvironment):
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(6,))
             i_d = state_norm[0] * env_properties.physical_constraints.i_d
             i_q = state_norm[1] * env_properties.physical_constraints.i_q
-            if env_properties.saturated:
-                torque = jnp.array(
-                    [
-                        currents_to_torque_saturated(
-                            Psi_d=self.LUT_interpolators["Psi_d"](jnp.array([i_d, i_q])),
-                            Psi_q=self.LUT_interpolators["Psi_q"](jnp.array([i_d, i_q])),
-                            i_d=i_d,
-                            i_q=i_q,
-                        )
-                    ]
-                )[0]
-            else:
-                torque = jnp.array(
-                    [
-                        currents_to_torque(
-                            i_d,
-                            i_q,
-                            env_properties.static_params.p,
-                            env_properties.static_params.psi_p,
-                            env_properties.static_params.l_d,
-                            env_properties.static_params.l_q,
-                        )
-                    ]
-                )[0]
+            torque = jax.lax.cond(
+                env_properties.saturated,
+                self.currents_to_torque_saturated,
+                self.currents_to_torque,
+                i_d,
+                i_q,
+                env_properties,
+            )
+
+            # if env_properties.saturated:
+            #     torque = jnp.array(
+            #         [
+            #             self.currents_to_torque_saturated(
+            #                 Psi_d=self.LUT_interpolators["Psi_d"](jnp.array([i_d, i_q])),
+            #                 Psi_q=self.LUT_interpolators["Psi_q"](jnp.array([i_d, i_q])),
+            #                 i_d=i_d,
+            #                 i_q=i_q,
+            #             )
+            #         ]
+            #     )[0]
+            # else:
+            #     torque = jnp.array(
+            #         [
+            #             self.currents_to_torque(
+            #                 i_d,
+            #                 i_q,
+            #                 env_properties.static_params.p,
+            #                 env_properties.static_params.psi_p,
+            #                 env_properties.static_params.l_d,
+            #                 env_properties.static_params.l_q,
+            #             )
+            #         ]
+            #     )[0]
             phys = self.PhysicalState(
                 action_buffer=(
                     jnp.array([[state_norm[2], state_norm[3]]]) * env_properties.physical_constraints.action_buffer
@@ -397,7 +415,7 @@ class PMSM(CoreEnvironment):
         )
         return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
 
-    @partial(jax.jit, static_argnums=0)
+    # @partial(jax.jit, static_argnums=0)
     def vmap_init_state(self, rng: chex.PRNGKey = None):
         return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
             self.env_properties, rng, jnp.ones(self.batch_size)
@@ -471,29 +489,11 @@ class PMSM(CoreEnvironment):
         i_q_k1 = y[1]
 
         if properties.saturated:
-            torque = jnp.array(
-                [
-                    currents_to_torque_saturated(
-                        Psi_d=self.LUT_interpolators["Psi_d"](jnp.array([i_d_k1, i_q_k1])),
-                        Psi_q=self.LUT_interpolators["Psi_q"](jnp.array([i_d_k1, i_q_k1])),
-                        i_d=i_d_k1,
-                        i_q=i_q_k1,
-                    )
-                ]
-            )[0]
+            torque = jnp.array([self.currents_to_torque_saturated(i_d=i_d_k1, i_q=i_q_k1, env_properties=properties)])[
+                0
+            ]
         else:
-            torque = jnp.array(
-                [
-                    currents_to_torque(
-                        i_d_k1,
-                        i_q_k1,
-                        properties.static_params.p,
-                        properties.static_params.psi_p,
-                        properties.static_params.l_d,
-                        properties.static_params.l_q,
-                    )
-                ]
-            )[0]
+            torque = jnp.array([self.currents_to_torque(i_d_k1, i_q_k1, properties)])[0]
 
         with jdc.copy_and_mutate(system_state, validate=False) as system_state_next:
             system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
@@ -653,7 +653,7 @@ class PMSM(CoreEnvironment):
                 state.physical_state.i_q,
                 state.physical_state.torque,
                 state.reference.torque,
-                env_properties.static_params.i_lim_multiplier,
+                1,
                 0.85,
             )
         return jnp.array([reward])
