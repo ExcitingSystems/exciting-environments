@@ -159,9 +159,8 @@ class FluidTank(ClassicCoreEnvironment):
         """Returns reward for one batch."""
         reward = 0
         for name in self.control_state:
-            reward += (
-                4
-                - (
+            reward += -(
+                (
                     (getattr(state.physical_state, name) - getattr(state.reference, name))
                     / (getattr(env_properties.physical_constraints, name)).astype(float)
                 )

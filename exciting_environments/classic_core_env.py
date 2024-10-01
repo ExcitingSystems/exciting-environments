@@ -198,6 +198,7 @@ class ClassicCoreEnvironment(CoreEnvironment):
 
         # delete first state because its initial state of simulation and not relevant for terminated
         states_flatten, struct = tree_flatten(states)
+
         states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
 
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.in_axes_env_properties))(
@@ -208,20 +209,48 @@ class ClassicCoreEnvironment(CoreEnvironment):
         # reward = 0
 
         # generate truncated
-        truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties))(
-            states, self.env_properties
-        )
+        # truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties))(
+        #     states, self.env_properties
+        # )
 
         # generate terminated
 
         # get last state so that the simulation can be continued from the end point
         last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, -1:])
 
+        # terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.in_axes_env_properties))(
+        #     states_without_init_state, reward, self.env_properties
+        # )
+
+        return observations, states, last_state  # , reward, truncated, terminated
+
+    def generate_rew_trunc_term_ahead(self, states, actions):
+
+        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+
+        actions = actions * jnp.array(tree_flatten(self.env_properties.action_constraints)[0]).T
+
+        states_flatten, struct = tree_flatten(states)
+
+        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+
+        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.in_axes_env_properties))(
+            states_without_init_state,
+            jnp.expand_dims(
+                jnp.repeat(actions, int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0])), 1
+            ),  #
+            self.env_properties,
+        )
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties))(
+            states, self.env_properties
+        )
         terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.in_axes_env_properties))(
             states_without_init_state, reward, self.env_properties
         )
-
-        return observations, reward, truncated, terminated, last_state
+        return reward, truncated, terminated
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod

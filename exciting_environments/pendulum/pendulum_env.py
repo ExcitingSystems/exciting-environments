@@ -202,7 +202,7 @@ class Pendulum(ClassicCoreEnvironment):
         theta_t = ((theta_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
         physical_states = self.PhysicalState(theta=theta_t, omega=omega_t)
-        ref = self.PhysicalState(theta=None, omega=None)
+        ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
         additions = None
         PRNGKey = None
         return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions, reference=ref)
@@ -238,9 +238,8 @@ class Pendulum(ClassicCoreEnvironment):
         """Returns reward for one batch."""
         reward = 0
         for name in self.control_state:
-            reward += (
-                4
-                - (
+            reward += -(
+                (
                     (getattr(state.physical_state, name) - getattr(state.reference, name))
                     / (getattr(env_properties.physical_constraints, name)).astype(float)
                 )

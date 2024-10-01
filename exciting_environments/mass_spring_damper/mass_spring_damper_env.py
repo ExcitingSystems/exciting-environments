@@ -197,7 +197,9 @@ class MassSpringDamper(ClassicCoreEnvironment):
         velocity_t = sol.ys[1]
 
         physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t)
-        ref = self.PhysicalState(deflection=None, velocity=None)
+        ref = self.PhysicalState(
+            deflection=jnp.full(deflection_t.shape, jnp.nan), velocity=jnp.full(velocity_t.shape, jnp.nan)
+        )
         additions = None
         PRNGKey = None
         return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions, reference=ref)
@@ -233,9 +235,8 @@ class MassSpringDamper(ClassicCoreEnvironment):
         """Returns reward for one batch."""
         reward = 0
         for name in self.control_state:
-            reward += (
-                4
-                - (
+            reward += -(
+                (
                     (getattr(state.physical_state, name) - getattr(state.reference, name))
                     / (getattr(env_properties.physical_constraints, name)).astype(float)
                 )

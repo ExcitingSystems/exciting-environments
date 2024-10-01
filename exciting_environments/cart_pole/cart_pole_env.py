@@ -279,7 +279,7 @@ class CartPole(ClassicCoreEnvironment):
         physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t, theta=theta_t, omega=omega_t)
         additions = None
         PRNGKey = None
-        ref = self.PhysicalState(deflection=None, velocity=None, theta=None, omega=None)
+        ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
         return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=0)
@@ -317,9 +317,8 @@ class CartPole(ClassicCoreEnvironment):
         """Returns reward for one batch."""
         reward = 0
         for name in self.control_state:
-            reward += (
-                4
-                - (
+            reward += -(
+                (
                     (getattr(state.physical_state, name) - getattr(state.reference, name))
                     / (getattr(env_properties.physical_constraints, name)).astype(float)
                 )

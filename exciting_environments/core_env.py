@@ -124,7 +124,9 @@ class CoreEnvironment(ABC):
             obs_stepsize: The sampling time for the observations
             action_stepsize: The time between changes in the input/action
         """
-
+        assert (
+            obs_stepsize <= action_stepsize
+        ), "The action stepsize should be greater or equal to the observation stepsize."
         assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
             actions.shape[0] == self.batch_size
@@ -140,8 +142,22 @@ class CoreEnvironment(ABC):
         )
 
         # vmap single operations
-        observations, rewards, truncated, terminated, last_state = jax.vmap(
+        observations, states, last_state = jax.vmap(
             self.sim_ahead, in_axes=(0, 0, self.in_axes_env_properties, None, None)
-        )(init_state, actions, self.env_properties, obs_stepsize, action_stepsize)
+        )(
+            init_state, actions, self.env_properties, obs_stepsize, action_stepsize
+        )  # rewards, truncated, terminated,
 
-        return observations, rewards, truncated, terminated, last_state
+        return observations, states, last_state  # rewards, truncated, terminated,
+
+    def vmap_generate_rew_trunc_term_ahead(self, states, actions):
+        assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
+        assert (
+            actions.shape[0] == self.batch_size
+        ), f"The first dimension does not correspond to the batch size which is {self.batch_size}, but {actions.shape[0]} is given"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+        reward, truncated, terminated = jax.vmap(self.generate_rew_trunc_term_ahead, in_axes=(0, 0))(states, actions)
+
+        return reward, truncated, terminated
