@@ -630,32 +630,40 @@ class PMSM(CoreEnvironment):
 
         # # delete first state because its initial state of simulation and not relevant for
 
-        states_flatten, struct = tree_flatten(states)
-
-        # states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
-
-        # reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.in_axes_env_properties))(
-        #     states_without_init_state,
-        #     jnp.expand_dims(jnp.repeat(actions, int(action_stepsize / obs_stepsize)), 1),
-        #     self.env_properties,
-        # )
-        # # reward = 0
-
-        # # generate truncated
-        # truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties))(
-        #     states, self.env_properties
-        # )
-
-        # # generate terminated
+        states_flatten, _ = tree_flatten(states)
 
         # # get last state so that the simulation can be continued from the end point
         last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
 
-        # terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.in_axes_env_properties))(
-        #     states_without_init_state, reward, self.env_properties
-        # )
-
         return observations, states, last_state
+
+    def generate_rew_trunc_term_ahead(self, states, actions, env_properties):
+        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+        deadtime = env_properties.static_params.deadtime
+        actions = jnp.vstack([jnp.zeros((deadtime, 2)), actions])
+        states_flatten, struct = tree_flatten(states)
+        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+        states_without_last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, :-1])
+
+        actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(
+            actions, states_without_last_state, env_properties
+        )
+
+        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
+            states_without_init_state,
+            jnp.expand_dims(
+                jnp.repeat(actions, int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0]), axis=0), 1
+            ),  #
+            env_properties,
+        )
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, env_properties)
+        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, None))(
+            states_without_init_state, reward, env_properties
+        )
+        return reward, truncated, terminated
 
     def step(self, state, action, env_properties):
         """Computes state by simulating one step taking the deadtime into account.
@@ -749,30 +757,6 @@ class PMSM(CoreEnvironment):
     def generate_terminated(self, system_state, reward, env_properties):
         """Returns terminated information for one batch."""
         return self.generate_truncated(system_state, env_properties)
-
-    # def generate_reward(self, system_state, action, env_properties):
-    #     # """Returns reward for one batch."""
-    #     # physical_state = system_state.physical_state
-    #     # references = system_state.additions.references
-    #     # if env_properties.static_params.physical_properties.control_state == "currents":
-    #     #     reward = self.current_reward_func(
-    #     #         physical_state.i_d / env_properties.physical_constraints.i_d,
-    #     #         physical_state.i_q / env_properties.physical_constraints.i_q,
-    #     #         references[0],
-    #     #         references[1],
-    #     #         0.85,  # gamma
-    #     #     )
-    #     # elif env_properties.static_params.physical_properties.control_state == "torque":
-    #     #     reward = self.torque_reward_func(
-    #     #         (physical_state.i_d * (env_properties.physical_constraints.i_d) ** -1),
-    #     #         (physical_state.i_q * (env_properties.physical_constraints.i_q) ** -1),
-    #     #         (physical_state.torque / (env_properties.physical_constraints.torque)),
-    #     #         references,
-    #     #         env_properties.static_params.i_lim_multiplier,
-    #     #         0.85,  # gamma
-    #     #     )
-
-    #     return 0  # reward
 
     @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):

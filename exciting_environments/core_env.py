@@ -154,6 +154,8 @@ class CoreEnvironment(ABC):
         assert (
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
-        reward, truncated, terminated = jax.vmap(self.generate_rew_trunc_term_ahead, in_axes=(0, 0))(states, actions)
+        reward, truncated, terminated = jax.vmap(
+            self.generate_rew_trunc_term_ahead, in_axes=(0, 0, self.in_axes_env_properties)
+        )(states, actions, self.env_properties)
 
         return reward, truncated, terminated
