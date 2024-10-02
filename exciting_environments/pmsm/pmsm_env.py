@@ -214,34 +214,6 @@ class PMSM(CoreEnvironment):
         physical_constraints = self.PhysicalState(**physical_constraints)
         action_constraints = self.Action(**action_constraints)
 
-        # in_axes_phys_prop = self.create_in_axes_dataclass(static_params)
-        # values, _ = tree_flatten(in_axes_phys_prop)
-        # if values:
-        #     max_torque = jax.vmap(
-        #         calc_max_torque,
-        #         in_axes=(
-        #             in_axes_phys_prop.l_d,
-        #             in_axes_phys_prop.l_q,
-        #             in_axes_phys_prop.i_n,
-        #             in_axes_phys_prop.psi_p,
-        #             in_axes_phys_prop.p,
-        #         ),
-        #     )(
-        #         static_params.physical_properties.static_params.l_d,
-        #         static_params.physical_properties.static_params.l_q,
-        #         static_params.physical_properties.static_params.i_n,
-        #         static_params.physical_properties.static_params.psi_p,
-        #         static_params.physical_properties.static_params.p,
-        #     )
-        # else:
-        #     max_torque = calc_max_torque(
-        #         static_params.physical_properties.static_params.l_d,
-        #         static_params.physical_properties.static_params.l_q,
-        #         static_params.physical_properties.static_params.i_n,
-        #         static_params.physical_properties.static_params.psi_p,
-        #         static_params.physical_properties.static_params.p,
-        #     )
-
         env_properties = self.EnvProperties(
             saturated=saturated,
             physical_constraints=physical_constraints,
@@ -487,7 +459,7 @@ class PMSM(CoreEnvironment):
         )
         return u_dq[0]
 
-    @partial(jax.jit, static_argnums=[0, 4, 5])
+    @partial(jax.jit, static_argnums=[0, 3, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, properties, obs_stepsize, action_stepsize):
         """Computes state by simulating one step.
 
@@ -509,14 +481,14 @@ class PMSM(CoreEnvironment):
 
         def force(t, args):
             actions = args
-            return actions[jnp.array(t / action_stepsize, int), 0]
+            return actions[jnp.array(t / action_stepsize, int)]
 
         if properties.saturated:
 
             def vector_field(t, y, args):
-                i_d, i_q = y
-                u_dq, _ = args
-
+                actions, params = args
+                i_d, i_q, eps = y
+                u_dq = force(t, actions)
                 J_k = jnp.array([[0, -1], [1, 0]])
                 i_dq = jnp.array([i_d, i_q])
                 p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
@@ -531,14 +503,16 @@ class PMSM(CoreEnvironment):
                 di_dq_2 = jnp.einsum("ik,k->i", L_diff_inv, u_dq)
                 di_dq_3 = jnp.einsum("ij,jk,k->i", -L_diff_inv, J_k, psi_dq) * omega_el
                 i_dq_diff = di_dq_1 + di_dq_2 + di_dq_3
-                d_y = i_dq_diff[0], i_dq_diff[1]
+                eps_diff = omega_el
+                d_y = i_dq_diff[0], i_dq_diff[1], eps_diff
                 return d_y
 
         else:
 
             def vector_field(t, y, args):
-                i_d, i_q = y
-                u_dq, params = args
+                i_d, i_q, eps = y
+                actions, params = args
+                u_dq = force(t, actions)
                 u_d = u_dq[0]
                 u_q = u_dq[1]
                 l_d = params.l_d
@@ -561,35 +535,66 @@ class PMSM(CoreEnvironment):
         i_d_t = y.ys[0]
         i_q_t = y.ys[1]
         eps_t = y.ys[2]
+        obs_len = i_d_t.shape[0]
 
         if properties.saturated:
-            torque_t = jax.vmap(self.currents_to_torque_saturated)(i_d=i_d_t, i_q=i_q_t, env_properties=properties)
+            torque_t = jax.vmap(self.currents_to_torque_saturated, in_axes=(0, 0, None))(i_d_t, i_q_t, properties)
 
         else:
-            torque_t = jax.vmap(self.currents_to_torque)(i_d_t, i_q_t, properties)
+            torque_t = jax.vmap(self.currents_to_torque, in_axes=(0, 0, None))(i_d_t, i_q_t, properties)
 
         phys = self.PhysicalState(
-            u_d_buffer=jnp.zeros(9),
-            u_q_buffer=jnp.zeros(9),
+            u_d_buffer=jnp.zeros(obs_len),
+            u_q_buffer=jnp.zeros(obs_len),
             epsilon=eps_t,
             i_d=i_d_t,
             i_q=i_q_t,
             torque=torque_t,
-            omega_el=jnp.full(9, init_state_phys.omega_el),
+            omega_el=jnp.full(obs_len, init_state_phys.omega_el),
         )
         additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
         ref = self.PhysicalState(
-            u_d_buffer=jnp.full(9, jnp.nan),
-            u_q_buffer=jnp.full(9, jnp.nan),
-            epsilon=jnp.full(9, jnp.nan),
-            i_d=jnp.full(9, jnp.nan),
-            i_q=jnp.full(9, jnp.nan),
-            torque=jnp.full(9, jnp.nan),
-            omega_el=jnp.full(9, jnp.nan),
+            u_d_buffer=jnp.full(obs_len, jnp.nan),
+            u_q_buffer=jnp.full(obs_len, jnp.nan),
+            epsilon=jnp.full(obs_len, jnp.nan),
+            i_d=jnp.full(obs_len, jnp.nan),
+            i_q=jnp.full(obs_len, jnp.nan),
+            torque=jnp.full(obs_len, jnp.nan),
+            omega_el=jnp.full(obs_len, jnp.nan),
         )
-        return self.State(physical_state=phys, PRNGKey=init_state.PRNGKey, additions=additions, reference=ref)
+        return self.State(
+            physical_state=phys, PRNGKey=jnp.full(obs_len, init_state.PRNGKey), additions=additions, reference=ref
+        )
 
-    @partial(jax.jit, static_argnums=[0, 4, 5])
+    def constraint_denormalization_ahead(self, actions, init_state, env_properties):
+        act_len = actions.shape[0]
+        phys = self.PhysicalState(
+            u_d_buffer=jnp.full(act_len, init_state.physical_state.u_d_buffer),
+            u_q_buffer=jnp.full(act_len, init_state.physical_state.u_q_buffer),
+            epsilon=jnp.full(act_len, init_state.physical_state.epsilon)
+            + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el,
+            i_d=jnp.full(act_len, init_state.physical_state.i_d),
+            i_q=jnp.full(act_len, init_state.physical_state.i_q),
+            torque=jnp.full(act_len, init_state.physical_state.torque),
+            omega_el=jnp.full(act_len, init_state.physical_state.omega_el),
+        )
+        additions = None
+        ref = self.PhysicalState(
+            u_d_buffer=jnp.full(act_len, init_state.reference.u_d_buffer),
+            u_q_buffer=jnp.full(act_len, init_state.reference.u_q_buffer),
+            epsilon=jnp.full(act_len, init_state.reference.epsilon),
+            i_d=jnp.full(act_len, init_state.reference.i_d),
+            i_q=jnp.full(act_len, init_state.reference.i_q),
+            torque=jnp.full(act_len, init_state.reference.torque),
+            omega_el=jnp.full(act_len, init_state.reference.omega_el),
+        )
+        states = self.State(
+            physical_state=phys, PRNGKey=jnp.full(act_len, init_state.PRNGKey), additions=additions, reference=ref
+        )
+        actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(actions, states, env_properties)
+        return actions
+
+    @partial(jax.jit, static_argnums=[0, 3, 4, 5])
     def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):
         """Computes multiple JAX-JIT compiled simulation steps for one batch.
 
@@ -606,20 +611,27 @@ class PMSM(CoreEnvironment):
             action_stepsize: The time between changes in the input/action
         """
         # TODO epsilon update for constraints
-        actions = jax.vmap(self.constraint_denormalization)(actions, init_state, env_properties)
+        # actions = jax.vmap(self.constraint_denormalization, in_axes=(0, None, None))(
+        #     actions, init_state, env_properties
+        # )
+        deadtime = env_properties.static_params.deadtime
+        actions = jnp.vstack([jnp.zeros((deadtime, 2)), actions])
+
+        actions = self.constraint_denormalization_ahead(actions, init_state, env_properties)
+
+        single_state_struct = tree_structure(init_state)
 
         # compute states trajectory for given actions
-        states = self._ode_solver_simulate_ahead(
-            init_state, actions, env_properties.static_params, obs_stepsize, action_stepsize
-        )
+        states = self._ode_solver_simulate_ahead(init_state, actions, env_properties, obs_stepsize, action_stepsize)
 
         # generate observations for all timesteps
-        observations = jax.vmap(self.generate_observation, in_axes=(0, self.in_axes_env_properties))(
-            states, self.env_properties
-        )
+        observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
+        # observations = 0
 
-        # # delete first state because its initial state of simulation and not relevant for terminated
+        # # delete first state because its initial state of simulation and not relevant for
+
         states_flatten, struct = tree_flatten(states)
+
         # states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
 
         # reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.in_axes_env_properties))(
@@ -637,7 +649,7 @@ class PMSM(CoreEnvironment):
         # # generate terminated
 
         # # get last state so that the simulation can be continued from the end point
-        last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, -1:])
+        last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
 
         # terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.in_axes_env_properties))(
         #     states_without_init_state, reward, self.env_properties

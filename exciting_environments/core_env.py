@@ -140,8 +140,8 @@ class CoreEnvironment(ABC):
         )
 
         # vmap single operations
-        observations, rewards, truncated, terminated, last_state = jax.vmap(
+        observations, states, last_state = jax.vmap(
             self.sim_ahead, in_axes=(0, 0, self.in_axes_env_properties, None, None)
         )(init_state, actions, self.env_properties, obs_stepsize, action_stepsize)
 
-        return observations, rewards, truncated, terminated, last_state
+        return observations, states, last_state

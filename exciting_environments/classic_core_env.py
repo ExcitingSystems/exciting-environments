@@ -184,7 +184,7 @@ class ClassicCoreEnvironment(CoreEnvironment):
         )
 
         # denormalize actions
-        actions = actions * jnp.array(tree_flatten(self.env_properties.action_constraints)[0]).T
+        actions = actions * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
 
         # compute states trajectory for given actions
         states = self._ode_solver_simulate_ahead(
@@ -192,25 +192,21 @@ class ClassicCoreEnvironment(CoreEnvironment):
         )
 
         # generate observations for all timesteps
-        observations = jax.vmap(self.generate_observation, in_axes=(0, self.in_axes_env_properties))(
-            states, self.env_properties
-        )
+        observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
 
         # delete first state because its initial state of simulation and not relevant for terminated
         states_flatten, struct = tree_flatten(states)
         states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
 
-        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.in_axes_env_properties))(
+        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
             states_without_init_state,
             jnp.expand_dims(jnp.repeat(actions, int(action_stepsize / obs_stepsize)), 1),
-            self.env_properties,
+            env_properties,
         )
         # reward = 0
 
         # generate truncated
-        truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.in_axes_env_properties))(
-            states, self.env_properties
-        )
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, self.env_properties)
 
         # generate terminated
 
