@@ -145,3 +145,15 @@ class CoreEnvironment(ABC):
         )(init_state, actions, self.env_properties, obs_stepsize, action_stepsize)
 
         return observations, states, last_state
+
+    def vmap_generate_rew_trunc_term_ahead(self, states, actions):
+        assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
+        assert (
+            actions.shape[0] == self.batch_size
+        ), f"The first dimension does not correspond to the batch size which is {self.batch_size}, but {actions.shape[0]} is given"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+        reward, truncated, terminated = jax.vmap(self.generate_rew_trunc_term_ahead, in_axes=(0, 0))(states, actions)
+
+        return reward, truncated, terminated
