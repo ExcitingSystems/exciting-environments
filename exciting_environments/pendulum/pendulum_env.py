@@ -213,7 +213,7 @@ class Pendulum(ClassicCoreEnvironment):
         if rng is None:
             phys = self.PhysicalState(
                 theta=jnp.pi,
-                omega=0,
+                omega=0.0,
             )
             subkey = None
         else:

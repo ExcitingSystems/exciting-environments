@@ -287,10 +287,10 @@ class CartPole(ClassicCoreEnvironment):
         """Returns default initial state for all batches."""
         if rng is None:
             phys = self.PhysicalState(
-                deflection=0,
-                velocity=0,
+                deflection=0.0,
+                velocity=0.0,
                 theta=jnp.pi,
-                omega=0,
+                omega=0.0,
             )
             subkey = None
         else:
