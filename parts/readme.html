@@ -88,7 +88,7 @@
 <h2>exciting-environments<a class="headerlink" href="#exciting-environments" title="Permalink to this heading"></a></h2>
 <section id="overview">
 <h3>Overview<a class="headerlink" href="#overview" title="Permalink to this heading"></a></h3>
-<p>The exctiting-environments package is a toolbox for the simulation of physical <a class="reference external" href="https://en.wikipedia.org/wiki/Differential_equation">differential equations</a> wrapped into <a class="reference external" href="https://github.com/Farama-Foundation/Gymnasium">Gymnasium</a> environments using <a class="reference external" href="https://github.com/google/jax">Jax</a>. Due to the possible just-in-time compilation of JAX, this type of implementation offers great advantages in terms of simulation speed.</p>
+<p>The exciting-environments package is a toolbox for the simulation of physical <a class="reference external" href="https://en.wikipedia.org/wiki/Differential_equation">differential equations</a> wrapped into <a class="reference external" href="https://github.com/Farama-Foundation/Gymnasium">Gymnasium</a> inspired environments using <a class="reference external" href="https://github.com/google/jax">Jax</a>. Due to the just-in-time compilation native to JAX, this type of implementation offers great advantages in terms of simulation speed.</p>
 </section>
 <section id="getting-started">
 <h3>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading"></a></h3>
@@ -117,7 +117,7 @@
 </pre></div>
 </div>
 <p>which produces $5$ identical trajectories in parallel:</p>
-<a class="reference external image-reference" href="fig/excenvs_pendulum_simulation_example.png"><img alt="example_trajectory_pendulum" src="parts/fig/excenvs_pendulum_simulation_example.png" /></a>
+<a class="reference external image-reference" href="https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example.png?raw=true"><img alt="" src="https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example.png?raw=true" /></a>
 <p>alternatively, simulate full trajectories:</p>
 <div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">jax.numpy</span> <span class="k">as</span> <span class="nn">jnp</span>
 <span class="kn">import</span> <span class="nn">exciting_environments</span> <span class="k">as</span> <span class="nn">excenvs</span>
@@ -143,7 +143,7 @@
 </pre></div>
 </div>
 <p>which produces $5$ identical trajectories in parallel as well:</p>
-<a class="reference external image-reference" href="fig/excenvs_pendulum_simulation_example_advanced.png"><img alt="example_trajectory_pendulum" src="parts/fig/excenvs_pendulum_simulation_example_advanced.png" /></a>
+<a class="reference external image-reference" href="https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example_advanced.png?raw=true"><img alt="" src="https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example_advanced.png?raw=true" /></a>
 <p>Note that in this case the Tsit5 ODE solver instead of the default explicit Euler is used.
 All solvers used here are from the diffrax library (<a class="reference external" href="https://docs.kidger.site/diffrax/">https://docs.kidger.site/diffrax/</a>).</p>
 </section>
