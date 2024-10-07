@@ -30,6 +30,11 @@ dependencies = [
     "pytest-cov",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+
 [project.urls]
 "Homepage" = "https://excitingsystems.github.io/exciting-environments/"
 
