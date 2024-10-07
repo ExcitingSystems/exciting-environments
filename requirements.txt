@@ -1,5 +1,5 @@
 matplotlib==3.9.0
-jax==0.4.28
+jax[cuda12]==0.4.28
 jaxlib==0.4.28
 chex==0.1.86
 numpy==1.26.4
