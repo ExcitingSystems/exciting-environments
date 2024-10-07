@@ -1,19 +1,20 @@
+
+
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>exciting_environments.cart_pole.cart_pole_env &mdash; Exciting Environments 1.0.0 documentation</title><link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-  <!--[if lt IE 9]>
-    <script src="../../../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/language_data.js"></script>
-        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+  <title>exciting_environments.cart_pole.cart_pole_env &mdash; Exciting Environments 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=7ab3649f" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js?v=af2ce170"></script>
+      <script src="../../../_static/doctools.js?v=888ff710"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" /> 
@@ -38,11 +39,11 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Exciting Environment Readme:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Exciting Environment Readme:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../parts/readme.html">Readme File</a></li>
 </ul>
-<p class="caption"><span class="caption-text">Exciting Environment Contents:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Exciting Environment Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../parts/environments/environment.html">Environments</a></li>
 </ul>
@@ -72,276 +73,395 @@
            <div itemprop="articleBody">
              
   <h1>Source code for exciting_environments.cart_pole.cart_pole_env</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span></span><span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">import</span> <span class="nn">jax</span>
 <span class="kn">import</span> <span class="nn">jax.numpy</span> <span class="k">as</span> <span class="nn">jnp</span>
-<span class="kn">from</span> <span class="nn">exciting_environments</span> <span class="kn">import</span> <span class="n">spaces</span>
-<span class="kn">from</span> <span class="nn">gymnasium</span> <span class="kn">import</span> <span class="n">vector</span>
-<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span> <span class="nn">jax.tree_util</span> <span class="kn">import</span> <span class="n">tree_flatten</span><span class="p">,</span> <span class="n">tree_structure</span>
+<span class="kn">import</span> <span class="nn">jax_dataclasses</span> <span class="k">as</span> <span class="nn">jdc</span>
 <span class="kn">import</span> <span class="nn">chex</span>
+<span class="kn">import</span> <span class="nn">diffrax</span>
+
+<span class="kn">from</span> <span class="nn">exciting_environments</span> <span class="kn">import</span> <span class="n">ClassicCoreEnvironment</span>
 
 
-<div class="viewcode-block" id="CartPole"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole">[docs]</a><span class="k">class</span> <span class="nc">CartPole</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="CartPole"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole">[docs]</a><span class="k">class</span> <span class="nc">CartPole</span><span class="p">(</span><span class="n">ClassicCoreEnvironment</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    State Variables</span>
-<span class="sd">        ``[&#39;deflection&#39; , &#39;velocity&#39; , &#39;theta&#39; , &#39;omega&#39;]``</span>
-<span class="sd">        </span>
+<span class="sd">        ``[&#39;deflection&#39;, &#39;velocity&#39;, &#39;theta&#39;, &#39;omega&#39;]``</span>
+
 <span class="sd">    Action Variable:</span>
-<span class="sd">        ``[&#39;force&#39;]&#39;&#39;``</span>
-<span class="sd">        </span>
-<span class="sd">    Observation Space (State Space):</span>
-<span class="sd">        Box(low=[-1, -1, -1, -1], high=[1, 1, 1, 1])    </span>
-<span class="sd">        </span>
-<span class="sd">    Action Space:</span>
-<span class="sd">        Box(low=-1, high=1)</span>
+<span class="sd">        ``[&#39;force&#39;]``</span>
 
 <span class="sd">    Initial State:</span>
-<span class="sd">        Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to 1(normalized to pi).</span>
+<span class="sd">        Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to pi.</span>
 
 <span class="sd">    Example:</span>
 <span class="sd">        &gt;&gt;&gt; import jax</span>
+<span class="sd">        &gt;&gt;&gt; import jax.numpy as jnp</span>
 <span class="sd">        &gt;&gt;&gt; import exciting_environments as excenvs</span>
-<span class="sd">        &gt;&gt;&gt; </span>
+<span class="sd">        &gt;&gt;&gt; from exciting_environments import GymWrapper</span>
+<span class="sd">        &gt;&gt;&gt;</span>
 <span class="sd">        &gt;&gt;&gt; # Create the environment</span>
-<span class="sd">        &gt;&gt;&gt; env= excenvs.make(&#39;CartPole-v0&#39;,batch_size=2,l=3,m_c=4,max_force=30)</span>
-<span class="sd">        &gt;&gt;&gt; </span>
+<span class="sd">        &gt;&gt;&gt; cartpole= excenv.CartPole(batch_size=5)</span>
+<span class="sd">        &gt;&gt;&gt;</span>
+<span class="sd">        &gt;&gt;&gt; # Use GymWrapper for Simulation (optional)</span>
+<span class="sd">        &gt;&gt;&gt; gym_cartpole=GymWrapper(env=cartpole)</span>
+<span class="sd">        &gt;&gt;&gt;</span>
 <span class="sd">        &gt;&gt;&gt; # Reset the environment with default initial values</span>
-<span class="sd">        &gt;&gt;&gt; env.reset()</span>
-<span class="sd">        &gt;&gt;&gt; </span>
-<span class="sd">        &gt;&gt;&gt; # Sample a random action</span>
-<span class="sd">        &gt;&gt;&gt; action = env.action_space.sample(jax.random.PRNGKey(6))</span>
-<span class="sd">        &gt;&gt;&gt; </span>
+<span class="sd">        &gt;&gt;&gt; gym_cartpole.reset()</span>
+<span class="sd">        &gt;&gt;&gt;</span>
 <span class="sd">        &gt;&gt;&gt; # Perform step</span>
-<span class="sd">        &gt;&gt;&gt; obs,reward,terminated,truncated,info= env.step(action)</span>
-<span class="sd">        &gt;&gt;&gt; </span>
-<span class="sd">        </span>
-<span class="sd">    &quot;&quot;&quot;</span>
-      
+<span class="sd">        &gt;&gt;&gt; obs,reward,terminated,truncated = gym_cartpole.step(action=jnp.ones(5).reshape(-1,1))</span>
+<span class="sd">        &gt;&gt;&gt;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">mu_p</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">mu_c</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">l</span><span class="o">=</span><span class="mi">1</span> <span class="p">,</span> <span class="n">m_c</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">m_p</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>  <span class="n">max_force</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">reward_func</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">g</span><span class="o">=</span><span class="mf">9.81</span><span class="p">,</span><span class="n">tau</span> <span class="o">=</span> <span class="mf">1e-4</span> <span class="p">,</span> <span class="n">constraints</span><span class="o">=</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span><span class="mi">10</span><span class="p">,</span><span class="mi">10</span><span class="p">]):</span>
-        
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="n">physical_constraints</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">action_constraints</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">static_params</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">control_state</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">solver</span><span class="o">=</span><span class="n">diffrax</span><span class="o">.</span><span class="n">Euler</span><span class="p">(),</span>
+        <span class="n">tau</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2e-2</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Args:</span>
 <span class="sd">            batch_size(int): Number of training examples utilized in one iteration. Default: 8</span>
-<span class="sd">            mu_p(float): Coefficient of friction of pole on cart. Default: 0</span>
-<span class="sd">            mu_c(float): Coefficient of friction of cart on track. Default: 0</span>
-<span class="sd">            l(float): Half-pole length. Default: 1</span>
-<span class="sd">            m_c(float): Mass of the cart. Default: 1</span>
-<span class="sd">            m_p(float): Mass of the pole. Default: 1</span>
-<span class="sd">            max_force(float): Maximum force that can be applied to the system as action. Default: 20</span>
-<span class="sd">            reward_func(function): Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class) </span>
-<span class="sd">            g(float): Gravitational acceleration. Default: 9.81</span>
+<span class="sd">            physical_constraints(dict): Constraints of physical state of the environment.</span>
+<span class="sd">                deflection(float): Deflection of the cart. Default: 10</span>
+<span class="sd">                velocity(float): Velocity of the cart. Default: 10</span>
+<span class="sd">                theta(float): Rotation angle of the pole. Default: jnp.pi</span>
+<span class="sd">                omega(float): Angular velocity. Default: 10</span>
+<span class="sd">            action_constraints(dict): Constraints of the action.</span>
+<span class="sd">                force(float): Maximum torque that can be applied to the system as action. Default: 20</span>
+<span class="sd">            static_params(dict): Parameters of environment which do not change during simulation.</span>
+<span class="sd">                mu_p(float): Coefficient of friction of pole on cart. Default: 0</span>
+<span class="sd">                mu_c(float): Coefficient of friction of cart on track. Default: 0</span>
+<span class="sd">                l(float): Half-pole length. Default: 1</span>
+<span class="sd">                m_p(float): Mass of the pole. Default: 1</span>
+<span class="sd">                m_c(float): Mass of the cart. Default: 1</span>
+<span class="sd">                g(float): Gravitational acceleration. Default: 9.81</span>
+<span class="sd">            control_state: TODO</span>
+<span class="sd">            solver(diffrax.solver): Solver used to compute state for next step.</span>
 <span class="sd">            tau(float): Duration of one control step in seconds. Default: 1e-4.</span>
-<span class="sd">            constraints(array): Constraints for states [&#39;deflection&#39;,&#39;velocity&#39;,&#39;omega&#39;] (array with length 3). Default: [10,10,10]</span>
 
-<span class="sd">        Note: mu_p, mu_c, l, m_c, m_p and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 3 to set different constraints per batch.</span>
+<span class="sd">        Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        
-        <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="n">tau</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">g</span> <span class="o">=</span> <span class="n">g</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">mu_p_values</span> <span class="o">=</span> <span class="n">mu_p</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">mu_c_values</span> <span class="o">=</span> <span class="n">mu_c</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">m_c_values</span> <span class="o">=</span> <span class="n">m_c</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">m_p_values</span> <span class="o">=</span> <span class="n">m_p</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">l_values</span> <span class="o">=</span> <span class="n">l</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">max_force_values</span><span class="o">=</span> <span class="n">max_force</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="o">=</span> <span class="n">constraints</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span> <span class="o">=</span> <span class="n">batch_size</span>
-        
-        <span class="bp">self</span><span class="o">.</span><span class="n">action_space</span> <span class="o">=</span> <span class="n">spaces</span><span class="o">.</span><span class="n">Box</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        
-        <span class="bp">self</span><span class="o">.</span><span class="n">observation_space</span> <span class="o">=</span> <span class="n">spaces</span><span class="o">.</span><span class="n">Box</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        
-        <span class="k">if</span> <span class="n">reward_func</span><span class="p">:</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_rew_func</span><span class="p">(</span><span class="n">reward_func</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">reward_func</span><span class="o">=</span><span class="n">reward_func</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">reward_func</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">default_reward_func</span>
-        
-        
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">physical_constraints</span><span class="p">:</span>
+            <span class="n">physical_constraints</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;deflection&quot;</span><span class="p">:</span> <span class="mf">2.4</span><span class="p">,</span>
+                <span class="s2">&quot;velocity&quot;</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+                <span class="s2">&quot;theta&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span>
+                <span class="s2">&quot;omega&quot;</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">action_constraints</span><span class="p">:</span>
+            <span class="n">action_constraints</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;force&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">}</span>
 
-    <span class="k">def</span> <span class="nf">update_batch_dim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">static_params</span><span class="p">:</span>
+            <span class="n">static_params</span> <span class="o">=</span> <span class="p">{</span>  <span class="c1"># typical values from Source with DOI: 10.1109/TSMC.1983.6313077</span>
+                <span class="s2">&quot;mu_p&quot;</span><span class="p">:</span> <span class="mf">0.000002</span><span class="p">,</span>
+                <span class="s2">&quot;mu_c&quot;</span><span class="p">:</span> <span class="mf">0.0005</span><span class="p">,</span>
+                <span class="s2">&quot;l&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
+                <span class="s2">&quot;m_p&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
+                <span class="s2">&quot;m_c&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s2">&quot;g&quot;</span><span class="p">:</span> <span class="mf">9.81</span><span class="p">,</span>
+            <span class="p">}</span>
 
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">list</span><span class="p">):</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span><span class="o">==</span><span class="mi">3</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;constraints is expected to be a list with len(list)=3 or list of lists with overall dimension (batch_size,3)&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">2</span><span class="p">]),</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">]),</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">3</span><span class="p">])),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;constraints is expected to be a list with len(list)=3 or a list of lists with overall dimension (batch_size,3)&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)[:,</span><span class="mi">0</span><span class="p">:</span><span class="mi">2</span><span class="p">],</span><span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">constraints</span><span class="p">)[:,</span><span class="mi">2</span><span class="p">:</span><span class="mi">3</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">control_state</span><span class="p">:</span>
+            <span class="n">control_state</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_p_values</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">mu_p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">mu_p_values</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_p_values</span><span class="p">)</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;mu_p is expected to be a scalar or a list with len(list)=batch_size&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">mu_p</span><span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_p_values</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-            
-        <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_c_values</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">mu_c</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">mu_c_values</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_c_values</span><span class="p">)</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;mu_c is expected to be a scalar or a list with len(list)=batch_size&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">mu_c</span><span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_c_values</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-            
-        <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_c_values</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">m_c</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_c_values</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_c_values</span><span class="p">)</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;m_c is expected to be a scalar or a list with len(list)=batch_size&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">m_c</span><span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_c_values</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-            
-        <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p_values</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">m_p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_p_values</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p_values</span><span class="p">)</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;m_p is expected to be a scalar or a list with len(list)=batch_size&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">m_p</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p_values</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        
-        <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l_values</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">l</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">l_values</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l_values</span><span class="p">)</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;l is expected to be a scalar or a list with len(list)=batch_size&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">l</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l_values</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        
-        <span class="k">if</span> <span class="n">jnp</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_force_values</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">max_force</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_force_values</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_force_values</span><span class="p">)</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;max_force is expected to be a scalar or a list with len(list)=batch_size&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">max_force</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_force_values</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">control_state</span> <span class="o">=</span> <span class="n">control_state</span>
 
-        <span class="n">deflection</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">velocity</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">theta</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">),</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">omega</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">states</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">hstack</span><span class="p">((</span>
-                    <span class="n">deflection</span><span class="p">,</span>
-                    <span class="n">velocity</span><span class="p">,</span>
-                    <span class="n">theta</span><span class="p">,</span>
-                    <span class="n">omega</span><span class="p">,</span>
-                <span class="p">))</span>
-        
-    <span class="k">def</span> <span class="nf">test_rew_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">func</span><span class="p">):</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">out</span><span class="o">=</span><span class="n">func</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_obs_description</span><span class="p">()))]))</span>
-        <span class="k">except</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Reward function should be using obs matrix as only parameter&quot;</span><span class="p">)</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Reward function should be returning vector in shape (batch_size,1)&quot;</span><span class="p">)</span>    
-        <span class="k">except</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Reward function should be returning vector in shape (batch_size,1)&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="kc">True</span>
-   
+        <span class="n">physical_constraints</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">PhysicalState</span><span class="p">(</span><span class="o">**</span><span class="n">physical_constraints</span><span class="p">)</span>
+        <span class="n">action_constraints</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Action</span><span class="p">(</span><span class="o">**</span><span class="n">action_constraints</span><span class="p">)</span>
+        <span class="n">static_params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">StaticParams</span><span class="p">(</span><span class="o">**</span><span class="n">static_params</span><span class="p">)</span>
+
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">batch_size</span><span class="p">,</span>
+            <span class="n">physical_constraints</span><span class="p">,</span>
+            <span class="n">action_constraints</span><span class="p">,</span>
+            <span class="n">static_params</span><span class="p">,</span>
+            <span class="n">tau</span><span class="o">=</span><span class="n">tau</span><span class="p">,</span>
+            <span class="n">solver</span><span class="o">=</span><span class="n">solver</span><span class="p">,</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="CartPole.PhysicalState"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.PhysicalState">[docs]</a>    <span class="nd">@jdc</span><span class="o">.</span><span class="n">pytree_dataclass</span>
+    <span class="k">class</span> <span class="nc">PhysicalState</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dataclass containing the physical state of the environment.&quot;&quot;&quot;</span>
+
+        <span class="n">deflection</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">velocity</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">theta</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">omega</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span></div>
+
+<div class="viewcode-block" id="CartPole.Additions"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.Additions">[docs]</a>    <span class="nd">@jdc</span><span class="o">.</span><span class="n">pytree_dataclass</span>
+    <span class="k">class</span> <span class="nc">Additions</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dataclass containing additional information for simulation.&quot;&quot;&quot;</span>
+
+        <span class="n">something</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span></div>
+
+<div class="viewcode-block" id="CartPole.StaticParams"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.StaticParams">[docs]</a>    <span class="nd">@jdc</span><span class="o">.</span><span class="n">pytree_dataclass</span>
+    <span class="k">class</span> <span class="nc">StaticParams</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dataclass containing the static parameters of the environment.&quot;&quot;&quot;</span>
+
+        <span class="n">mu_p</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">mu_c</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">l</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">m_p</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">m_c</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span>
+        <span class="n">g</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span></div>
+
+<div class="viewcode-block" id="CartPole.Action"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.Action">[docs]</a>    <span class="nd">@jdc</span><span class="o">.</span><span class="n">pytree_dataclass</span>
+    <span class="k">class</span> <span class="nc">Action</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dataclass containing the action that can be applied to the environment.&quot;&quot;&quot;</span>
+
+        <span class="n">force</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span></div>
+
     <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">ode_exp_euler_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">states_norm</span><span class="p">,</span><span class="n">force_norm</span><span class="p">):</span>
-        
-        <span class="n">force</span> <span class="o">=</span> <span class="n">force_norm</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">max_force</span>
-        <span class="n">states</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span> <span class="o">*</span> <span class="n">states_norm</span>
-        <span class="n">deflection</span> <span class="o">=</span> <span class="n">states</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">velocity</span> <span class="o">=</span> <span class="n">states</span><span class="p">[:,</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">theta</span> <span class="o">=</span> <span class="n">states</span><span class="p">[:,</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">omega</span> <span class="o">=</span> <span class="n">states</span><span class="p">[:,</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-        
-        <span class="n">ddeflection</span> <span class="o">=</span> <span class="n">velocity</span>
-        <span class="n">dtheta</span> <span class="o">=</span> <span class="n">omega</span>
-        
-        <span class="n">domega</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">g</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">*</span><span class="p">((</span><span class="o">-</span><span class="n">force</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">l</span><span class="o">*</span><span class="p">(</span><span class="n">omega</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_c</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">velocity</span><span class="p">))</span><span class="o">/</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_c</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p</span><span class="p">))</span><span class="o">-</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mu_p</span><span class="o">*</span><span class="n">omega</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">l</span><span class="p">))</span><span class="o">/</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">l</span><span class="o">*</span><span class="p">(</span><span class="mi">4</span><span class="o">/</span><span class="mi">3</span><span class="o">-</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p</span><span class="o">*</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">))</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_c</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p</span><span class="p">)))</span>
-        
-        <span class="n">dvelocity</span> <span class="o">=</span> <span class="p">(</span><span class="n">force</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_p</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">l</span><span class="o">*</span><span class="p">((</span><span class="n">omega</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">-</span><span class="n">domega</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">))</span><span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">mu_c</span><span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">velocity</span><span class="p">))</span><span class="o">/</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m_c</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">m_p</span><span class="p">)</span>
-    
-        <span class="n">deflection_k1</span> <span class="o">=</span> <span class="n">deflection</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">*</span><span class="n">ddeflection</span>  <span class="c1"># explicit Euler</span>
-        <span class="n">velocity_k1</span><span class="o">=</span> <span class="n">velocity</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">*</span><span class="n">dvelocity</span> <span class="c1"># explicit Euler</span>
-        
-        <span class="n">theta_k1</span> <span class="o">=</span> <span class="n">theta</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">*</span><span class="n">dtheta</span>  <span class="c1"># explicit Euler</span>
-        <span class="n">theta_k1</span> <span class="o">=</span> <span class="p">((</span><span class="n">theta_k1</span><span class="o">+</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span><span class="o">-</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span>
-        <span class="n">omega_k1</span><span class="o">=</span> <span class="n">omega</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">*</span><span class="n">domega</span> <span class="c1"># explicit Euler</span>
-        
-        <span class="n">states_k1</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">hstack</span><span class="p">((</span>
-                    <span class="n">deflection_k1</span><span class="p">,</span>
-                    <span class="n">velocity_k1</span><span class="p">,</span>
-                    <span class="n">theta_k1</span><span class="p">,</span>
-                    <span class="n">omega_k1</span><span class="p">,</span>
-                <span class="p">))</span>
-        <span class="n">states_k1_norm</span> <span class="o">=</span> <span class="n">states_k1</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">state_normalizer</span>
-        
-        <span class="k">return</span> <span class="n">states_k1_norm</span>
+    <span class="k">def</span> <span class="nf">_ode_solver_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">static_params</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Computes state by simulating one step.</span>
+
+<span class="sd">        Source DOI: 10.1109/TSMC.1983.6313077</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            state: The state from which to calculate state for the next step.</span>
+<span class="sd">            action: The action to apply to the environment.</span>
+<span class="sd">            static_params: Parameter of the environment, that do not change over time.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            state: The computed state after the one step simulation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">physical_state</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">physical_state</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">static_params</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">vector_field</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+            <span class="n">deflection</span><span class="p">,</span> <span class="n">velocity</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">omega</span> <span class="o">=</span> <span class="n">y</span>
+            <span class="n">action</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">args</span>
+            <span class="n">d_omega</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">params</span><span class="o">.</span><span class="n">g</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+                <span class="o">*</span> <span class="p">(</span>
+                    <span class="p">(</span>
+                        <span class="o">-</span><span class="n">action</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                        <span class="o">-</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="n">params</span><span class="o">.</span><span class="n">l</span> <span class="o">*</span> <span class="p">(</span><span class="n">omega</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+                        <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">mu_c</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">velocity</span><span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_c</span> <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="o">-</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">mu_p</span> <span class="o">*</span> <span class="n">omega</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="n">params</span><span class="o">.</span><span class="n">l</span><span class="p">)</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">l</span> <span class="o">*</span> <span class="p">(</span><span class="mi">4</span> <span class="o">/</span> <span class="mi">3</span> <span class="o">-</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_c</span> <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span><span class="p">)))</span>
+
+            <span class="n">d_velocity</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">action</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="n">params</span><span class="o">.</span><span class="n">l</span> <span class="o">*</span> <span class="p">((</span><span class="n">omega</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">-</span> <span class="n">d_omega</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">))</span>
+                <span class="o">-</span> <span class="n">params</span><span class="o">.</span><span class="n">mu_c</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">velocity</span><span class="p">)</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_c</span> <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span><span class="p">)</span>
+            <span class="n">d_theta</span> <span class="o">=</span> <span class="n">omega</span>
+            <span class="n">d_deflection</span> <span class="o">=</span> <span class="n">velocity</span>
+            <span class="n">d_y</span> <span class="o">=</span> <span class="n">d_deflection</span><span class="p">,</span> <span class="n">d_velocity</span><span class="p">,</span> <span class="n">d_theta</span><span class="p">,</span> <span class="n">d_omega</span>
+            <span class="k">return</span> <span class="n">d_y</span>
+
+        <span class="n">term</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">ODETerm</span><span class="p">(</span><span class="n">vector_field</span><span class="p">)</span>
+        <span class="n">t0</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">t1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>
+        <span class="n">y0</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="n">physical_state</span><span class="o">.</span><span class="n">deflection</span><span class="p">,</span>
+                <span class="n">physical_state</span><span class="o">.</span><span class="n">velocity</span><span class="p">,</span>
+                <span class="n">physical_state</span><span class="o">.</span><span class="n">theta</span><span class="p">,</span>
+                <span class="n">physical_state</span><span class="o">.</span><span class="n">omega</span><span class="p">,</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">env_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">t0</span><span class="p">,</span> <span class="n">t1</span><span class="p">,</span> <span class="n">y0</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="n">y</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">env_state</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">t0</span><span class="p">,</span> <span class="n">t1</span><span class="p">,</span> <span class="n">y0</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">env_state</span><span class="p">,</span> <span class="n">made_jump</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">deflection_k1</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">velocity_k1</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">theta_k1</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">omega_k1</span> <span class="o">=</span> <span class="n">y</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+        <span class="n">theta_k1</span> <span class="o">=</span> <span class="p">((</span><span class="n">theta_k1</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span> <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span>
+
+        <span class="k">with</span> <span class="n">jdc</span><span class="o">.</span><span class="n">copy_and_mutate</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">validate</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">new_state</span><span class="p">:</span>
+            <span class="n">new_state</span><span class="o">.</span><span class="n">physical_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">PhysicalState</span><span class="p">(</span>
+                <span class="n">deflection</span><span class="o">=</span><span class="n">deflection_k1</span><span class="p">,</span>
+                <span class="n">velocity</span><span class="o">=</span><span class="n">velocity_k1</span><span class="p">,</span>
+                <span class="n">theta</span><span class="o">=</span><span class="n">theta_k1</span><span class="p">,</span>
+                <span class="n">omega</span><span class="o">=</span><span class="n">omega_k1</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_state</span>
+
+    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
+    <span class="k">def</span> <span class="nf">_ode_solver_simulate_ahead</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">init_state</span><span class="p">,</span> <span class="n">actions</span><span class="p">,</span> <span class="n">static_params</span><span class="p">,</span> <span class="n">obs_stepsize</span><span class="p">,</span> <span class="n">action_stepsize</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Computes states by simulating a trajectory with given actions.&quot;&quot;&quot;</span>
+
+        <span class="n">init_physical_state</span> <span class="o">=</span> <span class="n">init_state</span><span class="o">.</span><span class="n">physical_state</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">actions</span><span class="p">,</span> <span class="n">static_params</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">force</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+            <span class="n">actions</span> <span class="o">=</span> <span class="n">args</span>
+            <span class="k">return</span> <span class="n">actions</span><span class="p">[</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">t</span> <span class="o">/</span> <span class="n">action_stepsize</span><span class="p">,</span> <span class="nb">int</span><span class="p">),</span> <span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">def</span> <span class="nf">vector_field</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+            <span class="n">deflection</span><span class="p">,</span> <span class="n">velocity</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">omega</span> <span class="o">=</span> <span class="n">y</span>
+            <span class="n">actions</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">args</span>
+            <span class="n">d_omega</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">params</span><span class="o">.</span><span class="n">g</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+                <span class="o">*</span> <span class="p">(</span>
+                    <span class="p">(</span>
+                        <span class="o">-</span><span class="n">force</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">actions</span><span class="p">)</span>
+                        <span class="o">-</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="n">params</span><span class="o">.</span><span class="n">l</span> <span class="o">*</span> <span class="p">(</span><span class="n">omega</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+                        <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">mu_c</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">velocity</span><span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_c</span> <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="o">-</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">mu_p</span> <span class="o">*</span> <span class="n">omega</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="n">params</span><span class="o">.</span><span class="n">l</span><span class="p">)</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">l</span> <span class="o">*</span> <span class="p">(</span><span class="mi">4</span> <span class="o">/</span> <span class="mi">3</span> <span class="o">-</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_c</span> <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span><span class="p">)))</span>
+
+            <span class="n">d_velocity</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">force</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">actions</span><span class="p">)</span>
+                <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span> <span class="o">*</span> <span class="n">params</span><span class="o">.</span><span class="n">l</span> <span class="o">*</span> <span class="p">((</span><span class="n">omega</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span> <span class="o">-</span> <span class="n">d_omega</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">))</span>
+                <span class="o">-</span> <span class="n">params</span><span class="o">.</span><span class="n">mu_c</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">velocity</span><span class="p">)</span>
+            <span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">params</span><span class="o">.</span><span class="n">m_c</span> <span class="o">+</span> <span class="n">params</span><span class="o">.</span><span class="n">m_p</span><span class="p">)</span>
+            <span class="n">d_theta</span> <span class="o">=</span> <span class="n">omega</span>
+            <span class="n">d_deflection</span> <span class="o">=</span> <span class="n">velocity</span>
+            <span class="n">d_y</span> <span class="o">=</span> <span class="n">d_deflection</span><span class="p">,</span> <span class="n">d_velocity</span><span class="p">,</span> <span class="n">d_theta</span><span class="p">,</span> <span class="n">d_omega</span>
+            <span class="k">return</span> <span class="n">d_y</span>
+
+        <span class="n">term</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">ODETerm</span><span class="p">(</span><span class="n">vector_field</span><span class="p">)</span>
+        <span class="n">t0</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">t1</span> <span class="o">=</span> <span class="n">action_stepsize</span> <span class="o">*</span> <span class="n">actions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">init_physical_state_array</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">tree_flatten</span><span class="p">(</span><span class="n">init_physical_state</span><span class="p">)</span>
+        <span class="n">y0</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">init_physical_state_array</span><span class="p">)</span>
+        <span class="n">saveat</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">SaveAt</span><span class="p">(</span><span class="n">ts</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">t0</span><span class="p">,</span> <span class="n">t1</span><span class="p">,</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">t1</span> <span class="o">/</span> <span class="n">obs_stepsize</span><span class="p">)))</span>  <span class="c1">#</span>
+        <span class="n">sol</span> <span class="o">=</span> <span class="n">diffrax</span><span class="o">.</span><span class="n">diffeqsolve</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_solver</span><span class="p">,</span> <span class="n">t0</span><span class="p">,</span> <span class="n">t1</span><span class="p">,</span> <span class="n">dt0</span><span class="o">=</span><span class="n">obs_stepsize</span><span class="p">,</span> <span class="n">y0</span><span class="o">=</span><span class="n">y0</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">saveat</span><span class="o">=</span><span class="n">saveat</span><span class="p">)</span>
+
+        <span class="n">deflection_t</span> <span class="o">=</span> <span class="n">sol</span><span class="o">.</span><span class="n">ys</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">velocity_t</span> <span class="o">=</span> <span class="n">sol</span><span class="o">.</span><span class="n">ys</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">theta_t</span> <span class="o">=</span> <span class="n">sol</span><span class="o">.</span><span class="n">ys</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">omega_t</span> <span class="o">=</span> <span class="n">sol</span><span class="o">.</span><span class="n">ys</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+
+        <span class="c1"># keep theta between -pi and pi</span>
+        <span class="n">theta_t</span> <span class="o">=</span> <span class="p">((</span><span class="n">theta_t</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span> <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span>
+
+        <span class="n">physical_states</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">PhysicalState</span><span class="p">(</span><span class="n">deflection</span><span class="o">=</span><span class="n">deflection_t</span><span class="p">,</span> <span class="n">velocity</span><span class="o">=</span><span class="n">velocity_t</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">theta_t</span><span class="p">,</span> <span class="n">omega</span><span class="o">=</span><span class="n">omega_t</span><span class="p">)</span>
+        <span class="n">additions</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">PRNGKey</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">ref</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">PhysicalState</span><span class="p">(</span><span class="n">deflection</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">velocity</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">omega</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">State</span><span class="p">(</span><span class="n">physical_state</span><span class="o">=</span><span class="n">physical_states</span><span class="p">,</span> <span class="n">PRNGKey</span><span class="o">=</span><span class="n">PRNGKey</span><span class="p">,</span> <span class="n">additions</span><span class="o">=</span><span class="n">additions</span><span class="p">,</span> <span class="n">reference</span><span class="o">=</span><span class="n">ref</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CartPole.init_state"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.init_state">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">init_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_properties</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">chex</span><span class="o">.</span><span class="n">PRNGKey</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">vmap_helper</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns default initial state for all batches.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">phys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">PhysicalState</span><span class="p">(</span>
+                <span class="n">deflection</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">velocity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">theta</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span>
+                <span class="n">omega</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">subkey</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">state_norm</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">rng</span><span class="p">,</span> <span class="n">minval</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">maxval</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">4</span><span class="p">,))</span>
+            <span class="n">phys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">PhysicalState</span><span class="p">(</span>
+                <span class="n">deflection</span><span class="o">=</span><span class="n">state_norm</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">env_properties</span><span class="o">.</span><span class="n">physical_constraints</span><span class="o">.</span><span class="n">deflection</span><span class="p">,</span>
+                <span class="n">velocity</span><span class="o">=</span><span class="n">state_norm</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">env_properties</span><span class="o">.</span><span class="n">physical_constraints</span><span class="o">.</span><span class="n">velocity</span><span class="p">,</span>
+                <span class="n">theta</span><span class="o">=</span><span class="n">state_norm</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">env_properties</span><span class="o">.</span><span class="n">physical_constraints</span><span class="o">.</span><span class="n">theta</span><span class="p">,</span>
+                <span class="n">omega</span><span class="o">=</span><span class="n">state_norm</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">*</span> <span class="n">env_properties</span><span class="o">.</span><span class="n">physical_constraints</span><span class="o">.</span><span class="n">omega</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">key</span><span class="p">,</span> <span class="n">subkey</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+        <span class="n">additions</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># self.Optional(something=jnp.zeros(self.batch_size))</span>
+        <span class="n">ref</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">PhysicalState</span><span class="p">(</span><span class="n">deflection</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">velocity</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">omega</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">State</span><span class="p">(</span><span class="n">physical_state</span><span class="o">=</span><span class="n">phys</span><span class="p">,</span> <span class="n">PRNGKey</span><span class="o">=</span><span class="n">subkey</span><span class="p">,</span> <span class="n">additions</span><span class="o">=</span><span class="n">additions</span><span class="p">,</span> <span class="n">reference</span><span class="o">=</span><span class="n">ref</span><span class="p">)</span></div>
+
+    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">vmap_init_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">chex</span><span class="o">.</span><span class="n">PRNGKey</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">init_state</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">in_axes_env_properties</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">env_properties</span><span class="p">,</span> <span class="n">rng</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="CartPole.generate_reward"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.generate_reward">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">generate_reward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">env_properties</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns reward for one batch.&quot;&quot;&quot;</span>
+        <span class="n">reward</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">control_state</span><span class="p">:</span>
+            <span class="n">reward</span> <span class="o">+=</span> <span class="o">-</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">physical_state</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span> <span class="o">-</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reference</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span>
+                    <span class="o">/</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">env_properties</span><span class="o">.</span><span class="n">physical_constraints</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="o">**</span> <span class="mi">2</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">reward</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="CartPole.generate_observation"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.generate_observation">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">generate_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">env_properties</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns observation for one batch.&quot;&quot;&quot;</span>
+        <span class="n">physical_constraints</span> <span class="o">=</span> <span class="n">env_properties</span><span class="o">.</span><span class="n">physical_constraints</span>
+        <span class="n">obs</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">physical_state</span><span class="o">.</span><span class="n">deflection</span> <span class="o">/</span> <span class="n">physical_constraints</span><span class="o">.</span><span class="n">deflection</span><span class="p">,</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">physical_state</span><span class="o">.</span><span class="n">velocity</span> <span class="o">/</span> <span class="n">physical_constraints</span><span class="o">.</span><span class="n">velocity</span><span class="p">,</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">physical_state</span><span class="o">.</span><span class="n">theta</span> <span class="o">/</span> <span class="n">physical_constraints</span><span class="o">.</span><span class="n">theta</span><span class="p">,</span>
+                <span class="n">state</span><span class="o">.</span><span class="n">physical_state</span><span class="o">.</span><span class="n">omega</span> <span class="o">/</span> <span class="n">physical_constraints</span><span class="o">.</span><span class="n">omega</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">control_state</span><span class="p">:</span>
+            <span class="n">obs</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">obs</span><span class="p">,</span>
+                    <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">reference</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">physical_constraints</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">obs</span></div>
+
+<div class="viewcode-block" id="CartPole.generate_truncated"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.generate_truncated">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">generate_truncated</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">env_properties</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns truncated information for one batch.&quot;&quot;&quot;</span>
+        <span class="n">obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_observation</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">env_properties</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">obs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span></div>
+
+<div class="viewcode-block" id="CartPole.generate_terminated"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.generate_terminated">[docs]</a>    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">generate_terminated</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">env_properties</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns terminated information for one batch.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">reward</span> <span class="o">==</span> <span class="mi">0</span></div>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">batch_size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_batch_size</span>
-
-    <span class="nd">@batch_size</span><span class="o">.</span><span class="n">setter</span>  
-    <span class="k">def</span> <span class="nf">batch_size</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">):</span>
-        <span class="c1"># If batchsize change, update the corresponding dimension</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_batch_size</span> <span class="o">=</span> <span class="n">batch_size</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">update_batch_dim</span><span class="p">()</span>
-         
-    <span class="k">def</span> <span class="nf">generate_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">states</span>
-    
-    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">static_generate_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">states</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">states</span>
-        
-    <span class="k">def</span> <span class="nf">get_def_reward_func</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_reward_func</span>
-    
-    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">default_reward_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">obs</span><span class="p">,</span><span class="n">action</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">((</span><span class="mf">0.01</span><span class="o">*</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">0.1</span><span class="o">*</span><span class="p">(</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">1</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">2</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">0.1</span><span class="o">*</span><span class="p">(</span><span class="n">obs</span><span class="p">[:,</span><span class="mi">3</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="mf">0.1</span><span class="o">*</span><span class="p">(</span><span class="n">action</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
-    
-    <span class="k">def</span> <span class="nf">get_obs_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_states_description</span><span class="p">()</span>
-    
-    <span class="k">def</span> <span class="nf">get_states_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;deflection&quot;</span><span class="p">,</span><span class="s2">&quot;velocity&quot;</span><span class="p">,</span><span class="s2">&quot;theta&quot;</span><span class="p">,</span><span class="s2">&quot;omega&quot;</span><span class="p">])</span>
-    
-    <span class="k">def</span> <span class="nf">get_action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">action_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;force&quot;</span><span class="p">])</span>
-    
-    <span class="k">def</span> <span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force_norm</span><span class="p">):</span>
-        
-        <span class="n">obs</span><span class="p">,</span><span class="n">reward</span><span class="p">,</span><span class="n">terminated</span><span class="p">,</span><span class="n">truncated</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">step_static</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="p">,</span><span class="n">force_norm</span><span class="p">)</span>
-        
-        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">terminated</span><span class="p">,</span> <span class="n">truncated</span><span class="p">,</span> <span class="p">{}</span>
 
-    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">step_static</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">states</span><span class="p">,</span><span class="n">force_norm</span><span class="p">):</span>
-        <span class="c1"># ode step</span>
-        <span class="n">states</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ode_exp_euler_step</span><span class="p">(</span><span class="n">states</span><span class="p">,</span><span class="n">force_norm</span><span class="p">)</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">obs_description</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="s2">&quot;deflection&quot;</span><span class="p">,</span> <span class="s2">&quot;velocity&quot;</span><span class="p">,</span> <span class="s2">&quot;theta&quot;</span><span class="p">,</span> <span class="s2">&quot;omega&quot;</span><span class="p">]),</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;_ref&quot;</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">control_state</span><span class="p">]),</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
 
-        <span class="c1"># observation</span>
-        <span class="n">obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">static_generate_observation</span><span class="p">(</span><span class="n">states</span><span class="p">)</span>
-        
-        <span class="c1"># reward</span>
-        <span class="n">reward</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reward_func</span><span class="p">(</span><span class="n">obs</span><span class="p">,</span><span class="n">force_norm</span><span class="p">)</span>
-
-        <span class="c1">#bound check</span>
-        <span class="n">truncated</span> <span class="o">=</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">states</span><span class="p">)</span><span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">terminated</span> <span class="o">=</span> <span class="n">reward</span> <span class="o">==</span> <span class="mi">0</span>
-        
-        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">terminated</span><span class="p">,</span> <span class="n">truncated</span> <span class="p">,</span><span class="n">states</span>
-    
-    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;To be implemented!&quot;</span><span class="p">)</span>
-        
-    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;To be implemented!&quot;</span><span class="p">)</span>
-    
-    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">random_key</span><span class="p">:</span><span class="n">chex</span><span class="o">.</span><span class="n">PRNGKey</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span><span class="n">initial_values</span><span class="p">:</span><span class="n">jnp</span><span class="o">.</span><span class="n">ndarray</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">random_key</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">observation_space</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">random_key</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">initial_values</span><span class="o">!=</span><span class="kc">None</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="n">initial_values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;number of rows is expected to be batch_size, got: </span><span class="si">{initial_values.shape[0]}</span><span class="s2">&quot;</span>
-            <span class="k">assert</span> <span class="n">initial_values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_obs_description</span><span class="p">()),</span> <span class="sa">f</span><span class="s2">&quot;number of columns is expected to be amount of obs_entries: {len(self.get_obs_description())}, got: </span><span class="si">{initial_values.shape[0]}</span><span class="s2">&quot;</span>
-            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">observation_space</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">initial_values</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;values of initial states are out of bounds&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span><span class="n">initial_values</span>
+<div class="viewcode-block" id="CartPole.reset"><a class="viewcode-back" href="../../../parts/environments/cart_pole/cart_pole_env.html#exciting_environments.cart_pole.cart_pole_env.CartPole.reset">[docs]</a>    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">chex</span><span class="o">.</span><span class="n">PRNGKey</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">initial_state</span><span class="p">:</span> <span class="n">jdc</span><span class="o">.</span><span class="n">pytree_dataclass</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resets environment to default or passed initial state.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">initial_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">tree_structure</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vmap_init_state</span><span class="p">())</span> <span class="o">==</span> <span class="n">tree_structure</span><span class="p">(</span>
+                <span class="n">initial_state</span>
+            <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;initial_state should have the same dataclass structure as self.vmap_init_state()&quot;</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="n">initial_state</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">.</span><span class="n">at</span><span class="p">[:,</span><span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">.</span><span class="n">at</span><span class="p">[:,</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">.</span><span class="n">at</span><span class="p">[:,</span><span class="mi">2</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="o">.</span><span class="n">at</span><span class="p">[:,</span><span class="mi">3</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
-            
-        <span class="n">obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_observation</span><span class="p">()</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vmap_init_state</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
 
-        <span class="k">return</span> <span class="n">obs</span><span class="p">,{}</span></div>
+        <span class="n">obs</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">generate_observation</span><span class="p">,</span>
+            <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_axes_env_properties</span><span class="p">),</span>
+        <span class="p">)(</span><span class="n">state</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">env_properties</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">obs</span><span class="p">,</span> <span class="n">state</span></div></div>
 </pre></div>
 
            </div>

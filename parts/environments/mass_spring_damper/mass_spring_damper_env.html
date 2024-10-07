@@ -1,19 +1,22 @@
+
+
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mass Spring Damper &mdash; Exciting Environments 1.0.0 documentation</title><link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-  <!--[if lt IE 9]>
-    <script src="../../../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/language_data.js"></script>
-        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+  <title>Mass Spring Damper &mdash; Exciting Environments 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=7ab3649f" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js?v=af2ce170"></script>
+      <script src="../../../_static/doctools.js?v=888ff710"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=4825356b"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -40,11 +43,11 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Exciting Environment Readme:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Exciting Environment Readme:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../readme.html">Readme File</a></li>
 </ul>
-<p class="caption"><span class="caption-text">Exciting Environment Contents:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Exciting Environment Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="reference internal" href="../environment.html">Environments</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="../pendulum/pendulum_env.html">Pendulum</a></li>
@@ -79,33 +82,28 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="mass-spring-damper">
-<h1>Mass Spring Damper<a class="headerlink" href="#mass-spring-damper" title="Permalink to this headline"></a></h1>
-<div class="section" id="description">
-<h2>Description<a class="headerlink" href="#description" title="Permalink to this headline"></a></h2>
+  <section id="mass-spring-damper">
+<h1>Mass Spring Damper<a class="headerlink" href="#mass-spring-damper" title="Permalink to this heading"></a></h1>
+<section id="description">
+<h2>Description<a class="headerlink" href="#description" title="Permalink to this heading"></a></h2>
 <p>Environment to simulate a Mass-Spring-Damper System.</p>
-</div>
-<div class="section" id="equation">
-<h2>Equation<a class="headerlink" href="#equation" title="Permalink to this headline"></a></h2>
+</section>
+<section id="equation">
+<h2>Equation<a class="headerlink" href="#equation" title="Permalink to this heading"></a></h2>
 <div class="math notranslate nohighlight">
 \[F_t = m \ddot{y_t} + d \dot{y_t} + k y_t\]</div>
-</div>
-<div class="section" id="parameters">
-<h2>Parameters<a class="headerlink" href="#parameters" title="Permalink to this headline"></a></h2>
+</section>
+<section id="parameters">
+<h2>Parameters<a class="headerlink" href="#parameters" title="Permalink to this heading"></a></h2>
 <div class="line-block">
 <div class="line"><span class="math notranslate nohighlight">\(d\)</span>: Damping constant</div>
 <div class="line"><span class="math notranslate nohighlight">\(k\)</span>: Spring constant</div>
 <div class="line"><span class="math notranslate nohighlight">\(m\)</span>: Mass of the oscillating object</div>
 </div>
-</div>
-<div class="section" id="action">
-<h2>Action<a class="headerlink" href="#action" title="Permalink to this headline"></a></h2>
+</section>
+<section id="action">
+<h2>Action<a class="headerlink" href="#action" title="Permalink to this heading"></a></h2>
 <table class="docutils align-default">
-<colgroup>
-<col style="width: 14%" />
-<col style="width: 55%" />
-<col style="width: 32%" />
-</colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Num</p></th>
 <th class="head"><p>Term in Equation</p></th>
@@ -119,15 +117,10 @@
 </tr>
 </tbody>
 </table>
-</div>
-<div class="section" id="states">
-<h2>States<a class="headerlink" href="#states" title="Permalink to this headline"></a></h2>
+</section>
+<section id="states">
+<h2>States<a class="headerlink" href="#states" title="Permalink to this heading"></a></h2>
 <table class="docutils align-default">
-<colgroup>
-<col style="width: 14%" />
-<col style="width: 55%" />
-<col style="width: 32%" />
-</colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Num</p></th>
 <th class="head"><p>Term in Equation</p></th>
@@ -145,61 +138,124 @@
 </tr>
 </tbody>
 </table>
-</div>
-<div class="section" id="class">
-<h2>Class<a class="headerlink" href="#class" title="Permalink to this headline"></a></h2>
-<dl class="class">
-<dt id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper">
-<em class="property">class </em><code class="sig-prename descclassname">exciting_environments.mass_spring_damper.mass_spring_damper_env.</code><code class="sig-name descname">MassSpringDamper</code><span class="sig-paren">(</span><em class="sig-param">batch_size=8, d=1, k=100, m=1, max_force=20, reward_func=None, tau=0.0001, constraints=[10, 10]</em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper" title="Permalink to this definition"></a></dt>
+</section>
+<section id="class">
+<h2>Class<a class="headerlink" href="#class" title="Permalink to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exciting_environments.mass_spring_damper.mass_spring_damper_env.</span></span><span class="sig-name descname"><span class="pre">MassSpringDamper</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">physical_constraints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">action_constraints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">static_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">control_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Euler()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0001</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper" title="Permalink to this definition"></a></dt>
 <dd><dl class="simple">
-<dt>State Variables:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['deflection'</span> <span class="pre">,</span> <span class="pre">'velocity']</span></code></p>
+<dt>State Variables:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['deflection',</span> <span class="pre">'velocity']</span></code></p>
 </dd>
-<dt>Action Variable:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['force']''</span></code></p>
-</dd>
-<dt>Observation Space (State Space):</dt><dd><p>Box(low=[-1, -1], high=[1, 1])</p>
-</dd>
-<dt>Action Space:</dt><dd><p>Box(low=-1, high=1)</p>
+<dt>Action Variable:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">['force']</span></code></p>
 </dd>
 <dt>Initial State:</dt><dd><p>Unless chosen otherwise, deflection and velocity is set to zero.</p>
 </dd>
 </dl>
 <p class="rubric">Example</p>
 <div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">jax</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">jax.numpy</span> <span class="k">as</span> <span class="nn">jnp</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">exciting_environments</span> <span class="k">as</span> <span class="nn">excenvs</span>
-<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">exciting_environments</span> <span class="kn">import</span> <span class="n">GymWrapper</span>
+<span class="gp">&gt;&gt;&gt;</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="c1"># Create the environment</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">=</span> <span class="n">excenvs</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="s1">&#39;MassSpringDamper-v0&#39;</span><span class="p">,</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span><span class="n">d</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span><span class="n">k</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span><span class="n">max_force</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">msd</span><span class="o">=</span><span class="n">excenv</span><span class="o">.</span><span class="n">MassSpringDamper</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span><span class="n">action_constraints</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;force&quot;</span><span class="p">:</span><span class="mi">10</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Use GymWrapper for Simulation (optional)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gym_msd</span><span class="o">=</span><span class="n">GymWrapper</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="n">msd</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt;</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="c1"># Reset the environment with default initial values</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">env</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
-<span class="go">&gt;&gt;&gt;</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Sample a random action</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">action</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">action_space</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">6</span><span class="p">))</span>
-<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gym_msd</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt;</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="c1"># Perform step</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">obs</span><span class="p">,</span><span class="n">reward</span><span class="p">,</span><span class="n">terminated</span><span class="p">,</span><span class="n">truncated</span><span class="p">,</span><span class="n">info</span><span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">action</span><span class="p">)</span>
-<span class="go">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">obs</span><span class="p">,</span><span class="n">reward</span><span class="p">,</span><span class="n">terminated</span><span class="p">,</span><span class="n">truncated</span> <span class="o">=</span> <span class="n">gym_msd</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">action</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt;</span>
 </pre></div>
 </div>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>batch_size</strong> (<em>int</em>) – Number of training examples utilized in one iteration. Default: 8</p></li>
-<li><p><strong>d</strong> (<em>float</em>) – Damping constant. Default: 1</p></li>
-<li><p><strong>k</strong> (<em>float</em>) – Spring constant. Default: 100</p></li>
-<li><p><strong>m</strong> (<em>float</em>) – Mass of the oscillating object. Default: 1</p></li>
-<li><p><strong>max_force</strong> (<em>float</em>) – Maximum force that can be applied to the system as action. Default: 20</p></li>
-<li><p><strong>reward_func</strong> (<em>function</em>) – Reward function for training. Needs Observation-Matrix and Action as Parameters. Default: None (default_reward_func from class)</p></li>
+<li><p><strong>physical_constraints</strong> (<em>dict</em>) – Constraints of the physical state of the environment.
+deflection(float): Deflection of the mass. Default: 10
+velocity(float): Velocity of the mass. Default: 10</p></li>
+<li><p><strong>action_constraints</strong> (<em>dict</em>) – Constraints of the action.
+force(float): Maximum force that can be applied to the system as action. Default: 20</p></li>
+<li><p><strong>static_params</strong> (<em>dict</em>) – Parameters of environment which do not change during simulation.
+d(float): Damping constant. Default: 1
+k(float): Spring constant. Default: 100
+m(float): Mass of the oscillating object. Default: 1</p></li>
+<li><p><strong>control_state</strong> – TODO</p></li>
+<li><p><strong>solver</strong> (<em>diffrax.solver</em>) – Solver used to compute state for next step.</p></li>
 <li><p><strong>tau</strong> (<em>float</em>) – Duration of one control step in seconds. Default: 1e-4.</p></li>
-<li><p><strong>constraints</strong> (<em>array</em>) – Constraints for states [‘deflection’,’velocity’] (array with length 2). Default: [1000,10]</p></li>
 </ul>
 </dd>
 </dl>
-<p>Note: d,k,m and max_force can also be passed as lists with the length of the batch_size to set different parameters per batch. In addition to that constraints can also be passed as a list of lists with length 2 to set different constraints per batch.</p>
+<p>Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.Action">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Action</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">force</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Array</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.Action"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.Action" title="Permalink to this definition"></a></dt>
+<dd><p>Dataclass containing the action, that can be applied to the environment.</p>
 </dd></dl>
 
-</div>
-</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.Additions">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Additions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">something</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Array</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.Additions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.Additions" title="Permalink to this definition"></a></dt>
+<dd><p>Dataclass containing additional information for simulation.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.PhysicalState">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">PhysicalState</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">deflection</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Array</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">velocity</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Array</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.PhysicalState"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.PhysicalState" title="Permalink to this definition"></a></dt>
+<dd><p>Dataclass containing the physical state of the environment.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.StaticParams">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">StaticParams</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Array</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Array</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Array</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.StaticParams"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.StaticParams" title="Permalink to this definition"></a></dt>
+<dd><p>Dataclass containing the static parameters of the environment.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_observation">
+<span class="sig-name descname"><span class="pre">generate_observation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env_properties</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.generate_observation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_observation" title="Permalink to this definition"></a></dt>
+<dd><p>Returns observation for one batch.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_reward">
+<span class="sig-name descname"><span class="pre">generate_reward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env_properties</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.generate_reward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_reward" title="Permalink to this definition"></a></dt>
+<dd><p>Returns reward for one batch.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_terminated">
+<span class="sig-name descname"><span class="pre">generate_terminated</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reward</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env_properties</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.generate_terminated"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_terminated" title="Permalink to this definition"></a></dt>
+<dd><p>Returns terminated information for one batch.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_truncated">
+<span class="sig-name descname"><span class="pre">generate_truncated</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env_properties</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.generate_truncated"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.generate_truncated" title="Permalink to this definition"></a></dt>
+<dd><p>Returns truncated information for one batch.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.init_state">
+<span class="sig-name descname"><span class="pre">init_state</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">env_properties</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">PRNGKeyArray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vmap_helper</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.init_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.init_state" title="Permalink to this definition"></a></dt>
+<dd><p>Returns default initial state for all batches.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.reset">
+<span class="sig-name descname"><span class="pre">reset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">PRNGKeyArray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">initial_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">pytree_dataclass</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/exciting_environments/mass_spring_damper/mass_spring_damper_env.html#MassSpringDamper.reset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exciting_environments.mass_spring_damper.mass_spring_damper_env.MassSpringDamper.reset" title="Permalink to this definition"></a></dt>
+<dd><p>Resets environment to default or passed initial state.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
 
 
            </div>
