@@ -3,6 +3,8 @@ import exciting_environments as excenvs
 import jax
 import jax.numpy as jnp
 
+jax.config.update("jax_platform_name", "cpu")
+
 env_ids = ["Pendulum-v0", "MassSpringDamper-v0", "CartPole-v0", "FluidTank-v0"]
 
 
