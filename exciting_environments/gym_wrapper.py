@@ -6,8 +6,7 @@ from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 from functools import partial
 import chex
 from abc import ABC
-from exciting_environments import spaces
-from exciting_environments.registration import make
+from exciting_environments import spaces, make
 
 
 class GymWrapper(ABC):
