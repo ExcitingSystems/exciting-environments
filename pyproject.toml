@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exciting_environments_dmpe"
-version = "1.0.12"
+name = "exciting_environments"
+version = "0.1.1"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
   { name="Hendrik Vater", email="vater@lea.uni-paderborn.de" },
