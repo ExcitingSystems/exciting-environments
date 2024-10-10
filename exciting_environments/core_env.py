@@ -6,7 +6,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 import jax_dataclasses as jdc
 import diffrax
 import chex
@@ -61,6 +61,10 @@ class CoreEnvironment(ABC):
                 value = getattr(dataclass_in_axes, name)
                 if value == None:
                     setattr(dataclass_in_axes, name, None)
+                elif isinstance(value, list):
+                    raise ValueError(
+                        f'Passed env property "{name}" needs to be a jnp.array to have different setting per batch, but list is given.'
+                    )
                 elif jdc.is_dataclass(value):
                     setattr(dataclass_in_axes, name, self.create_in_axes_dataclass(value))
                 elif jnp.isscalar(value):
@@ -144,13 +148,13 @@ class CoreEnvironment(ABC):
         # vmap single operations
         observations, states, last_state = jax.vmap(
             self.sim_ahead, in_axes=(0, 0, self.in_axes_env_properties, None, None)
-        )(
-            init_state, actions, self.env_properties, obs_stepsize, action_stepsize
-        )  # rewards, truncated, terminated,
+        )(init_state, actions, self.env_properties, obs_stepsize, action_stepsize)
 
-        return observations, states, last_state  # rewards, truncated, terminated,
+        return observations, states, last_state
 
     def vmap_generate_rew_trunc_term_ahead(self, states, actions):
+        """Computes reward,truncated and terminated for the data of multiple (batch_size) batches simulated by vmap_sim_ahead"""
+
         assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
             actions.shape[0] == self.batch_size
@@ -158,6 +162,30 @@ class CoreEnvironment(ABC):
         assert (
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
-        reward, truncated, terminated = jax.vmap(self.generate_rew_trunc_term_ahead, in_axes=(0, 0))(states, actions)
+        reward, truncated, terminated = jax.vmap(
+            self.generate_rew_trunc_term_ahead, in_axes=(0, 0, self.in_axes_env_properties)
+        )(states, actions, self.env_properties)
 
         return reward, truncated, terminated
+
+    def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
+        """Resets environment (all batches) to default, random or passed initial state."""
+        if initial_state is not None:
+            assert tree_structure(self.vmap_init_state()) == tree_structure(
+                initial_state
+            ), f"initial_state should have the same dataclass structure as self.vmap_init_state()"
+
+        obs, state = jax.vmap(
+            self.reset,
+            in_axes=(self.in_axes_env_properties, 0, 0, 0),
+        )(self.env_properties, rng, initial_state, jnp.ones(self.batch_size))
+
+        return obs, state
+
+    @partial(jax.jit, static_argnums=0)
+    def vmap_generate_state_from_observation(self, obs, key=None):
+        """Generates state from observation for all batches."""
+        state = jax.vmap(self.generate_state_from_observation, in_axes=(0, self.in_axes_env_properties, 0))(
+            obs, self.env_properties, key
+        )
+        return state

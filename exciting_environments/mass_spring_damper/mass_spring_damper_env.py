@@ -67,7 +67,7 @@ class MassSpringDamper(ClassicCoreEnvironment):
                 d(float): Damping constant. Default: 1
                 k(float): Spring constant. Default: 100
                 m(float): Mass of the oscillating object. Default: 1
-            control_state: TODO
+            control_state (list): Components of the physical state that are considered in reference tracking.
             solver(diffrax.solver): Solver used to compute state for next step.
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
@@ -111,8 +111,6 @@ class MassSpringDamper(ClassicCoreEnvironment):
     @jdc.pytree_dataclass
     class Additions:
         """Dataclass containing additional information for simulation."""
-
-        something: jax.Array
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -168,7 +166,19 @@ class MassSpringDamper(ClassicCoreEnvironment):
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
-        """Computes states by simulating a trajectory with given actions."""
+        """Computes multiple simulation steps for one batch.
+
+        Args:
+            init_state: The initial state of the simulation
+            actions: A set of actions to be applied to the environment, the value changes every
+            action_stepsize (shape=(n_action_steps, action_dim))
+            static_params: The constant properties of the simulation
+            obs_stepsize: The sampling time for the observations
+            action_stepsize: The time between changes in the input/action
+
+        Returns:
+            next_states: The computed states during the multiple step simulation.
+        """
 
         init_physical_state = init_state.physical_state
         args = (actions, static_params)
@@ -195,24 +205,26 @@ class MassSpringDamper(ClassicCoreEnvironment):
 
         deflection_t = sol.ys[0]
         velocity_t = sol.ys[1]
+        obs_len = velocity_t.shape[0]
 
         physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t)
         ref = self.PhysicalState(
-            deflection=jnp.full(deflection_t.shape, jnp.nan), velocity=jnp.full(velocity_t.shape, jnp.nan)
+            deflection=jnp.full(obs_len, init_state.reference.deflection),
+            velocity=jnp.full(obs_len, init_state.reference.velocity),
         )
         additions = None
-        PRNGKey = None
+        PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
         return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
-        """Returns default initial state for all batches."""
+        """Returns default initial state for one batch."""
         if rng is None:
             phys = self.PhysicalState(
                 deflection=0,
                 velocity=0,
             )
-            subkey = None
+            subkey = jnp.nan
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(2,))
             phys = self.PhysicalState(
@@ -264,6 +276,25 @@ class MassSpringDamper(ClassicCoreEnvironment):
         return obs
 
     @partial(jax.jit, static_argnums=0)
+    def generate_state_from_observation(self, obs, env_properties, key=None):
+        """Generates state from observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
+        phys = self.PhysicalState(
+            deflection=obs[0] * (physical_constraints.deflection).astype(float),
+            velocity=obs[1] * (physical_constraints.velocity).astype(float),
+        )
+        if key is not None:
+            subkey = key
+        else:
+            subkey = jnp.nan
+        additions = None
+        ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
+        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
+            for name, pos in zip(self.control_state, range(len(self.control_state))):
+                setattr(new_ref, name, obs[2 + pos] * (getattr(physical_constraints, name)).astype(float))
+        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+
+    @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, env_properties):
         """Returns truncated information for one batch."""
         obs = self.generate_observation(state, env_properties)
@@ -284,19 +315,18 @@ class MassSpringDamper(ClassicCoreEnvironment):
     def action_description(self):
         return np.array(["force"])
 
-    def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
-        """Resets environment to default or passed initial state."""
+    def reset(
+        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
+    ):
+        """Resets one batch to default, random or passed initial state."""
         if initial_state is not None:
-            assert tree_structure(self.vmap_init_state()) == tree_structure(
+            assert tree_structure(self.init_state()) == tree_structure(
                 initial_state
-            ), f"initial_state should have the same dataclass structure as self.vmap_init_state()"
+            ), f"initial_state should have the same dataclass structure as init_state()"
             state = initial_state
         else:
-            state = self.vmap_init_state(rng)
+            state = self.init_state(env_properties, rng)
 
-        obs = jax.vmap(
-            self.generate_observation,
-            in_axes=(0, self.in_axes_env_properties),
-        )(state, self.env_properties)
+        obs = self.generate_observation(state, env_properties)
 
         return obs, state
