@@ -169,12 +169,12 @@ class MassSpringDamper(ClassicCoreEnvironment):
         """Computes multiple simulation steps for one batch.
 
         Args:
-            init_state: The initial state of the simulation
-            actions: A set of actions to be applied to the environment, the value changes every
-            action_stepsize (shape=(n_action_steps, action_dim))
-            static_params: The constant properties of the simulation
-            obs_stepsize: The sampling time for the observations
-            action_stepsize: The time between changes in the input/action
+            init_state: The initial state of the simulation.
+            actions: A set of actions to be applied to the environment, the value changes every.
+            action_stepsize (shape=(n_action_steps, action_dim)).
+            static_params: The constant properties of the simulation.
+            obs_stepsize: The sampling time for the observations.
+            action_stepsize: The time between changes in the input/action.
 
         Returns:
             next_states: The computed states during the multiple step simulation.
