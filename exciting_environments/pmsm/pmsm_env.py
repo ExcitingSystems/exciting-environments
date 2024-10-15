@@ -139,7 +139,7 @@ class PMSM(CoreEnvironment):
                 "epsilon": jnp.pi,
                 "i_d": 250,
                 "i_q": 250,
-                "omega_el": 3000 / 60 * 2 * jnp.pi,
+                "omega_el": 2 * jnp.pi * 3 * 11000 / 60,
                 "torque": 200,
             }
 
@@ -158,7 +158,9 @@ class PMSM(CoreEnvironment):
             "Psi_q",
         ]
         if saturated:
-            self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_jax_grad.mat")  # "\\LUT_data.mat"
+            self.pmsm_lut = loadmat(
+                Path(os.path.dirname(exc_envs.pmsm.__file__)) / Path("LUT_jax_grad.mat")
+            )  # "\\LUT_data.mat"
             for q in saturated_quants:
                 qmap = self.pmsm_lut[q]
                 x, y = np.indices(qmap.shape)
@@ -169,10 +171,13 @@ class PMSM(CoreEnvironment):
                     (x[nan_mask], y[nan_mask]),  # points to interpolate
                     method="nearest",
                 )  # extrapolation can only do nearest
-                self.pmsm_lut[q] = qmap
+                a = np.vstack([qmap[0, :], qmap, qmap[-1, :]])
+                b = np.hstack([a[:, :1], a, a[:, -1:]])
+                self.pmsm_lut[q] = b
+                # self.pmsm_lut[q] = qmap
 
-            i_max = physical_constraints["i_d"]
-            assert i_max == 250, "LUT_data was generated with i_max=250"
+            i_max = physical_constraints["i_d"] + 10
+            # assert i_max == 250, "LUT_data was generated with i_max=250"
 
             n_grid_points_y, n_grid_points_x = self.pmsm_lut[saturated_quants[0]].shape
             x, y = np.linspace(-i_max, 0, n_grid_points_x), np.linspace(-i_max, i_max, n_grid_points_y)
@@ -312,10 +317,10 @@ class PMSM(CoreEnvironment):
                 u_d_buffer=0.0,
                 u_q_buffer=0.0,
                 epsilon=0.0,
-                i_d=0.0,
+                i_d=-env_properties.physical_constraints.i_d / 2,
                 i_q=0.0,
                 torque=0.0,
-                omega_el=(env_properties.physical_constraints.omega_el),
+                omega_el=2 * jnp.pi * 3 * 4700 / 60,
             )
             subkey = jnp.nan
         else:
@@ -731,7 +736,7 @@ class PMSM(CoreEnvironment):
         sin_eps = jnp.sin(eps)
         obs = jnp.hstack(
             (
-                system_state.physical_state.i_d / physical_constraints.i_d,
+                (system_state.physical_state.i_d + (physical_constraints.i_d * 0.5)) / (physical_constraints.i_d * 0.5),
                 system_state.physical_state.i_q / physical_constraints.i_q,
                 system_state.physical_state.omega_el / physical_constraints.omega_el,
                 system_state.physical_state.torque / physical_constraints.torque,
