@@ -3,14 +3,15 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exciting_environments_test"
-version = "0.0.11"
+name = "exciting_environments"
+version = "0.1.1"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
+  { name="Hendrik Vater", email="vater@lea.uni-paderborn.de" },
 ]
 description = "Physical differential equations wrapped into Gymnasium environments"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -18,16 +19,26 @@ classifiers = [
 ]
 
 dependencies = [
-    "matplotlib>=3.1.2",
-    "jax>=0.4.13",
-    "chex>=0.1.7",
-    "numpy>=1.16.4",
-    "scipy>=1.4.1",
-    "gym<0.24.0,>=0.15.4",
-    "pytest>=5.2.2",
-    "gymnasium>=0.28.1",
-    "pytest-cov",
+    "matplotlib==3.9.0",
+    "jax==0.4.28",
+    "jaxlib==0.4.28",
+    "chex==0.1.86",
+    "numpy==1.26.4",
+    "scipy==1.13.1",
+    "pytest==8.2.1",
+    "pytest-cov==5.0.0",
+    "diffrax==0.5.1",
+    "jax-dataclasses==1.6.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
 ]
 
 [project.urls]
 "Homepage" = "https://excitingsystems.github.io/exciting-environments/"
+
+[tool.setuptools.packages.find]
+where = ["."]  # list of folders that contain the packages (["."] by default)
+include = ["exciting_environments*"]  # package names should match these glob patterns (["*"] by default)
