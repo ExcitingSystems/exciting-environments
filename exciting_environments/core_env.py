@@ -6,7 +6,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 import jax_dataclasses as jdc
 import diffrax
 import chex
@@ -159,3 +159,17 @@ class CoreEnvironment(ABC):
         )(states, actions, self.env_properties)
 
         return reward, truncated, terminated
+
+    def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
+        """Resets environment (all batches) to default, random or passed initial state."""
+        if initial_state is not None:
+            assert tree_structure(self.vmap_init_state()) == tree_structure(
+                initial_state
+            ), f"initial_state should have the same dataclass structure as self.vmap_init_state()"
+
+        obs, state = jax.vmap(
+            self.reset,
+            in_axes=(self.in_axes_env_properties, 0, 0, 0),
+        )(self.env_properties, rng, initial_state, jnp.ones(self.batch_size))
+
+        return obs, state
