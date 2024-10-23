@@ -413,10 +413,10 @@ class PMSM(CoreEnvironment):
                 u_d_buffer=0.0,
                 u_q_buffer=0.0,
                 epsilon=0.0,
-                i_d=0.0,
+                i_d=-env_properties.physical_constraints.i_d / 2,
                 i_q=0.0,
                 torque=0.0,
-                omega_el=(env_properties.physical_constraints.omega_el),
+                omega_el=2 * jnp.pi * 3 * 4700 / 60,
             )
             subkey = jnp.nan
         else:
@@ -832,7 +832,7 @@ class PMSM(CoreEnvironment):
         sin_eps = jnp.sin(eps)
         obs = jnp.hstack(
             (
-                system_state.physical_state.i_d / physical_constraints.i_d,
+                (system_state.physical_state.i_d + (physical_constraints.i_d * 0.5)) / (physical_constraints.i_d * 0.5),
                 system_state.physical_state.i_q / physical_constraints.i_q,
                 system_state.physical_state.omega_el / physical_constraints.omega_el,
                 system_state.physical_state.torque / physical_constraints.torque,
