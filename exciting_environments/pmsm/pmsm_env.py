@@ -120,6 +120,7 @@ class PMSM(CoreEnvironment):
         self,
         batch_size: int = 8,
         saturated=False,
+        LUT_motor_name: str = None,
         physical_constraints: dict = None,
         action_constraints: dict = None,
         static_params: dict = None,
@@ -132,8 +133,125 @@ class PMSM(CoreEnvironment):
         self.tau = tau
         self._solver = solver
 
-        if not physical_constraints:
-            physical_constraints = {
+        if LUT_motor_name is not None:
+            if LUT_motor_name == "BRUSA":
+                default_physical_constraints = {
+                    "u_d_buffer": 2 * 400 / 3,
+                    "u_q_buffer": 2 * 400 / 3,
+                    "epsilon": jnp.pi,
+                    "i_d": 250,
+                    "i_q": 250,
+                    "omega_el": 3000 / 60 * 2 * jnp.pi,
+                    "torque": 200,
+                }
+
+                default_action_constraints = {
+                    "u_d": 2 * 400 / 3,
+                    "u_q": 2 * 400 / 3,
+                }
+                default_static_params = {
+                    "p": 3,
+                    "r_s": 15e-3,
+                    "l_d": 0.37e-3,
+                    "l_q": 1.2e-3,
+                    "psi_p": 65.6e-3,
+                    "deadtime": 1,
+                }
+                self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_jax_grad.mat")
+
+            elif LUT_motor_name == "Motor2":
+                default_physical_constraints = {
+                    "u_d_buffer": 2 * 100 / 3,
+                    "u_q_buffer": 2 * 100 / 3,
+                    "epsilon": jnp.pi,
+                    "i_d": 16,
+                    "i_q": 16,
+                    "omega_el": 1000 / 60 * 2 * jnp.pi,
+                    "torque": 20,
+                }
+
+                default_action_constraints = {
+                    "u_d": 2 * 100 / 3,
+                    "u_q": 2 * 100 / 3,
+                }
+                default_static_params = {
+                    "p": 3,
+                    "r_s": 15e-3,
+                    "l_d": 0.37e-3,
+                    "l_q": 1.2e-3,
+                    "psi_p": 65.6e-3,
+                    "deadtime": 1,
+                }
+
+                self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_SEW_jax_grad.mat")
+
+            else:
+                raise Exception(f"Motor name {LUT_motor_name} is not known.")
+
+            if saturated:
+                saturated_quants = [
+                    "L_dd",
+                    "L_dq",
+                    "L_qd",
+                    "L_qq",
+                    "Psi_d",
+                    "Psi_q",
+                ]
+                i_d_max = np.max(self.pmsm_lut["i_d_vec"])
+                i_q_max = np.max(self.pmsm_lut["i_q_vec"])
+                i_d_min = np.min(self.pmsm_lut["i_d_vec"])
+                i_q_min = np.min(self.pmsm_lut["i_q_vec"])
+                i_d_stepsize = (i_d_max - i_d_min) / (self.pmsm_lut["i_d_vec"].shape[1] - 1)
+                i_q_stepsize = (i_q_max - i_q_min) / (self.pmsm_lut["i_q_vec"].shape[1] - 1)
+                for q in saturated_quants:
+                    qmap = self.pmsm_lut[q]
+                    x, y = np.indices(qmap.shape)
+                    nan_mask = np.isnan(qmap)
+                    qmap[nan_mask] = griddata(
+                        (x[~nan_mask], y[~nan_mask]),  # points we know
+                        qmap[~nan_mask],  # values we know
+                        (x[nan_mask], y[nan_mask]),  # points to interpolate
+                        method="nearest",
+                    )  # extrapolation can only do nearest
+
+                    # repeat each border values to have the linear extrapolation create constant extrapolation
+                    a = np.vstack([qmap[0, :], qmap, qmap[-1, :]])
+                    b = np.hstack([a[:, :1], a, a[:, -1:]])
+
+                    self.pmsm_lut[q] = b
+                    # self.pmsm_lut[q] = qmap
+
+                n_grid_points_y, n_grid_points_x = self.pmsm_lut[saturated_quants[0]].shape
+                x, y = np.linspace(i_d_min - i_d_stepsize, i_d_max + i_d_stepsize, n_grid_points_x), np.linspace(
+                    i_q_min - i_q_stepsize, i_q_max + i_q_stepsize, n_grid_points_y
+                )
+                # x, y = np.linspace(i_d_min, i_d_max, n_grid_points_x), np.linspace(i_q_min, i_q_max, n_grid_points_y)
+                self.LUT_interpolators = {
+                    q: jax.scipy.interpolate.RegularGridInterpolator(
+                        (x, y), self.pmsm_lut[q][:, :].T, method="linear", bounds_error=False, fill_value=None
+                    )
+                    for q in saturated_quants
+                }
+                default_static_params["l_d"] = jnp.nan
+                default_static_params["l_q"] = jnp.nan
+                default_static_params["psi_p"] = jnp.nan
+
+            else:
+                saturated_quants = [
+                    "L_dd",
+                    "L_dq",
+                    "L_qd",
+                    "L_qq",
+                    "Psi_d",
+                    "Psi_q",
+                ]
+                self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
+
+        else:
+            if saturated:
+                raise Exception("LUT_motor_name is needed to load LUTs.")
+
+            default_physical_constraints = {
                 "u_d_buffer": 2 * 400 / 3,
                 "u_q_buffer": 2 * 400 / 3,
                 "epsilon": jnp.pi,
@@ -143,60 +261,11 @@ class PMSM(CoreEnvironment):
                 "torque": 200,
             }
 
-        if not action_constraints:
-            action_constraints = {
+            default_action_constraints = {
                 "u_d": 2 * 400 / 3,
                 "u_q": 2 * 400 / 3,
             }
-
-        saturated_quants = [
-            "L_dd",
-            "L_dq",
-            "L_qd",
-            "L_qq",
-            "Psi_d",
-            "Psi_q",
-        ]
-        if saturated:
-            self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_jax_grad.mat")  # "\\LUT_data.mat"
-            for q in saturated_quants:
-                qmap = self.pmsm_lut[q]
-                x, y = np.indices(qmap.shape)
-                nan_mask = np.isnan(qmap)
-                qmap[nan_mask] = griddata(
-                    (x[~nan_mask], y[~nan_mask]),  # points we know
-                    qmap[~nan_mask],  # values we know
-                    (x[nan_mask], y[nan_mask]),  # points to interpolate
-                    method="nearest",
-                )  # extrapolation can only do nearest
-                self.pmsm_lut[q] = qmap
-
-            i_max = physical_constraints["i_d"]
-            assert i_max == 250, "LUT_data was generated with i_max=250"
-
-            n_grid_points_y, n_grid_points_x = self.pmsm_lut[saturated_quants[0]].shape
-            x, y = np.linspace(-i_max, 0, n_grid_points_x), np.linspace(-i_max, i_max, n_grid_points_y)
-            self.LUT_interpolators = {
-                q: jax.scipy.interpolate.RegularGridInterpolator(
-                    (x, y), self.pmsm_lut[q][:, :].T, method="linear", bounds_error=False, fill_value=None
-                )
-                for q in saturated_quants
-            }
-        else:
-            self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
-
-        if not static_params and saturated:
-            static_params = {
-                "p": 3,
-                "r_s": 15e-3,
-                "l_d": jnp.nan,
-                "l_q": jnp.nan,
-                "psi_p": jnp.nan,
-                "deadtime": 1,
-            }
-
-        if not static_params:
-            static_params = {
+            default_static_params = {
                 "p": 3,
                 "r_s": 1,
                 "l_d": 0.37e-3,
@@ -204,6 +273,38 @@ class PMSM(CoreEnvironment):
                 "psi_p": 65.6e-3,
                 "deadtime": 1,
             }
+            saturated_quants = [
+                "L_dd",
+                "L_dq",
+                "L_qd",
+                "L_qq",
+                "Psi_d",
+                "Psi_q",
+            ]
+            self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
+
+        if not static_params:
+            static_params = default_static_params
+
+        if not physical_constraints:
+            physical_constraints = default_physical_constraints
+        else:
+            i_d_constr = physical_constraints["i_d"]
+            i_q_constr = physical_constraints["i_q"]
+            def_i_d_constr = default_physical_constraints["i_d"]
+            def_i_q_constr = default_physical_constraints["i_q"]
+
+            if i_d_constr > def_i_d_constr:
+                print(
+                    f"The defined permitted range of i_d (+-{i_d_constr}) exceeds the limits of the LUT (+-{def_i_d_constr}). Values outside this range are extrapolated."
+                )
+            if i_q_constr > def_i_q_constr:
+                print(
+                    f"The defined permitted range of i_q (+-{i_q_constr}) exceeds the limits of the LUT (+-{def_i_q_constr}). Values outside this range are extrapolated."
+                )
+
+        if not action_constraints:
+            action_constraints = default_action_constraints
 
         if not control_state:
             control_state = []
@@ -665,6 +766,7 @@ class PMSM(CoreEnvironment):
         )
         return reward, truncated, terminated
 
+    @partial(jax.jit, static_argnums=[0, 3])
     def step(self, state, action, env_properties):
         """Computes state by simulating one step taking the deadtime into account.
 
@@ -711,7 +813,7 @@ class PMSM(CoreEnvironment):
     ):
         """Resets one batch to default, random or passed initial state."""
         if initial_state is not None:
-            assert tree_structure(self.init_state()) == tree_structure(
+            assert tree_structure(self.init_state(env_properties)) == tree_structure(
                 initial_state
             ), f"initial_state should have the same dataclass structure as init_state()"
             state = initial_state

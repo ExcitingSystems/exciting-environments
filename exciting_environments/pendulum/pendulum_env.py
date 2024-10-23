@@ -213,9 +213,9 @@ class Pendulum(ClassicCoreEnvironment):
         if rng is None:
             phys = self.PhysicalState(
                 theta=jnp.pi,
-                omega=0,
+                omega=0.0,
             )
-            subkey = None
+            subkey = jnp.nan
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(2,))
             phys = self.PhysicalState(
@@ -290,7 +290,7 @@ class Pendulum(ClassicCoreEnvironment):
     ):
         """Resets one batch to default, random or passed initial state."""
         if initial_state is not None:
-            assert tree_structure(self.init_state()) == tree_structure(
+            assert tree_structure(self.init_state(env_properties)) == tree_structure(
                 initial_state
             ), f"initial_state should have the same dataclass structure as init_state()"
             state = initial_state
