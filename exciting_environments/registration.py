@@ -1,7 +1,4 @@
-from .cart_pole import CartPole
-from .mass_spring_damper import MassSpringDamper
-from .pendulum import Pendulum
-from .fluid_tank import FluidTank
+from exciting_environments import CartPole, MassSpringDamper, Pendulum, FluidTank
 
 
 def make(env_id: str, **env_kwargs):
