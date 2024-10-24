@@ -113,7 +113,7 @@ class GymWrapper(ABC):
         """
 
         # transform array to dataclass defined in environment
-        state = tree_unflatten(self.state_tree_struct, state)  # state.T
+        state = tree_unflatten(self.state_tree_struct, state)
 
         obs, state = self.env.vmap_step(state, action)
 
@@ -134,7 +134,7 @@ class GymWrapper(ABC):
             state, self.env.env_properties
         )
         # transform dataclass to array
-        state = tree_flatten(state)[0]  # jnp.array(tree_flatten(state)[0]).T
+        state = tree_flatten(state)[0]
 
         return obs, reward, terminated, truncated, state, reference_hold_steps
 
@@ -156,7 +156,7 @@ class GymWrapper(ABC):
             )(state, self.env.env_properties, jnp.zeros(self.env.batch_size))
         else:
             self.ref_gen = 0
-            print("Since no PRNGKey was provided, reference generation and tracking are deactivated.")
+            print("Since no PRNGKey was provided, reference generation is deactivated.")
 
         self.state = tree_flatten(state)[0]
         obs = jax.vmap(self.env.generate_observation, in_axes=(0, self.env.in_axes_env_properties))(

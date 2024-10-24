@@ -327,7 +327,7 @@ class Pendulum(ClassicCoreEnvironment):
     ):
         """Resets one batch to default, random or passed initial state."""
         if initial_state is not None:
-            assert tree_structure(self.init_state()) == tree_structure(
+            assert tree_structure(self.init_state(env_properties)) == tree_structure(
                 initial_state
             ), f"initial_state should have the same dataclass structure as init_state()"
             state = initial_state

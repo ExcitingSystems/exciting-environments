@@ -218,11 +218,11 @@ class MassSpringDamper(ClassicCoreEnvironment):
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
-        """Returns default initial state for one batch."""
+        """Returns default or random initial state for one batch."""
         if rng is None:
             phys = self.PhysicalState(
-                deflection=0,
-                velocity=0,
+                deflection=0.0,
+                velocity=0.0,
             )
             subkey = jnp.nan
         else:
@@ -238,6 +238,7 @@ class MassSpringDamper(ClassicCoreEnvironment):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_init_state(self, rng: chex.PRNGKey = None):
+        """Returns default or random initial state for all batches."""
         return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
             self.env_properties, rng, jnp.ones(self.batch_size)
         )
@@ -320,9 +321,9 @@ class MassSpringDamper(ClassicCoreEnvironment):
     ):
         """Resets one batch to default, random or passed initial state."""
         if initial_state is not None:
-            assert tree_structure(self.init_state()) == tree_structure(
+            assert tree_structure(self.init_state(env_properties)) == tree_structure(
                 initial_state
-            ), f"initial_state should have the same dataclass structure as init_state()"
+            ), f"initial_state should have the same dataclass structure as init_state(env_properties)"
             state = initial_state
         else:
             state = self.init_state(env_properties, rng)
