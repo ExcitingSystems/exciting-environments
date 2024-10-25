@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exciting_environments"
-version = "0.1.1"
+name = "exciting_environments_dev"
+version = "0.0.11"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
   { name="Hendrik Vater", email="vater@lea.uni-paderborn.de" },
@@ -36,9 +36,6 @@ pythonpath = [
     "."
 ]
 
+
 [project.urls]
 "Homepage" = "https://excitingsystems.github.io/exciting-environments/"
-
-[tool.setuptools.packages.find]
-where = ["."]  # list of folders that contain the packages (["."] by default)
-include = ["exciting_environments*"]  # package names should match these glob patterns (["*"] by default)
