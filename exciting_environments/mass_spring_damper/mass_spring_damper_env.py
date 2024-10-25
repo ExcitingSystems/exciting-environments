@@ -207,10 +207,10 @@ class MassSpringDamper(ClassicCoreEnvironment):
         """Returns default initial state for all batches."""
         if rng is None:
             phys = self.PhysicalState(
-                deflection=0,
-                velocity=0,
+                deflection=0.0,
+                velocity=0.0,
             )
-            subkey = None
+            subkey = jnp.nan
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(2,))
             phys = self.PhysicalState(
@@ -282,19 +282,18 @@ class MassSpringDamper(ClassicCoreEnvironment):
     def action_description(self):
         return np.array(["force"])
 
-    def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
-        """Resets environment to default or passed initial state."""
+    def reset(
+        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
+    ):
+        """Resets one batch to default, random or passed initial state."""
         if initial_state is not None:
-            assert tree_structure(self.vmap_init_state()) == tree_structure(
+            assert tree_structure(self.init_state(env_properties)) == tree_structure(
                 initial_state
-            ), f"initial_state should have the same dataclass structure as self.vmap_init_state()"
+            ), f"initial_state should have the same dataclass structure as init_state()"
             state = initial_state
         else:
-            state = self.vmap_init_state(rng)
+            state = self.init_state(env_properties, rng)
 
-        obs = jax.vmap(
-            self.generate_observation,
-            in_axes=(0, self.in_axes_env_properties),
-        )(state, self.env_properties)
+        obs = self.generate_observation(state, env_properties)
 
         return obs, state

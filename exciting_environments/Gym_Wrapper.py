@@ -38,10 +38,10 @@ class GymWrapper(ABC):
             self.env.control_state = control_state
 
         if PRNGKey is not None:
-            _, init_state = self.env.reset(PRNGKey)
+            _, init_state = self.env.vmap_reset(PRNGKey)
         else:
             PRNGKey = jax.vmap(jax.random.PRNGKey)(np.random.randint(0, 2**31, size=(self.env.batch_size,)))
-            _, init_state = self.env.reset(PRNGKey)
+            _, init_state = self.env.vmap_reset(PRNGKey)
 
         if not ref_params:
             self.ref_params = {
@@ -133,26 +133,27 @@ class GymWrapper(ABC):
 
         return obs, reward, terminated, truncated, state, reference_hold_steps
 
-    def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
+    def reset(
+        self, rng_env: chex.PRNGKey = None, rng_ref: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None
+    ):
         """Resets environment to default or passed initial state."""
         # TODO: rng
 
         if initial_state is not None:
             try:
-                _, _ = self.env.reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
+                _, _ = self.env.vmap_reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
             except:
                 print("initial_state should have the same structure as tree_flatten(self.env.vmap_init_state()")
-            obs, state = self.env.reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
+            obs, state = self.env.vmap_reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
         else:
-            if rng is not None:
-                obs, state = self.env.reset(rng)
-            else:
-                PRNGKey = jax.vmap(jax.random.PRNGKey)(np.random.randint(0, 2**31, size=(self.env.batch_size,)))
-                obs, state = self.env.reset(PRNGKey)
+            obs, state = self.env.vmap_reset(rng_env)
 
-        state, self.reference_hold_steps = jax.vmap(
-            self.generate_new_ref, in_axes=(0, self.env.in_axes_env_properties, 0)
-        )(state, self.env.env_properties, jnp.zeros(self.env.batch_size))
+        if rng_ref is not None:
+            state, self.reference_hold_steps = jax.vmap(
+                self.generate_new_ref, in_axes=(0, self.env.in_axes_env_properties, 0)
+            )(state, self.env.env_properties, jnp.zeros(self.env.batch_size))
+        else:
+            print("No reference tracking due to missing rng_ref.")
 
         self.state = tree_flatten(state)[0]  # jnp.array(tree_flatten(state)[0]).T
         return obs, {}
