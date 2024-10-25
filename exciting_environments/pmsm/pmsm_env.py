@@ -115,6 +115,67 @@ def calc_max_torque(l_d, l_q, i_n, psi_p, p):
     return max_torque
 
 
+def default_paras(name):
+    if name == "BRUSA":
+        default_physical_constraints = {
+            "u_d_buffer": 2 * 400 / 3,
+            "u_q_buffer": 2 * 400 / 3,
+            "epsilon": jnp.pi,
+            "i_d": 250,
+            "i_q": 250,
+            "omega_el": 2 * jnp.pi * 3 * 11000 / 60,
+            "torque": 200,
+        }
+
+        default_action_constraints = {
+            "u_d": 2 * 400 / 3,
+            "u_q": 2 * 400 / 3,
+        }
+        default_static_params = {
+            "p": 3,
+            "r_s": 15e-3,
+            "l_d": 0.37e-3,
+            "l_q": 1.2e-3,
+            "psi_p": 65.6e-3,
+            "deadtime": 1,
+        }
+        pmsm_lut = loadmat(Path(os.path.dirname(exc_envs.pmsm.__file__)) / Path("LUT_jax_grad.mat"))
+
+    elif name == "Motor2":
+        default_physical_constraints = {
+            "u_d_buffer": 2 * 100 / 3,
+            "u_q_buffer": 2 * 100 / 3,
+            "epsilon": jnp.pi,
+            "i_d": 16,
+            "i_q": 16,
+            "omega_el": 1000 / 60 * 2 * jnp.pi,
+            "torque": 20,
+        }
+
+        default_action_constraints = {
+            "u_d": 2 * 100 / 3,
+            "u_q": 2 * 100 / 3,
+        }
+        default_static_params = {
+            "p": 3,
+            "r_s": 15e-3,
+            "l_d": 0.37e-3,
+            "l_q": 1.2e-3,
+            "psi_p": 65.6e-3,
+            "deadtime": 1,
+        }
+
+        pmsm_lut = loadmat(Path(os.path.dirname(exc_envs.pmsm.__file__)) / Path("LUT_SEW_jax_grad.mat"))
+    else:
+        default_physical_constraints = None
+        default_action_constraints = None
+        default_static_params = None
+        pmsm_lut = None
+        raise Exception(f"Motor name {name} is not known.")
+
+    return default_physical_constraints, default_action_constraints, default_static_params, pmsm_lut
+
+
 class PMSM(CoreEnvironment):
     def __init__(
         self,
@@ -134,59 +195,9 @@ class PMSM(CoreEnvironment):
         self._solver = solver
 
         if LUT_motor_name is not None:
-            if LUT_motor_name == "BRUSA":
-                default_physical_constraints = {
-                    "u_d_buffer": 2 * 400 / 3,
-                    "u_q_buffer": 2 * 400 / 3,
-                    "epsilon": jnp.pi,
-                    "i_d": 250,
-                    "i_q": 250,
-                    "omega_el": 3000 / 60 * 2 * jnp.pi,
-                    "torque": 200,
-                }
-
-                default_action_constraints = {
-                    "u_d": 2 * 400 / 3,
-                    "u_q": 2 * 400 / 3,
-                }
-                default_static_params = {
-                    "p": 3,
-                    "r_s": 15e-3,
-                    "l_d": 0.37e-3,
-                    "l_q": 1.2e-3,
-                    "psi_p": 65.6e-3,
-                    "deadtime": 1,
-                }
-                self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_jax_grad.mat")
-
-            elif LUT_motor_name == "Motor2":
-                default_physical_constraints = {
-                    "u_d_buffer": 2 * 100 / 3,
-                    "u_q_buffer": 2 * 100 / 3,
-                    "epsilon": jnp.pi,
-                    "i_d": 16,
-                    "i_q": 16,
-                    "omega_el": 1000 / 60 * 2 * jnp.pi,
-                    "torque": 20,
-                }
-
-                default_action_constraints = {
-                    "u_d": 2 * 100 / 3,
-                    "u_q": 2 * 100 / 3,
-                }
-                default_static_params = {
-                    "p": 3,
-                    "r_s": 15e-3,
-                    "l_d": 0.37e-3,
-                    "l_q": 1.2e-3,
-                    "psi_p": 65.6e-3,
-                    "deadtime": 1,
-                }
-
-                self.pmsm_lut = loadmat(os.path.dirname(exc_envs.pmsm.__file__) + "\\LUT_SEW_jax_grad.mat")
-
-            else:
-                raise Exception(f"Motor name {LUT_motor_name} is not known.")
+            default_physical_constraints, default_action_constraints, default_static_params, self.pmsm_lut = (
+                default_paras(LUT_motor_name)
+            )
 
             if saturated:
                 saturated_quants = [
@@ -712,10 +723,6 @@ class PMSM(CoreEnvironment):
             obs_stepsize: The sampling time for the observations
             action_stepsize: The time between changes in the input/action
         """
-        # TODO epsilon update for constraints
-        # actions = jax.vmap(self.constraint_denormalization, in_axes=(0, None, None))(
-        #     actions, init_state, env_properties
-        # )
         deadtime = env_properties.static_params.deadtime
         actions = jnp.vstack([jnp.zeros((deadtime, 2)), actions])
 
@@ -728,13 +735,10 @@ class PMSM(CoreEnvironment):
 
         # generate observations for all timesteps
         observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
-        # observations = 0
-
-        # # delete first state because its initial state of simulation and not relevant for
 
         states_flatten, _ = tree_flatten(states)
 
-        # # get last state so that the simulation can be continued from the end point
+        # get last state so that the simulation can be continued from the end point
         last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
 
         return observations, states, last_state
