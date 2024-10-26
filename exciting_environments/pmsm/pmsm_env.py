@@ -430,11 +430,14 @@ class PMSM(CoreEnvironment):
                 omega_el=2 * jnp.pi * 3 * 4700 / 60,  # (env_properties.physical_constraints.omega_el),
             )
 
-            subkey = jnp.nan
+            rng = jnp.nan
         else:
-            state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(6,))
-            i_d = state_norm[0] * env_properties.physical_constraints.i_d
-            i_q = state_norm[1] * env_properties.physical_constraints.i_q
+            rng, subkey = jax.random.split(rng)
+            state_norm = jax.random.uniform(subkey, minval=-1, maxval=1, shape=(2,))
+            rng, subkey = jax.random.split(rng)
+            i_dq_norm = jax.random.ball(subkey, 2)
+            i_d = -jnp.abs(i_dq_norm[0] * env_properties.physical_constraints.i_d)
+            i_q = i_dq_norm[1] * env_properties.physical_constraints.i_q
             torque = jax.lax.cond(
                 env_properties.saturated,
                 self.currents_to_torque_saturated,
@@ -446,13 +449,12 @@ class PMSM(CoreEnvironment):
             phys = self.PhysicalState(
                 u_d_buffer=0.0,
                 u_q_buffer=0.0,
-                epsilon=state_norm[4] * env_properties.physical_constraints.epsilon,
+                epsilon=state_norm[0] * env_properties.physical_constraints.epsilon,
                 i_d=i_d,
                 i_q=i_q,
                 torque=torque,
-                omega_el=jnp.abs(state_norm[5]) * env_properties.physical_constraints.omega_el,
+                omega_el=jnp.abs(state_norm[1]) * env_properties.physical_constraints.omega_el,
             )
-            key, subkey = jax.random.split(rng)
         additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
@@ -463,7 +465,7 @@ class PMSM(CoreEnvironment):
             torque=jnp.nan,
             omega_el=jnp.nan,
         )
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
 
     # @partial(jax.jit, static_argnums=0)
     def vmap_init_state(self, rng: chex.PRNGKey = None):
@@ -471,6 +473,7 @@ class PMSM(CoreEnvironment):
             self.env_properties, rng, jnp.ones(self.batch_size)
         )
 
+    @partial(jax.jit, static_argnums=[0, 3])
     def ode_step(self, state, u_dq, properties):
         """Computes state by simulating one step.
 
@@ -838,7 +841,7 @@ class PMSM(CoreEnvironment):
         obs = jnp.hstack(
             (
                 (system_state.physical_state.i_d + (physical_constraints.i_d * 0.5))
-                / (physical_constraints.i_d * 0.5),  # system_state.physical_state.i_d/ physical_constraints.i_d,
+                / (physical_constraints.i_d * 0.5),  #   system_state.physical_state.i_d/ physical_constraints.i_d,
                 system_state.physical_state.i_q / physical_constraints.i_q,
                 system_state.physical_state.omega_el / physical_constraints.omega_el,
                 system_state.physical_state.torque / physical_constraints.torque,
