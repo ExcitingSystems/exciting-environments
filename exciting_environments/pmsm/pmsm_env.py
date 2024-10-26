@@ -855,6 +855,39 @@ class PMSM(CoreEnvironment):
             obs = jnp.hstack((obs, getattr(system_state.reference, name)))
         return obs
 
+    @partial(jax.jit, static_argnums=0)
+    def generate_state_from_observation(self, obs, env_properties, key=None):
+        """Generates state from observation for one batch."""
+        if key is not None:
+            subkey = key
+        else:
+            subkey = jnp.nan
+        physical_constraints = env_properties.physical_constraints
+        phys = self.PhysicalState(
+            u_d_buffer=obs[6] * (physical_constraints.u_d_buffer).astype(float),
+            u_q_buffer=obs[7] * (physical_constraints.u_q_buffer).astype(float),
+            epsilon=jnp.arctan2(obs[5], obs[4]),
+            i_d=obs[0] * ((physical_constraints.i_d).astype(float) * 0.5)
+            - ((physical_constraints.i_d).astype(float) * 0.5),
+            i_q=obs[1] * (physical_constraints.i_q).astype(float),
+            torque=obs[3] * (physical_constraints.torque).astype(float),
+            omega_el=obs[2] * (env_properties.physical_constraints.omega_el).astype(float),
+        )
+        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        ref = self.PhysicalState(
+            u_d_buffer=jnp.nan,
+            u_q_buffer=jnp.nan,
+            epsilon=jnp.nan,
+            i_d=jnp.nan,
+            i_q=jnp.nan,
+            torque=jnp.nan,
+            omega_el=jnp.nan,
+        )
+        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
+            for name, pos in zip(self.control_state, range(len(self.control_state))):
+                setattr(new_ref, name, obs[2 + pos] * (getattr(physical_constraints, name)).astype(float))
+        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+
     def generate_truncated(self, system_state, env_properties):
         """Returns truncated information for one batch."""
         physical_constraints = env_properties.physical_constraints
