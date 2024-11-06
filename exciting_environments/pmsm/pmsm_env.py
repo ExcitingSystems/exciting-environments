@@ -726,15 +726,32 @@ class PMSM(CoreEnvironment):
             obs_stepsize: The sampling time for the observations
             action_stepsize: The time between changes in the input/action
         """
-        deadtime = env_properties.static_params.deadtime
-        actions = jnp.vstack([jnp.zeros((deadtime, 2)), actions])
 
         actions = self.constraint_denormalization_ahead(actions, init_state, env_properties)
+
+        deadtime = env_properties.static_params.deadtime
+        acts_buf = jnp.repeat(
+            jnp.array([init_state.physical_state.u_d_buffer, init_state.physical_state.u_q_buffer])[None, :],
+            deadtime,
+            axis=0,
+        )
+
+        actions_dead = jnp.vstack([acts_buf, actions[: (actions.shape[0] - deadtime), :]])
 
         single_state_struct = tree_structure(init_state)
 
         # compute states trajectory for given actions
-        states = self._ode_solver_simulate_ahead(init_state, actions, env_properties, obs_stepsize, action_stepsize)
+        states = self._ode_solver_simulate_ahead(
+            init_state, actions_dead, env_properties, obs_stepsize, action_stepsize
+        )
+
+        with jdc.copy_and_mutate(states, validate=False) as states:
+            acts_m = jnp.vstack([acts_buf, actions])
+            acts_m = acts_m.repeat(int(obs_stepsize / action_stepsize), axis=0)
+            if deadtime == 0:
+                acts_m = jnp.zeros(((actions.shape[0] + 1), 2))
+            states.physical_state.u_d_buffer = acts_m[:, 0]
+            states.physical_state.u_q_buffer = acts_m[:, 1]
 
         # generate observations for all timesteps
         observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
@@ -752,7 +769,7 @@ class PMSM(CoreEnvironment):
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
         deadtime = env_properties.static_params.deadtime
-        actions = jnp.vstack([jnp.zeros((deadtime, 2)), actions])
+
         states_flatten, struct = tree_flatten(states)
         states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
         states_without_last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, :-1])
@@ -761,10 +778,20 @@ class PMSM(CoreEnvironment):
             actions, states_without_last_state, env_properties
         )
 
+        deadtime = env_properties.static_params.deadtime
+        acts_buf = jnp.repeat(
+            jnp.array([states.physical_state.u_d_buffer[0], states.physical_state.u_q_buffer[0]])[None, :],
+            deadtime,
+            axis=0,
+        )
+
+        actions_dead = jnp.vstack([acts_buf, actions[: (actions.shape[0] - deadtime), :]])
+
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
             states_without_init_state,
             jnp.expand_dims(
-                jnp.repeat(actions, int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0]), axis=0), 1
+                jnp.repeat(actions_dead, int((jnp.array(states_flatten).shape[1] - 1) / actions_dead.shape[0]), axis=0),
+                1,
             ),  #
             env_properties,
         )
