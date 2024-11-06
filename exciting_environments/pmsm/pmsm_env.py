@@ -123,7 +123,7 @@ def default_paras(name):
             "epsilon": jnp.pi,
             "i_d": 250,
             "i_q": 250,
-            "omega_el": 2 * jnp.pi * 3 * 11000 / 60,
+            "omega_el": 3 * 11000 * 2 * jnp.pi / 60,
             "torque": 200,
         }
 
@@ -133,35 +133,35 @@ def default_paras(name):
         }
         default_static_params = {
             "p": 3,
-            "r_s": 15e-3,
+            "r_s": 17.932e-3,
             "l_d": 0.37e-3,
             "l_q": 1.2e-3,
-            "psi_p": 65.6e-3,
+            "psi_p": 65.65e-3,
             "deadtime": 1,
         }
-        pmsm_lut = loadmat(Path(os.path.dirname(exc_envs.pmsm.__file__)) / Path("LUT_jax_grad.mat"))
+        pmsm_lut = loadmat(Path(os.path.dirname(exc_envs.pmsm.__file__)) / Path("LUT_BRUSA_jax_grad.mat"))
 
-    elif name == "Motor2":
+    elif name == "SEW":
         default_physical_constraints = {
-            "u_d_buffer": 2 * 100 / 3,
-            "u_q_buffer": 2 * 100 / 3,
+            "u_d_buffer": 2 * 550 / 3,
+            "u_q_buffer": 2 * 550 / 3,
             "epsilon": jnp.pi,
             "i_d": 16,
             "i_q": 16,
-            "omega_el": 1000 / 60 * 2 * jnp.pi,
-            "torque": 20,
+            "omega_el": 4 * 2000 / 60 * 2 * jnp.pi,
+            "torque": 15,
         }
 
         default_action_constraints = {
-            "u_d": 2 * 100 / 3,
-            "u_q": 2 * 100 / 3,
+            "u_d": 2 * 550 / 3,
+            "u_q": 2 * 550 / 3,
         }
         default_static_params = {
-            "p": 3,
-            "r_s": 15e-3,
-            "l_d": 0.37e-3,
-            "l_q": 1.2e-3,
-            "psi_p": 65.6e-3,
+            "p": 4,
+            "r_s": 208e-3,
+            "l_d": 1.44e-3,
+            "l_q": 1.44e-3,
+            "psi_p": 122e-3,
             "deadtime": 1,
         }
 
@@ -278,7 +278,7 @@ class PMSM(CoreEnvironment):
             }
             default_static_params = {
                 "p": 3,
-                "r_s": 1,
+                "r_s": 15e-3,
                 "l_d": 0.37e-3,
                 "l_q": 1.2e-3,
                 "psi_p": 65.6e-3,
@@ -427,7 +427,7 @@ class PMSM(CoreEnvironment):
                 i_d=-env_properties.physical_constraints.i_d / 2,  # 0.0,
                 i_q=0.0,
                 torque=0.0,
-                omega_el=2 * jnp.pi * 3 * 4700 / 60,  # (env_properties.physical_constraints.omega_el),
+                omega_el=(env_properties.physical_constraints.omega_el) / 2,
             )
 
             rng = jnp.nan
