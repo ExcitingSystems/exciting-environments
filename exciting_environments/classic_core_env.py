@@ -135,14 +135,10 @@ class ClassicCoreEnvironment(CoreEnvironment):
 
         physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
 
-        if physical_state_shape[0] == 1:
-            # allow batch_dim == 1
-            physical_state_shape = physical_state_shape[1:]
-
-        # assert physical_state_shape == (self.physical_state_dim,), (
-        #     "The physical state needs to be of shape (physical_state_dim,) which is "
-        #     + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
-        # ) -> TODO problems for FluidTank
+        assert physical_state_shape == (self.physical_state_dim,), (
+            "The physical state needs to be of shape (physical_state_dim,) which is "
+            + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
+        )
 
         # denormalize action
         action = action * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T

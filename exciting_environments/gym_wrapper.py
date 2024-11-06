@@ -20,7 +20,6 @@ class GymWrapper(ABC):
         generate_terminated=None,
         generate_truncated=None,
         ref_params=None,
-        PRNGKey: chex.PRNGKey = None,
     ):
 
         self.env = env
@@ -37,15 +36,9 @@ class GymWrapper(ABC):
             self.control_state = control_state
             self.env.control_state = control_state
 
-        # if PRNGKey is not None:
-        #     _, init_state = self.env.vmap_reset(PRNGKey)
-        # else:
-        #     PRNGKey = jax.vmap(jax.random.PRNGKey)(np.random.randint(0, 2**31, size=(self.env.batch_size,)))
-        self.ref_gen = 0
-        if PRNGKey is not None:
-            self.ref_gen = 1
+        self.ref_gen = False
 
-        _, init_state = self.env.vmap_reset(PRNGKey)
+        _, init_state = self.env.vmap_reset()
 
         if not ref_params:
             self.ref_params = {
@@ -53,9 +46,6 @@ class GymWrapper(ABC):
                 "hold_steps_max": 1000,
             }
         self.reference_hold_steps = jnp.zeros(self.env.batch_size)
-        # state, self.reference_hold_steps = jax.vmap(
-        #     self.generate_new_ref, in_axes=(0, self.env.in_axes_env_properties, 0)
-        # )(init_state, self.env.env_properties, jnp.zeros(self.env.batch_size))
 
         self.state = tree_flatten(init_state)[0]
         self.state_tree_struct = tree_structure(init_state)
@@ -118,7 +108,7 @@ class GymWrapper(ABC):
         obs, state = self.env.vmap_step(state, action)
 
         # update reference
-        if len(self.control_state) and self.ref_gen > 0:
+        if len(self.control_state) and self.ref_gen:
             state, reference_hold_steps = jax.vmap(self.update_ref, in_axes=(0, self.env.in_axes_env_properties, 0))(
                 state, self.env.env_properties, reference_hold_steps
             )
@@ -138,8 +128,10 @@ class GymWrapper(ABC):
 
         return obs, reward, terminated, truncated, state, reference_hold_steps
 
-    def reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
-        """Resets environment to random or passed initial state."""
+    def reset(
+        self, rng_env: chex.PRNGKey = None, rng_ref: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None
+    ):
+        """Resets environment to random or passed initial state and can reset reference generator."""
 
         if initial_state is not None:
             try:
@@ -148,15 +140,25 @@ class GymWrapper(ABC):
                 print("initial_state should have the same structure as tree_flatten(self.env.vmap_init_state()")
             obs, state = self.env.vmap_reset(initial_state=tree_unflatten(self.state_tree_struct, initial_state))
         else:
-            _, state = self.env.vmap_reset(rng)
-        if rng is not None:
-            self.ref_gen = 1
+            _, state = self.env.vmap_reset(rng_env)
+
+        if rng_ref is not None:
+            if len(rng_ref.shape) == 1:
+                key = jax.random.split(rng_ref, num=self.env.batch_size)
+            else:
+                key = rng_ref
+                assert rng_ref.shape[0] == self.env.batch_size
+
+            with jdc.copy_and_mutate(state, validate=False) as state:
+                state.PRNGKey = key
+
+            self.ref_gen = True
             state, self.reference_hold_steps = jax.vmap(
                 self.generate_new_ref, in_axes=(0, self.env.in_axes_env_properties, 0)
             )(state, self.env.env_properties, jnp.zeros(self.env.batch_size))
         else:
-            self.ref_gen = 0
-            print("Since no PRNGKey was provided, reference generation is deactivated.")
+            self.ref_gen = False
+            print("Since no PRNGKey for reference was provided, reference generation is deactivated.")
 
         self.state = tree_flatten(state)[0]
         obs = jax.vmap(self.env.generate_observation, in_axes=(0, self.env.in_axes_env_properties))(
@@ -177,14 +179,15 @@ class GymWrapper(ABC):
             for name in self.control_state:
                 setattr(new_state.reference, name, getattr(init.physical_state, name))
 
+            key, subkey = jax.random.split(init.PRNGKey)
+
             hold_steps = jax.random.randint(
-                init.PRNGKey,
+                subkey,
                 minval=self.ref_params["hold_steps_min"],
                 maxval=self.ref_params["hold_steps_max"],
                 shape=(1,),
             )
-            key, subkey = jax.random.split(init.PRNGKey)
-            new_state.PRNGKey = subkey
+            new_state.PRNGKey = key
         return new_state, hold_steps
 
     def render(self, *_, **__):

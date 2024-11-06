@@ -323,13 +323,6 @@ class CartPole(ClassicCoreEnvironment):
         return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_init_state(self, rng: chex.PRNGKey = None):
-        """Returns default or random initial state for all batches."""
-        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
-            self.env_properties, rng, jnp.ones(self.batch_size)
-        )
-
-    @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
         reward = 0

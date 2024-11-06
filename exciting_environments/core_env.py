@@ -168,6 +168,13 @@ class CoreEnvironment(ABC):
 
         return reward, truncated, terminated
 
+    @partial(jax.jit, static_argnums=0)
+    def vmap_init_state(self, rng: chex.PRNGKey = None):
+        """Returns default or random initial state for all batches."""
+        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
+            self.env_properties, rng, jnp.ones(self.batch_size)
+        )
+
     def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment (all batches) to default, random or passed initial state."""
         if initial_state is not None:
