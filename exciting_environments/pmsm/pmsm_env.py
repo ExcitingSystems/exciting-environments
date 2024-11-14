@@ -102,19 +102,6 @@ def clip_in_abc_coordinates(u_dq, u_dc, omega_el, eps, tau):
     return u_dq
 
 
-def switching_state_to_dq(switching_state, u_dc, eps):
-    u_abc = inverter_t_abc[switching_state] * u_dc
-    u_dq = abc2dq(u_abc, eps)
-    return u_dq[0]
-
-
-def calc_max_torque(l_d, l_q, i_n, psi_p, p):
-    i_d = jnp.where(l_d == l_q, 0, -psi_p / (4 * (l_d - l_q)) - jnp.sqrt((psi_p / (4 * (l_d - l_q))) ** 2 + i_n**2 / 2))
-    i_q = jnp.sqrt(i_n**2 - i_d**2)
-    max_torque = 1.5 * p * (psi_p + (l_d - l_q) * i_d) * i_q
-    return max_torque
-
-
 def default_paras(name):
     if name == "BRUSA":
         default_physical_constraints = {
@@ -189,7 +176,36 @@ class PMSM(CoreEnvironment):
         solver=diffrax.Euler(),
         tau: float = 1e-4,
     ):
+        """
+        Args:
+            batch_size (int): Number of parallel environment simulations. Default: 8
+            saturated (bool): Permanent magnet flux linkages and inductances are taken from LUT_motor_name specific LUTs. Default: False
+            LUT_motor_name (str): Sets physical_constraints, action_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
+            physical_constraints (dict): Constraints of the physical state of the environment.
+                u_d_buffer (float): Direct share of the delayed action due to system deadtime. Default: 2 * 400 / 3
+                u_q_buffer (float): Quadrature share of the delayed action due to system deadtime. Default: 2 * 400 / 3
+                epsilon (float): Electrical rotation angle. Default: jnp.pi
+                i_d (float): Direct share of the current in dq-coordinates. Default: 250
+                i_q (float): Quadrature share of the current in dq-coordinates. Default: 250
+                omega_el (float): Electrical angular velocity. Default: 3000 / 60 * 2 * jnp.pi
+                torque (float): Torque caused by the current. Default: 200
+            action_constraints (dict): Constraints of the input/action.
+                u_d (float): Direct share of the voltage in dq-coordinates. Default: 2 * 400 / 3
+                u_q (float): Quadrature share of the voltage in dq-coordinates. Default: 2 * 400 / 3
+            static_params (dict): Parameters of environment which do not change during simulation.
+                p (int): Pole pair number. Default: 3
+                r_s (float): Stator resistance. Default: 15e-3
+                l_d (float): Inductance in direct axes if motor not set to saturated. Default: 0.37e-3
+                l_q (float): Inductance in direct if motor not set to saturated. Default: 65.6e-3,
+                psi_p (float): Permanent magnet flux linkage if motor not set to saturated. Default: 122e-3,
+                deadtime (int): Delay between passed and performed action on the system. Default: 1
+            control_state:
+            solver (diffrax.solver): Solver used to compute state for next step.
+            tau (float): Duration of one control/simulation step in seconds. Default: 1e-4.
 
+        Note: Attributes of physical_constraints, action_constraints and static_params can also be
+            passed as jnp.Array with the length of the batch_size to set different values per batch.
+        """
         self.batch_size = batch_size
         self.tau = tau
         self._solver = solver
@@ -230,13 +246,11 @@ class PMSM(CoreEnvironment):
                     b = np.hstack([a[:, :1], a, a[:, -1:]])
 
                     self.pmsm_lut[q] = b
-                    # self.pmsm_lut[q] = qmap
 
                 n_grid_points_y, n_grid_points_x = self.pmsm_lut[saturated_quants[0]].shape
                 x, y = np.linspace(i_d_min - i_d_stepsize, i_d_max + i_d_stepsize, n_grid_points_x), np.linspace(
                     i_q_min - i_q_stepsize, i_q_max + i_q_stepsize, n_grid_points_y
                 )
-                # x, y = np.linspace(i_d_min, i_d_max, n_grid_points_x), np.linspace(i_q_min, i_q_max, n_grid_points_y)
                 self.LUT_interpolators = {
                     q: jax.scipy.interpolate.RegularGridInterpolator(
                         (x, y), self.pmsm_lut[q][:, :].T, method="linear", bounds_error=False, fill_value=None
@@ -377,7 +391,7 @@ class PMSM(CoreEnvironment):
 
     @jdc.pytree_dataclass
     class Action:
-        """Dataclass containing the actions, that can be applied to the environment."""
+        """Dataclass containing the action, that can be applied to the environment."""
 
         u_d: jax.Array
         u_q: jax.Array
@@ -455,7 +469,7 @@ class PMSM(CoreEnvironment):
                 torque=torque,
                 omega_el=jnp.abs(state_norm[1]) * env_properties.physical_constraints.omega_el,
             )
-        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        additions = None
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,
@@ -467,7 +481,6 @@ class PMSM(CoreEnvironment):
         )
         return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
 
-    # @partial(jax.jit, static_argnums=0)
     def vmap_init_state(self, rng: chex.PRNGKey = None):
         return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
             self.env_properties, rng, jnp.ones(self.batch_size)
@@ -528,7 +541,7 @@ class PMSM(CoreEnvironment):
                 r_s = params.r_s
                 i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
                 i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
-                d_y = i_d_diff, i_q_diff  # [0]
+                d_y = i_d_diff, i_q_diff
                 return d_y
 
         term = diffrax.ODETerm(vector_field)
@@ -668,7 +681,7 @@ class PMSM(CoreEnvironment):
             torque=torque_t,
             omega_el=jnp.full(obs_len, init_state_phys.omega_el),
         )
-        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        additions = None
         ref = self.PhysicalState(
             u_d_buffer=jnp.full(obs_len, jnp.nan),
             u_q_buffer=jnp.full(obs_len, jnp.nan),
@@ -764,6 +777,7 @@ class PMSM(CoreEnvironment):
         return observations, states, last_state
 
     def generate_rew_trunc_term_ahead(self, states, actions, env_properties):
+        """Computes reward, truncated and terminated for sim_ahead simulation for one batch."""
         assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
         assert (
             actions.shape[-1] == self.action_dim
@@ -792,7 +806,7 @@ class PMSM(CoreEnvironment):
             jnp.expand_dims(
                 jnp.repeat(actions_dead, int((jnp.array(states_flatten).shape[1] - 1) / actions_dead.shape[0]), axis=0),
                 1,
-            ),  #
+            ),
             env_properties,
         )
         truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, env_properties)
@@ -900,7 +914,7 @@ class PMSM(CoreEnvironment):
             torque=obs[3] * (physical_constraints.torque).astype(float),
             omega_el=obs[2] * (env_properties.physical_constraints.omega_el).astype(float),
         )
-        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        additions = None
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,
