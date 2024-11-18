@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import jax_dataclasses as jdc
-from jax import tree_flatten, tree_unflatten
+from jax import tree_flatten, tree_unflatten, tree_structure
 import diffrax
 import chex
 from functools import partial
@@ -127,9 +127,6 @@ class ClassicCoreEnvironment(CoreEnvironment):
             observation: The gathered observation.
             state: New state for the next step.
         """
-        # reward: Amount of reward received for the last step.
-        # terminated: Flag, indicating if Agent has reached the terminal state.
-        # truncated: Flag, e.g. indicating if state has gone out of bounds.
 
         assert action.shape == (self.action_dim,), (
             f"The action needs to be of shape (action_dim,) which is "
@@ -138,14 +135,10 @@ class ClassicCoreEnvironment(CoreEnvironment):
 
         physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
 
-        if physical_state_shape[0] == 1:
-            # allow batch_dim == 1
-            physical_state_shape = physical_state_shape[1:]
-
-        # assert physical_state_shape == (self.physical_state_dim,), (
-        #     "The physical state needs to be of shape (physical_state_dim,) which is "
-        #     + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
-        # ) -> TODO problems for FluidTank
+        assert physical_state_shape == (self.physical_state_dim,), (
+            "The physical state needs to be of shape (physical_state_dim,) which is "
+            + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
+        )
 
         # denormalize action
         action = action * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
@@ -186,6 +179,8 @@ class ClassicCoreEnvironment(CoreEnvironment):
         # denormalize actions
         actions = actions * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
 
+        single_state_struct = tree_structure(init_state)
+
         # compute states trajectory for given actions
         states = self._ode_solver_simulate_ahead(
             init_state, actions, env_properties.static_params, obs_stepsize, action_stepsize
@@ -194,30 +189,36 @@ class ClassicCoreEnvironment(CoreEnvironment):
         # generate observations for all timesteps
         observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
 
-        # delete first state because its initial state of simulation and not relevant for terminated
+        # get last state so that the simulation can be continued from the end point
+        states_flatten, _ = tree_flatten(states)
+        last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
+
+        return observations, states, last_state
+
+    def generate_rew_trunc_term_ahead(self, states, actions, env_properties):
+        """Computes reward,truncated and terminated for the data simulated by sim_ahead"""
+
+        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+
+        actions = actions * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
+
         states_flatten, struct = tree_flatten(states)
+
         states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
 
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
             states_without_init_state,
-            jnp.expand_dims(jnp.repeat(actions, int(action_stepsize / obs_stepsize)), 1),
+            jnp.expand_dims(jnp.repeat(actions, int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0])), 1),
             env_properties,
         )
-        # reward = 0
-
-        # generate truncated
-        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, self.env_properties)
-
-        # generate terminated
-
-        # get last state so that the simulation can be continued from the end point
-        last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, -1:])
-
-        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.in_axes_env_properties))(
-            states_without_init_state, reward, self.env_properties
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, env_properties)
+        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, None))(
+            states_without_init_state, reward, env_properties
         )
-
-        return observations, reward, truncated, terminated, last_state
+        return reward, truncated, terminated
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod

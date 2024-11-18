@@ -71,7 +71,7 @@ class CartPole(ClassicCoreEnvironment):
                 m_p(float): Mass of the pole. Default: 1
                 m_c(float): Mass of the cart. Default: 1
                 g(float): Gravitational acceleration. Default: 9.81
-            control_state: TODO
+            control_state (list): Components of the physical state that are considered in reference tracking.
             solver(diffrax.solver): Solver used to compute state for next step.
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
@@ -128,8 +128,6 @@ class CartPole(ClassicCoreEnvironment):
     @jdc.pytree_dataclass
     class Additions:
         """Dataclass containing additional information for simulation."""
-
-        something: jax.Array
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -213,7 +211,7 @@ class CartPole(ClassicCoreEnvironment):
         omega_k1 = y[3]
         theta_k1 = ((theta_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
-        with jdc.copy_and_mutate(state, validate=False) as new_state:
+        with jdc.copy_and_mutate(state, validate=True) as new_state:
             new_state.physical_state = self.PhysicalState(
                 deflection=deflection_k1,
                 velocity=velocity_k1,
@@ -224,7 +222,19 @@ class CartPole(ClassicCoreEnvironment):
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
-        """Computes states by simulating a trajectory with given actions."""
+        """Computes multiple simulation steps for one batch.
+
+        Args:
+            init_state: The initial state of the simulation.
+            actions: A set of actions to be applied to the environment, the value changes every.
+            action_stepsize (shape=(n_action_steps, action_dim)).
+            static_params: The constant properties of the simulation.
+            obs_stepsize: The sampling time for the observations.
+            action_stepsize: The time between changes in the input/action.
+
+        Returns:
+            next_states: The computed states during the multiple step simulation.
+        """
 
         init_physical_state = init_state.physical_state
         args = (actions, static_params)
@@ -272,19 +282,25 @@ class CartPole(ClassicCoreEnvironment):
         velocity_t = sol.ys[1]
         theta_t = sol.ys[2]
         omega_t = sol.ys[3]
+        obs_len = omega_t.shape[0]
 
         # keep theta between -pi and pi
         theta_t = ((theta_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
         physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t, theta=theta_t, omega=omega_t)
         additions = None
-        PRNGKey = None
-        ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
+        PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
+        ref = self.PhysicalState(
+            deflection=jnp.full(obs_len, init_state.reference.deflection),
+            velocity=jnp.full(obs_len, init_state.reference.velocity),
+            theta=jnp.full(obs_len, init_state.reference.theta),
+            omega=jnp.full(obs_len, init_state.reference.omega),
+        )
         return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
-        """Returns default initial state for all batches."""
+        """Returns default or random initial state for one batch."""
         if rng is None:
             phys = self.PhysicalState(
                 deflection=0.0,
@@ -307,23 +323,22 @@ class CartPole(ClassicCoreEnvironment):
         return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_init_state(self, rng: chex.PRNGKey = None):
-        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
-            self.env_properties, rng, jnp.ones(self.batch_size)
-        )
-
-    @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
         reward = 0
         for name in self.control_state:
-            reward += -(
-                (
-                    (getattr(state.physical_state, name) - getattr(state.reference, name))
-                    / (getattr(env_properties.physical_constraints, name)).astype(float)
+            if name == "theta":
+                theta = getattr(state.physical_state, name)
+                theta_ref = getattr(state.reference, name)
+                reward += -((jnp.sin(theta) - jnp.sin(theta_ref)) ** 2 + (jnp.cos(theta) - jnp.cos(theta_ref)) ** 2)
+            else:
+                reward += -(
+                    (
+                        (getattr(state.physical_state, name) - getattr(state.reference, name))
+                        / (getattr(env_properties.physical_constraints, name)).astype(float)
+                    )
+                    ** 2
                 )
-                ** 2
-            )
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
@@ -346,6 +361,27 @@ class CartPole(ClassicCoreEnvironment):
                 )
             )
         return obs
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_state_from_observation(self, obs, env_properties, key=None):
+        """Generates state from observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
+        phys = self.PhysicalState(
+            deflection=obs[0] * (physical_constraints.deflection).astype(float),
+            velocity=obs[1] * (physical_constraints.velocity).astype(float),
+            theta=obs[2] * (physical_constraints.theta).astype(float),
+            omega=obs[3] * (physical_constraints.omega).astype(float),
+        )
+        if key is not None:
+            subkey = key
+        else:
+            subkey = jnp.nan
+        additions = None
+        ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
+        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
+            for name, pos in zip(self.control_state, range(len(self.control_state))):
+                setattr(new_ref, name, obs[4 + pos] * (getattr(physical_constraints, name)).astype(float))
+        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
 
     @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, env_properties):
@@ -378,7 +414,7 @@ class CartPole(ClassicCoreEnvironment):
         if initial_state is not None:
             assert tree_structure(self.init_state(env_properties)) == tree_structure(
                 initial_state
-            ), f"initial_state should have the same dataclass structure as init_state()"
+            ), f"initial_state should have the same dataclass structure as init_state(env_properties)"
             state = initial_state
         else:
             state = self.init_state(env_properties, rng)

@@ -61,6 +61,10 @@ class CoreEnvironment(ABC):
                 value = getattr(dataclass_in_axes, name)
                 if value == None:
                     setattr(dataclass_in_axes, name, None)
+                elif isinstance(value, list):
+                    raise ValueError(
+                        f'Passed env property "{name}" needs to be a jnp.array to have different setting per batch, but list is given.'
+                    )
                 elif jdc.is_dataclass(value):
                     setattr(dataclass_in_axes, name, self.create_in_axes_dataclass(value))
                 elif jnp.isscalar(value):
@@ -85,24 +89,24 @@ class CoreEnvironment(ABC):
             observation: The gathered observations (shape=(batch_size,obs_dim)).
             state: New state for the next step.
         """
-        # assert action.shape == (
-        #     self.batch_size,
-        #     self.action_dim,
-        # ), (
-        #     "The action needs to be of shape (batch_size, action_dim) which is "
-        #     + f"{(self.batch_size, self.action_dim)}, but {action.shape} is given"
-        # )
+        assert action.shape == (
+            self.batch_size,
+            self.action_dim,
+        ), (
+            "The action needs to be of shape (batch_size, action_dim) which is "
+            + f"{(self.batch_size, self.action_dim)}, but {action.shape} is given"
+        )
 
-        # physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
-        # assert physical_state_shape == (
-        #     (
-        #         self.batch_size,
-        #         self.physical_state_dim,
-        #     )
-        # ), (
-        #     "The physical state needs to be of shape (batch_size, physical_state_dim) which is "
-        #     + f"{(self.batch_size, self.physical_state_dim)}, but {physical_state_shape} is given"
-        # )
+        physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
+        assert physical_state_shape == (
+            (
+                self.batch_size,
+                self.physical_state_dim,
+            )
+        ), (
+            "The physical state needs to be of shape (batch_size, physical_state_dim) which is "
+            + f"{(self.batch_size, self.physical_state_dim)}, but {physical_state_shape} is given"
+        )
 
         # vmap single operations
         obs, state = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
@@ -124,7 +128,9 @@ class CoreEnvironment(ABC):
             obs_stepsize: The sampling time for the observations
             action_stepsize: The time between changes in the input/action
         """
-
+        assert (
+            obs_stepsize <= action_stepsize
+        ), "The action stepsize should be greater or equal to the observation stepsize."
         assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
             actions.shape[0] == self.batch_size
@@ -146,7 +152,10 @@ class CoreEnvironment(ABC):
 
         return observations, states, last_state
 
+    @partial(jax.jit, static_argnums=0)
     def vmap_generate_rew_trunc_term_ahead(self, states, actions):
+        """Computes reward,truncated and terminated for the data of multiple (batch_size) batches simulated by vmap_sim_ahead"""
+
         assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
             actions.shape[0] == self.batch_size
@@ -160,6 +169,14 @@ class CoreEnvironment(ABC):
 
         return reward, truncated, terminated
 
+    @partial(jax.jit, static_argnums=0)
+    def vmap_init_state(self, rng: chex.PRNGKey = None):
+        """Returns default or random initial state for all batches."""
+        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
+            self.env_properties, rng, jnp.ones(self.batch_size)
+        )
+
+    @partial(jax.jit, static_argnums=0)
     def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment (all batches) to default, random or passed initial state."""
         if initial_state is not None:
@@ -173,3 +190,11 @@ class CoreEnvironment(ABC):
         )(self.env_properties, rng, initial_state, jnp.ones(self.batch_size))
 
         return obs, state
+
+    @partial(jax.jit, static_argnums=0)
+    def vmap_generate_state_from_observation(self, obs, key=None):
+        """Generates state from observation for all batches."""
+        state = jax.vmap(self.generate_state_from_observation, in_axes=(0, self.in_axes_env_properties, 0))(
+            obs, self.env_properties, key
+        )
+        return state

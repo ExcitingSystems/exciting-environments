@@ -1,6 +1,4 @@
-from .cart_pole import CartPole
-from .mass_spring_damper import MassSpringDamper
-from .pendulum import Pendulum
+from exciting_environments import CartPole, MassSpringDamper, Pendulum, FluidTank
 
 
 def make(env_id: str, **env_kwargs):
@@ -12,6 +10,9 @@ def make(env_id: str, **env_kwargs):
 
     elif env_id == "Pendulum-v0":
         env = Pendulum(**env_kwargs)
+
+    elif env_id == "FluidTank-v0":
+        env = FluidTank(**env_kwargs)
 
     else:
         print(f"No existing environments got env_id ={env_id}")
