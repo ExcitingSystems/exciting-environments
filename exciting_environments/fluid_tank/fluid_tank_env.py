@@ -9,10 +9,10 @@ import jax_dataclasses as jdc
 import chex
 import diffrax
 
-from exciting_environments import core_env
+from exciting_environments import ClassicCoreEnvironment
 
 
-class FluidTank(core_env.CoreEnvironment):
+class FluidTank(ClassicCoreEnvironment):
     """Fluid tank based on torricelli's principle.
 
     Based on ex. 7.3.2 on p. 355 of "System Dynamics" from Palm, William III.
@@ -24,8 +24,8 @@ class FluidTank(core_env.CoreEnvironment):
         physical_constraints: dict = None,
         action_constraints: dict = None,
         static_params: dict = None,
+        control_state: list = None,
         solver=diffrax.Euler(),
-        reward_func: Callable = None,
         tau: float = 1e-3,
     ):
         if not physical_constraints:
@@ -38,6 +38,11 @@ class FluidTank(core_env.CoreEnvironment):
             # c_d = 0.6 typical value for water [Palm2010]
             static_params = {"base_area": jnp.pi, "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
 
+        if not control_state:
+            control_state = []
+
+        self.control_state = control_state
+
         physical_constraints = self.PhysicalState(**physical_constraints)
         action_constraints = self.Action(**action_constraints)
         static_params = self.StaticParams(**static_params)
@@ -49,7 +54,6 @@ class FluidTank(core_env.CoreEnvironment):
             static_params,
             tau=tau,
             solver=solver,
-            reward_func=reward_func,
         )
 
     @jdc.pytree_dataclass
@@ -59,10 +63,8 @@ class FluidTank(core_env.CoreEnvironment):
         height: jax.Array
 
     @jdc.pytree_dataclass
-    class Optional:
+    class Additions:
         """Dataclass containing additional information for simulation."""
-
-        something: jax.Array
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -81,6 +83,16 @@ class FluidTank(core_env.CoreEnvironment):
 
     @partial(jax.jit, static_argnums=0)
     def _ode_solver_step(self, state, action, static_params):
+        """Computes the next state by simulating one step.
+
+        Args:
+            state: The state from which to calculate state for the next step.
+            action: The action to apply to the environment.
+            static_params: Parameter of the environment, that do not change over time.
+
+        Returns:
+            next_state: The computed next state after the one step simulation.
+        """
         physical_state = state.physical_state
 
         action = action / jnp.array(tree_flatten(self.env_properties.action_constraints)[0]).T
@@ -93,7 +105,7 @@ class FluidTank(core_env.CoreEnvironment):
             h = y[0]
             inflow, params = args
 
-            h = jnp.clip(h, min=0)
+            h = jnp.clip(h, 0)
 
             dh_dt = inflow[0] / params.base_area - params.c_d * params.orifice_area / params.base_area * jnp.sqrt(
                 2 * params.g * h
@@ -112,31 +124,108 @@ class FluidTank(core_env.CoreEnvironment):
 
         # clip to 0 because tank cannot be more empty than empty
         # necessary because of ODE solver approximation
-        h_k1 = jnp.clip(h_k1, min=0)
+        h_k1 = jnp.clip(h_k1, 0)
 
-        phys = self.PhysicalState(height=h_k1)
-        opt = None  # Optional(something=...)
-        return self.State(physical_state=phys, PRNGKey=None, optional=None)
+        with jdc.copy_and_mutate(state, validate=True) as new_state:
+            new_state.physical_state = self.PhysicalState(height=h_k1)
+        return new_state
+
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+        """Computes multiple simulation steps for one batch.
+
+        Args:
+            init_state: The initial state of the simulation.
+            actions: A set of actions to be applied to the environment, the value changes every.
+            action_stepsize (shape=(n_action_steps, action_dim)).
+            static_params: The constant properties of the simulation.
+            obs_stepsize: The sampling time for the observations.
+            action_stepsize: The time between changes in the input/action.
+
+        Returns:
+            next_states: The computed states during the multiple step simulation.
+        """
+        raise NotImplementedError("To be implemented!")
 
     @partial(jax.jit, static_argnums=0)
-    def default_reward_func(self, obs, action, action_constraints):
-        return 0
+    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+        """Returns default or random initial state for one batch."""
+        if rng is None:
+            phys = self.PhysicalState(
+                height=env_properties.physical_constraints.height / 2,
+            )
+            subkey = jnp.nan
+        else:
+            state_norm = jax.random.uniform(rng, minval=0, maxval=1, shape=(1,))
+            phys = self.PhysicalState(
+                height=state_norm[0] * env_properties.physical_constraints.height,
+            )
+            key, subkey = jax.random.split(rng)
+        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+        ref = self.PhysicalState(height=jnp.nan)
+        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, states, physical_constraints):
-        return (states.physical_state.height - physical_constraints.height / 2) / (physical_constraints.height / 2)
+    def generate_reward(self, state, action, env_properties):
+        """Returns reward for one batch."""
+        reward = 0
+        for name in self.control_state:
+            reward += -(
+                (
+                    (getattr(state.physical_state, name) - getattr(state.reference, name))
+                    / (getattr(env_properties.physical_constraints, name)).astype(float)
+                )
+                ** 2
+            )
+        return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, states, physical_constraints):
-        return 0
+    def generate_observation(self, state, env_properties):
+        """Returns observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
+        obs = (state.physical_state.height - physical_constraints.height / 2) / (physical_constraints.height / 2)[None]
+        for name in self.control_state:
+            obs = jnp.hstack(
+                (
+                    obs,
+                    (getattr(state.reference, name) / (getattr(physical_constraints, name)).astype(float)),
+                )
+            )
+        return obs
 
     @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, states, reward):
-        return False
+    def generate_state_from_observation(self, obs, env_properties, key=None):
+        """Generates state from observation for one batch."""
+        physical_constraints = env_properties.physical_constraints
+        h_constr = physical_constraints.height.astype(float)
+        phys = self.PhysicalState(
+            height=obs[0] * (h_constr / 2) + (h_constr / 2),
+        )
+        if key is not None:
+            subkey = key
+        else:
+            subkey = jnp.nan
+        additions = None
+        ref = self.PhysicalState(height=jnp.nan)
+        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
+            for name, pos in zip(self.control_state, range(len(self.control_state))):
+                value = obs[1 + pos] * (h_constr / 2) + (h_constr / 2)
+                setattr(new_ref, name, value)
+        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_truncated(self, state, env_properties):
+        """Returns truncated information for one batch."""
+        return jnp.array([0])
+
+    @partial(jax.jit, static_argnums=0)
+    def generate_terminated(self, state, reward, env_properties):
+        """Returns terminated information for one batch."""
+        return jnp.array([False])
 
     @property
     def obs_description(self):
-        return self.states_description
+        return np.hstack([self.states_description, np.array([name + "_ref" for name in self.control_state])])
 
     @property
     def states_description(self):
@@ -146,25 +235,18 @@ class FluidTank(core_env.CoreEnvironment):
     def action_description(self):
         return np.array(["inflow"])
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self):
-        phys = self.PhysicalState(height=jnp.full(self.batch_size, self.env_properties.physical_constraints.height / 2))
-        opt = None  # self.Optional(something=jnp.zeros(self.batch_size))
-        return self.State(physical_state=phys, PRNGKey=None, optional=opt)
-
-    def reset(self, rng: jax.random.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
+    def reset(
+        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
+    ):
+        """Resets one batch to default, random or passed initial state."""
         if initial_state is not None:
             assert tree_structure(self.init_state()) == tree_structure(
                 initial_state
-            ), f"initial_state should have the same dataclass structure as self.init_state()"
+            ), f"initial_state should have the same dataclass structure as init_state()"
             state = initial_state
         else:
-            state = self.init_state()
+            state = self.init_state(env_properties, rng)
 
-        obs = jax.vmap(
-            self.generate_observation,
-            in_axes=(0, self.in_axes_env_properties.physical_constraints),
-        )(state, self.env_properties.physical_constraints)
+        obs = self.generate_observation(state, env_properties)
 
-        # TODO: this [None] looks off -> investigate
-        return obs[None], state
+        return obs, state

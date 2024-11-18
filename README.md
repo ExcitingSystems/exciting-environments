@@ -1,7 +1,7 @@
 # exciting-environments
 
 ## Overview
-The exctiting-environments package is a toolbox for the simulation of physical [differential equations](https://en.wikipedia.org/wiki/Differential_equation) wrapped into [Gymnasium](https://github.com/Farama-Foundation/Gymnasium) environments using [Jax](https://github.com/google/jax). Due to the possible just-in-time compilation of JAX, this type of implementation offers great advantages in terms of simulation speed.
+The exciting-environments package is a toolbox for the simulation of physical [differential equations](https://en.wikipedia.org/wiki/Differential_equation) wrapped into [Gymnasium](https://github.com/Farama-Foundation/Gymnasium) inspired environments using [Jax](https://github.com/google/jax). Due to the just-in-time compilation native to JAX, this type of implementation offers great advantages in terms of simulation speed.
 
 ## Getting Started
 
@@ -32,7 +32,7 @@ print("observations shape:", observations.shape)
 
 which produces $5$ identical trajectories in parallel:
 
-![example_trajectory_pendulum](fig/excenvs_pendulum_simulation_example.png)
+![](https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example.png?raw=true)
 
 alternatively, simulate full trajectories:
 
@@ -62,7 +62,7 @@ print("observations shape:", observations.shape)
 
 which produces $5$ identical trajectories in parallel as well:
 
-![example_trajectory_pendulum](fig/excenvs_pendulum_simulation_example_advanced.png)
+![](https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example_advanced.png?raw=true)
 
 Note that in this case the Tsit5 ODE solver instead of the default explicit Euler is used.
 All solvers used here are from the diffrax library (https://docs.kidger.site/diffrax/).
