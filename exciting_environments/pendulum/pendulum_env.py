@@ -161,7 +161,7 @@ class Pendulum(ClassicCoreEnvironment):
         theta_k1 = y[0]
         omega_k1 = y[1]
         theta_k1 = ((theta_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
-        with jdc.copy_and_mutate(state, validate=False) as new_state:
+        with jdc.copy_and_mutate(state, validate=True) as new_state:
             new_state.physical_state = self.PhysicalState(theta=theta_k1, omega=omega_k1)
         return new_state
 

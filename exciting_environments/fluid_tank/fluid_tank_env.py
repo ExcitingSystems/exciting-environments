@@ -126,7 +126,7 @@ class FluidTank(ClassicCoreEnvironment):
         # necessary because of ODE solver approximation
         h_k1 = jnp.clip(h_k1, 0)
 
-        with jdc.copy_and_mutate(state, validate=False) as new_state:
+        with jdc.copy_and_mutate(state, validate=True) as new_state:
             new_state.physical_state = self.PhysicalState(height=h_k1)
         return new_state
 

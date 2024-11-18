@@ -152,6 +152,7 @@ class CoreEnvironment(ABC):
 
         return observations, states, last_state
 
+    @partial(jax.jit, static_argnums=0)
     def vmap_generate_rew_trunc_term_ahead(self, states, actions):
         """Computes reward,truncated and terminated for the data of multiple (batch_size) batches simulated by vmap_sim_ahead"""
 
@@ -175,6 +176,7 @@ class CoreEnvironment(ABC):
             self.env_properties, rng, jnp.ones(self.batch_size)
         )
 
+    @partial(jax.jit, static_argnums=0)
     def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
         """Resets environment (all batches) to default, random or passed initial state."""
         if initial_state is not None:

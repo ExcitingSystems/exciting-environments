@@ -160,7 +160,7 @@ class MassSpringDamper(ClassicCoreEnvironment):
         deflection_k1 = y[0]
         velocity_k1 = y[1]
 
-        with jdc.copy_and_mutate(state, validate=False) as new_state:
+        with jdc.copy_and_mutate(state, validate=True) as new_state:
             new_state.physical_state = self.PhysicalState(deflection=deflection_k1, velocity=velocity_k1)
         return new_state
 
