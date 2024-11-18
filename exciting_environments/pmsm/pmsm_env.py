@@ -6,14 +6,13 @@ import jax_dataclasses as jdc
 import chex
 from functools import partial
 import diffrax
-from exciting_environments import CoreEnvironment
-import exciting_environments as exc_envs
-from typing import Callable
-from scipy.io import loadmat
-from scipy.interpolate import RegularGridInterpolator, griddata
-from pathlib import Path
-import os
+from scipy.interpolate import griddata
 from dataclasses import fields
+
+
+from exciting_environments import CoreEnvironment
+from exciting_environments.pmsm import default_paras
+
 
 t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])  # only for alpha/beta -> abc
 t23 = 2 / 3 * jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]]).T  # only for abc -> alpha/beta
@@ -100,67 +99,6 @@ def clip_in_abc_coordinates(u_dq, u_dc, omega_el, eps, tau):
     u_abc = jnp.clip(u_abc, -u_dc / 2.0, u_dc / 2.0)
     u_dq = abc2dq(u_abc, eps)
     return u_dq
-
-
-def default_paras(name):
-    if name == "BRUSA":
-        default_physical_constraints = {
-            "u_d_buffer": 2 * 400 / 3,
-            "u_q_buffer": 2 * 400 / 3,
-            "epsilon": jnp.pi,
-            "i_d": 250,
-            "i_q": 250,
-            "omega_el": 3 * 11000 * 2 * jnp.pi / 60,
-            "torque": 200,
-        }
-
-        default_action_constraints = {
-            "u_d": 2 * 400 / 3,
-            "u_q": 2 * 400 / 3,
-        }
-        default_static_params = {
-            "p": 3,
-            "r_s": 17.932e-3,
-            "l_d": 0.37e-3,
-            "l_q": 1.2e-3,
-            "psi_p": 65.65e-3,
-            "deadtime": 1,
-        }
-        pmsm_lut = loadmat(Path(os.path.dirname(exc_envs.pmsm.__file__)) / Path("LUT_BRUSA_jax_grad.mat"))
-
-    elif name == "SEW":
-        default_physical_constraints = {
-            "u_d_buffer": 2 * 550 / 3,
-            "u_q_buffer": 2 * 550 / 3,
-            "epsilon": jnp.pi,
-            "i_d": 16,
-            "i_q": 16,
-            "omega_el": 4 * 2000 / 60 * 2 * jnp.pi,
-            "torque": 15,
-        }
-
-        default_action_constraints = {
-            "u_d": 2 * 550 / 3,
-            "u_q": 2 * 550 / 3,
-        }
-        default_static_params = {
-            "p": 4,
-            "r_s": 208e-3,
-            "l_d": 1.44e-3,
-            "l_q": 1.44e-3,
-            "psi_p": 122e-3,
-            "deadtime": 1,
-        }
-
-        pmsm_lut = loadmat(Path(os.path.dirname(exc_envs.pmsm.__file__)) / Path("LUT_SEW_jax_grad.mat"))
-    else:
-        default_physical_constraints = None
-        default_action_constraints = None
-        default_static_params = None
-        pmsm_lut = None
-        raise Exception(f"Motor name {name} is not known.")
-
-    return default_physical_constraints, default_action_constraints, default_static_params, pmsm_lut
 
 
 class PMSM(CoreEnvironment):
@@ -387,7 +325,7 @@ class PMSM(CoreEnvironment):
 
     @jdc.pytree_dataclass
     class Additions:
-        pass
+        """Dataclass containing additional information for simulation."""
 
     @jdc.pytree_dataclass
     class Action:
