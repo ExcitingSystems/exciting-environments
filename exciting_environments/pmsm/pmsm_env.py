@@ -199,7 +199,7 @@ class PMSM(CoreEnvironment):
                 l_q (float): Inductance in direct if motor not set to saturated. Default: 65.6e-3,
                 psi_p (float): Permanent magnet flux linkage if motor not set to saturated. Default: 122e-3,
                 deadtime (int): Delay between passed and performed action on the system. Default: 1
-            control_state:
+            control_state: TODO
             solver (diffrax.solver): Solver used to compute state for next step.
             tau (float): Duration of one control/simulation step in seconds. Default: 1e-4.
 
