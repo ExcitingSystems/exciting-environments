@@ -226,20 +226,21 @@ class Pendulum(ClassicCoreEnvironment):
         """Returns default or random initial state for one batch."""
         if rng is None:
             phys = self.PhysicalState(
-                theta=jnp.pi,
+                theta=1.0,
                 omega=0.0,
             )
             subkey = jnp.nan
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(2,))
             phys = self.PhysicalState(
-                theta=state_norm[0] * env_properties.physical_normalizations.theta,
-                omega=state_norm[1] * env_properties.physical_normalizations.omega,
+                theta=state_norm[0],
+                omega=state_norm[1],
             )
             key, subkey = jax.random.split(rng)
         additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
         ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        return self.denormalize_state(norm_state, env_properties)
 
     @partial(jax.jit, static_argnums=0)
     def vmap_init_state(self, rng: chex.PRNGKey = None):
