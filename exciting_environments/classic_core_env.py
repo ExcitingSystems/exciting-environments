@@ -23,8 +23,8 @@ class ClassicCoreEnvironment(CoreEnvironment):
     def __init__(
         self,
         batch_size: int,
-        physical_constraints,
-        action_constraints,
+        physical_normalizations,
+        action_normalizations,
         static_params,
         tau: float = 1e-4,
         solver=diffrax.Euler(),
@@ -33,8 +33,8 @@ class ClassicCoreEnvironment(CoreEnvironment):
 
         Args:
             batch_size (int): Number of parallel environment simulations.
-            physical_constraints (jdc.pytree_dataclass): Constraints of the physical state of the environment.
-            action_constraints (jdc.pytree_dataclass): Constraints of the input/action.
+            physical_normalizations (jdc.pytree_dataclass): Normalization values of the physical state of the environment.
+            action_normalizations (jdc.pytree_dataclass): Normalization values of the input/action.
             static_params (jdc.pytree_dataclass): Parameters of environment which do not change during simulation.
             tau (float): Duration of one control step in seconds. Default: 1e-4.
             solver (diffrax.solver): ODE solver used to approximate the ODE solution.
@@ -43,8 +43,8 @@ class ClassicCoreEnvironment(CoreEnvironment):
         self.tau = tau
         self._solver = solver
         env_properties = self.EnvProperties(
-            physical_constraints=physical_constraints,
-            action_constraints=action_constraints,
+            physical_normalizations=physical_normalizations,
+            action_normalizations=action_normalizations,
             static_params=static_params,
         )
 
@@ -110,12 +110,12 @@ class ClassicCoreEnvironment(CoreEnvironment):
     class EnvProperties:
         """Stores properties of the environment that stay constant during simulation."""
 
-        physical_constraints: jdc.pytree_dataclass
-        action_constraints: jdc.pytree_dataclass
+        physical_normalizations: jdc.pytree_dataclass
+        action_normalizations: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
 
     @partial(jax.jit, static_argnums=0)
-    def step(self, state, action, env_properties):
+    def step(self, state, action_norm, env_properties):
         """Computes one JAX-JIT compiled simulation step for one batch.
 
         Args:
@@ -128,9 +128,9 @@ class ClassicCoreEnvironment(CoreEnvironment):
             state: New state for the next step.
         """
 
-        assert action.shape == (self.action_dim,), (
+        assert action_norm.shape == (self.action_dim,), (
             f"The action needs to be of shape (action_dim,) which is "
-            + f"{(self.action_dim,)}, but {action.shape} is given"
+            + f"{(self.action_dim,)}, but {action_norm.shape} is given"
         )
 
         physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
@@ -141,7 +141,7 @@ class ClassicCoreEnvironment(CoreEnvironment):
         )
 
         # denormalize action
-        action = action * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
+        action = self.denormalize_action(action_norm, env_properties)
 
         state = self._ode_solver_step(state, action, env_properties.static_params)
         obs = self.generate_observation(state, env_properties)
@@ -177,7 +177,8 @@ class ClassicCoreEnvironment(CoreEnvironment):
         )
 
         # denormalize actions
-        actions = actions * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
+        # TODO for new denormalize_action
+        actions = actions * jnp.array(tree_flatten(env_properties.action_normalizations)[0]).T
 
         single_state_struct = tree_structure(init_state)
 
@@ -203,7 +204,7 @@ class ClassicCoreEnvironment(CoreEnvironment):
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
 
-        actions = actions * jnp.array(tree_flatten(env_properties.action_constraints)[0]).T
+        actions = actions * jnp.array(tree_flatten(env_properties.action_normalizations)[0]).T
 
         states_flatten, struct = tree_flatten(states)
 

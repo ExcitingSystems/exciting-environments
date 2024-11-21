@@ -69,11 +69,18 @@ class CoreEnvironment(ABC):
                     setattr(dataclass_in_axes, name, self.create_in_axes_dataclass(value))
                 elif jnp.isscalar(value):
                     setattr(dataclass_in_axes, name, None)
+                elif isinstance(value, jax.numpy.ndarray):
+                    if value.shape[0] == self.batch_size:
+                        # assert (
+                        #     len(value) == self.batch_size
+                        # ), f"{name} is expected to be a scalar, a pytree_dataclass or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
+                        setattr(dataclass_in_axes, name, 0)
+                    else:
+                        setattr(dataclass_in_axes, name, None)
                 else:
-                    assert (
-                        len(value) == self.batch_size
-                    ), f"{name} is expected to be a scalar, a pytree_dataclass or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
-                    setattr(dataclass_in_axes, name, 0)
+                    raise ValueError(
+                        f'Passed env property "{name}" needs to be a scalar, jnp.array or jdc.pytree_dataclass, but {type(name)} is given.'
+                    )
         return dataclass_in_axes
 
     @partial(jax.jit, static_argnums=0)
