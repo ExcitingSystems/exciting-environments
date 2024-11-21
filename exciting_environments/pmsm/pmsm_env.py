@@ -134,7 +134,7 @@ class PMSM(CoreEnvironment):
                 p (int): Pole pair number. Default: 3
                 r_s (float): Stator resistance. Default: 15e-3
                 l_d (float): Inductance in direct axes if motor not set to saturated. Default: 0.37e-3
-                l_q (float): Inductance in direct if motor not set to saturated. Default: 65.6e-3,
+                l_q (float): Inductance in quadrature axes if motor not set to saturated. Default: 65.6e-3,
                 psi_p (float): Permanent magnet flux linkage if motor not set to saturated. Default: 122e-3,
                 deadtime (int): Delay between passed and performed action on the system. Default: 1
             control_state: Components of the physical state that are considered in reference tracking.
@@ -179,7 +179,7 @@ class PMSM(CoreEnvironment):
                         method="nearest",
                     )  # extrapolation can only do nearest
 
-                    # repeat each border values to have the linear extrapolation create constant extrapolation
+                    # repeat values ​​on the edge to have the linear extrapolation create constant extrapolation
                     a = np.vstack([qmap[0, :], qmap, qmap[-1, :]])
                     b = np.hstack([a[:, :1], a, a[:, -1:]])
 
