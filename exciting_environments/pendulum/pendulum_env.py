@@ -252,19 +252,14 @@ class Pendulum(ClassicCoreEnvironment):
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
         reward = 0
+        norm_state = self.normalize_state(state, env_properties)
         for name in self.control_state:
             if name == "theta":
                 theta = getattr(state.physical_state, name)
                 theta_ref = getattr(state.reference, name)
                 reward += -((jnp.sin(theta) - jnp.sin(theta_ref)) ** 2 + (jnp.cos(theta) - jnp.cos(theta_ref)) ** 2)
             else:
-                reward += -(
-                    (
-                        (getattr(state.physical_state, name) - getattr(state.reference, name))
-                        / (getattr(env_properties.physical_normalizations, name)).astype(float)
-                    )
-                    ** 2
-                )
+                reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
