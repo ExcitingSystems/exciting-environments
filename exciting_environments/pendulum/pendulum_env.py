@@ -340,13 +340,9 @@ class Pendulum(ClassicCoreEnvironment):
     def denormalize_action(self, action_norm, env_properties):
         # TODO generalize for multidimensional actions
         action_normalizations = env_properties.action_normalizations
-        action = (
-            action_norm
-            * 2
-            * (action_normalizations.torque[1].astype(float) - action_normalizations.torque[0].astype(float))
-            + action_normalizations.torque[0].astype(float)
-            - 1
-        )
+        action = (action_norm + 1) / 2 * (
+            action_normalizations.torque[1].astype(float) - action_normalizations.torque[0].astype(float)
+        ) + action_normalizations.torque[0].astype(float)
         return action
 
     @partial(jax.jit, static_argnums=0)
