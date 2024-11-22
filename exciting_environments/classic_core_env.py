@@ -178,7 +178,8 @@ class ClassicCoreEnvironment(CoreEnvironment):
 
         # denormalize actions
         # TODO for new denormalize_action
-        actions = actions * jnp.array(tree_flatten(env_properties.action_normalizations)[0]).T
+        # actions = actions * jnp.array(tree_flatten(env_properties.action_normalizations)[0]).T
+        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(actions, env_properties)
 
         single_state_struct = tree_structure(init_state)
 
@@ -204,7 +205,7 @@ class ClassicCoreEnvironment(CoreEnvironment):
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
 
-        actions = actions * jnp.array(tree_flatten(env_properties.action_normalizations)[0]).T
+        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(actions, env_properties)
 
         states_flatten, struct = tree_flatten(states)
 
