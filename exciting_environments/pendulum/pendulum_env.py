@@ -51,6 +51,7 @@ class Pendulum(ClassicCoreEnvironment):
         batch_size: int = 8,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
+        soft_constraints: Callable = None,
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
@@ -59,11 +60,12 @@ class Pendulum(ClassicCoreEnvironment):
         """
         Args:
             batch_size (int): Number of parallel environment simulations. Default: 8
-            physical_normalizations (dict): Constraints of the physical state of the environment.
+            physical_normalizations (dict): Min and max values of the physical state of the environment for normalization.
                 theta (float): Rotation angle. Default: jnp.pi
                 omega (float): Angular velocity. Default: 10
-            action_normalizations (dict): Constraints of the input/action.
+            action_normalizations (dict): Min and max values of the input/action for normalization.
                 torque (float): Maximum torque that can be applied to the system as an action. Default: 20
+            soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params (dict): Parameters of environment which do not change during simulation.
                 l (float): Length of the pendulum. Default: 1
                 m (float): Mass of the pendulum tip. Default: 1
@@ -82,6 +84,9 @@ class Pendulum(ClassicCoreEnvironment):
         if not action_normalizations:
             action_normalizations = {"torque": 20 * jnp.array([-1, 1])}
 
+        if not soft_constraints:
+            soft_constraints = self.default_soft_constraints
+
         if not static_params:
             static_params = {"g": 9.81, "l": 2, "m": 1}
 
@@ -89,6 +94,7 @@ class Pendulum(ClassicCoreEnvironment):
             control_state = []
 
         self.control_state = control_state
+        self.soft_constraints = soft_constraints
 
         physical_normalizations = self.PhysicalState(**physical_normalizations)
         action_normalizations = self.Action(**action_normalizations)
@@ -243,12 +249,6 @@ class Pendulum(ClassicCoreEnvironment):
         return self.denormalize_state(norm_state, env_properties)
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_init_state(self, rng: chex.PRNGKey = None):
-        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
-            self.env_properties, rng, jnp.ones(self.batch_size)
-        )
-
-    @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
         reward = 0
@@ -283,64 +283,6 @@ class Pendulum(ClassicCoreEnvironment):
         return obs
 
     @partial(jax.jit, static_argnums=0)
-    def normalize_state(self, state, env_properties):
-        physical_normalizations = env_properties.physical_normalizations
-        with jdc.copy_and_mutate(state, validate=True) as norm_state:
-            for field in fields(norm_state.physical_state):
-                name = field.name
-                norm_single_state = (
-                    2
-                    * (
-                        getattr(norm_state.physical_state, name)
-                        - getattr(physical_normalizations, name)[0].astype(float)
-                    )
-                    / (
-                        getattr(physical_normalizations, name)[1].astype(float)
-                        - getattr(physical_normalizations, name)[0].astype(float)
-                    )
-                    - 1
-                )
-                norm_ref_single_state = (
-                    2
-                    * (getattr(norm_state.reference, name) - getattr(physical_normalizations, name)[0].astype(float))
-                    / (
-                        getattr(physical_normalizations, name)[1].astype(float)
-                        - getattr(physical_normalizations, name)[0].astype(float)
-                    )
-                    - 1
-                )
-                setattr(norm_state.physical_state, name, norm_single_state)
-                setattr(norm_state.reference, name, norm_ref_single_state)
-        return norm_state
-
-    @partial(jax.jit, static_argnums=0)
-    def denormalize_state(self, norm_state, env_properties):
-        physical_normalizations = env_properties.physical_normalizations
-        with jdc.copy_and_mutate(norm_state, validate=True) as state:
-            for field in fields(state.physical_state):
-                name = field.name
-                single_state = (getattr(state.physical_state, name) + 1) / 2 * (
-                    getattr(physical_normalizations, name)[1].astype(float)
-                    - getattr(physical_normalizations, name)[0].astype(float)
-                ) + getattr(physical_normalizations, name)[0].astype(float)
-                ref_single_state = (getattr(state.reference, name) + 1) / 2 * (
-                    getattr(physical_normalizations, name)[1].astype(float)
-                    - getattr(physical_normalizations, name)[0].astype(float)
-                ) + getattr(physical_normalizations, name)[0].astype(float)
-                setattr(state.physical_state, name, single_state)
-                setattr(state.reference, name, ref_single_state)
-        return state
-
-    @partial(jax.jit, static_argnums=0)
-    def denormalize_action(self, action_norm, env_properties):
-        # TODO generalize for multidimensional actions
-        action_normalizations = env_properties.action_normalizations
-        action = (action_norm + 1) / 2 * (
-            action_normalizations.torque[1].astype(float) - action_normalizations.torque[0].astype(float)
-        ) + action_normalizations.torque[0].astype(float)
-        return action
-
-    @partial(jax.jit, static_argnums=0)
     def generate_state_from_observation(self, obs, env_properties, key=None):
         """Generates state from observation for one batch."""
         phys = self.PhysicalState(
@@ -358,6 +300,23 @@ class Pendulum(ClassicCoreEnvironment):
                 setattr(new_ref, name, obs[2 + pos])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state, env_properties)
+
+    def default_soft_constraints(self, state, action_norm, env_properties):
+        # action normalized or not?
+        state_norm = self.normalize_state(state, env_properties)
+        physical_state_norm = state_norm.physical_state
+        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+            for field in fields(phys_soft_const):
+                name = field.name
+                setattr(phys_soft_const, name, jnp.nan)
+            # define soft constraints for physical state
+            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "omega")) - 1.0)
+            setattr(phys_soft_const, "omega", soft_constr)
+
+        # define soft constraints for action
+        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+        # discuss kind of return - could be anything (array, dataclass, scalar)
+        return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, env_properties):

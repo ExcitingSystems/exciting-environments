@@ -8,6 +8,7 @@ from jax.tree_util import tree_flatten, tree_structure
 import jax_dataclasses as jdc
 import chex
 import diffrax
+from dataclasses import fields
 
 from exciting_environments import ClassicCoreEnvironment
 
@@ -31,7 +32,7 @@ class MassSpringDamper(ClassicCoreEnvironment):
         >>> from exciting_environments import GymWrapper
         >>>
         >>> # Create the environment
-        >>> msd=excenv.MassSpringDamper(batch_size=4,action_constraints={"force":10})
+        >>> msd=excenv.MassSpringDamper(batch_size=4,action_normalizations={"force":10})
         >>>
         >>> # Use GymWrapper for Simulation (optional)
         >>> gym_msd=GymWrapper(env=msd)
@@ -48,8 +49,9 @@ class MassSpringDamper(ClassicCoreEnvironment):
     def __init__(
         self,
         batch_size: int = 8,
-        physical_constraints: dict = None,
-        action_constraints: dict = None,
+        physical_normalizations: dict = None,
+        action_normalizations: dict = None,
+        soft_constraints: Callable = None,
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
@@ -58,11 +60,12 @@ class MassSpringDamper(ClassicCoreEnvironment):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            physical_constraints(dict): Constraints of the physical state of the environment.
+            physical_normalizations(dict): Constraints of the physical state of the environment.
                 deflection(float): Deflection of the mass. Default: 10
                 velocity(float): Velocity of the mass. Default: 10
-            action_constraints(dict): Constraints of the action.
+            action_normalizations(dict): Constraints of the action.
                 force(float): Maximum force that can be applied to the system as action. Default: 20
+            soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params(dict): Parameters of environment which do not change during simulation.
                 d(float): Damping constant. Default: 1
                 k(float): Spring constant. Default: 100
@@ -71,14 +74,17 @@ class MassSpringDamper(ClassicCoreEnvironment):
             solver(diffrax.solver): Solver used to compute state for next step.
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
-        Note: Attributes of physical_constraints, action_constraints and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.
+        Note: Attributes of physical_normalizations, action_normalizations and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
 
-        if not physical_constraints:
-            physical_constraints = {"deflection": 10, "velocity": 10}
+        if not physical_normalizations:
+            physical_normalizations = {"deflection": 10 * jnp.array([-1, 1]), "velocity": 10 * jnp.array([-1, 1])}
 
-        if not action_constraints:
-            action_constraints = {"force": 20}
+        if not action_normalizations:
+            action_normalizations = {"force": 20 * jnp.array([-1, 1])}
+
+        if not soft_constraints:
+            soft_constraints = self.default_soft_constraints
 
         if not static_params:
             static_params = {"k": 100, "d": 1, "m": 1}
@@ -87,15 +93,16 @@ class MassSpringDamper(ClassicCoreEnvironment):
             control_state = []
 
         self.control_state = control_state
+        self.soft_constraints = soft_constraints
 
-        physical_constraints = self.PhysicalState(**physical_constraints)
-        action_constraints = self.Action(**action_constraints)
+        physical_normalizations = self.PhysicalState(**physical_normalizations)
+        action_normalizations = self.Action(**action_normalizations)
         static_params = self.StaticParams(**static_params)
 
         super().__init__(
             batch_size,
-            physical_constraints,
-            action_constraints,
+            physical_normalizations,
+            action_normalizations,
             static_params,
             tau=tau,
             solver=solver,
@@ -228,43 +235,40 @@ class MassSpringDamper(ClassicCoreEnvironment):
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(2,))
             phys = self.PhysicalState(
-                deflection=state_norm[0] * env_properties.physical_constraints.deflection,
-                velocity=state_norm[1] * env_properties.physical_constraints.velocity,
+                deflection=state_norm[0],
+                velocity=state_norm[1],
             )
             key, subkey = jax.random.split(rng)
         additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        return self.denormalize_state(norm_state, env_properties)
 
     @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
         reward = 0
+        norm_state = self.normalize_state(state, env_properties)
         for name in self.control_state:
-            reward += -(
-                (
-                    (getattr(state.physical_state, name) - getattr(state.reference, name))
-                    / (getattr(env_properties.physical_constraints, name)).astype(float)
-                )
-                ** 2
-            )
+            reward += -(((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name))) ** 2)
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
     def generate_observation(self, state, env_properties):
         """Returns observation for one batch."""
-        physical_constraints = env_properties.physical_constraints
+        norm_state = self.normalize_state(state, env_properties)
+        norm_state_phys = norm_state.physical_state
         obs = jnp.hstack(
             (
-                state.physical_state.deflection / physical_constraints.deflection,
-                state.physical_state.velocity / physical_constraints.velocity,
+                norm_state_phys.deflection,
+                norm_state_phys.velocity,
             )
         )
         for name in self.control_state:
             obs = jnp.hstack(
                 (
                     obs,
-                    (getattr(state.reference, name) / (getattr(physical_constraints, name)).astype(float)),
+                    getattr(norm_state.reference, name),
                 )
             )
         return obs
@@ -272,10 +276,10 @@ class MassSpringDamper(ClassicCoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def generate_state_from_observation(self, obs, env_properties, key=None):
         """Generates state from observation for one batch."""
-        physical_constraints = env_properties.physical_constraints
+        physical_normalizations = env_properties.physical_normalizations
         phys = self.PhysicalState(
-            deflection=obs[0] * (physical_constraints.deflection).astype(float),
-            velocity=obs[1] * (physical_constraints.velocity).astype(float),
+            deflection=obs[0],
+            velocity=obs[1],
         )
         if key is not None:
             subkey = key
@@ -285,8 +289,25 @@ class MassSpringDamper(ClassicCoreEnvironment):
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[2 + pos] * (getattr(physical_constraints, name)).astype(float))
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+                setattr(new_ref, name, obs[2 + pos])
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        return self.denormalize_state(norm_state, env_properties)
+
+    def default_soft_constraints(self, state, action_norm, env_properties):
+        # action normalized or not?
+        state_norm = self.normalize_state(state, env_properties)
+        physical_state_norm = state_norm.physical_state
+        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+            # define soft constraints for physical state
+            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "deflection")) - 1.0)
+            setattr(phys_soft_const, "deflection", soft_constr)
+            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "velocity")) - 1.0)
+            setattr(phys_soft_const, "velocity", soft_constr)
+
+        # define soft constraints for action
+        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+        # discuss kind of return - could be anything (array, dataclass, scalar)
+        return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, env_properties):

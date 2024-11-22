@@ -8,6 +8,7 @@ from jax.tree_util import tree_flatten, tree_structure
 import jax_dataclasses as jdc
 import chex
 import diffrax
+from dataclasses import fields
 
 from exciting_environments import ClassicCoreEnvironment
 
@@ -21,18 +22,22 @@ class FluidTank(ClassicCoreEnvironment):
     def __init__(
         self,
         batch_size: float = 1,
-        physical_constraints: dict = None,
-        action_constraints: dict = None,
+        physical_normalizations: dict = None,
+        action_normalizations: dict = None,
+        soft_constraints: Callable = None,
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
         tau: float = 1e-3,
     ):
-        if not physical_constraints:
-            physical_constraints = {"height": 3}
+        if not physical_normalizations:
+            physical_normalizations = {"height": jnp.array([0, 3])}
 
-        if not action_constraints:
-            action_constraints = {"inflow": 0.2}
+        if not action_normalizations:
+            action_normalizations = {"inflow": jnp.array([0, 0.2])}
+
+        if not soft_constraints:
+            soft_constraints = self.default_soft_constraints
 
         if not static_params:
             # c_d = 0.6 typical value for water [Palm2010]
@@ -42,15 +47,16 @@ class FluidTank(ClassicCoreEnvironment):
             control_state = []
 
         self.control_state = control_state
+        self.soft_constraints = soft_constraints
 
-        physical_constraints = self.PhysicalState(**physical_constraints)
-        action_constraints = self.Action(**action_constraints)
+        physical_normalizations = self.PhysicalState(**physical_normalizations)
+        action_normalizations = self.Action(**action_normalizations)
         static_params = self.StaticParams(**static_params)
 
         super().__init__(
             batch_size,
-            physical_constraints,
-            action_constraints,
+            physical_normalizations,
+            action_normalizations,
             static_params,
             tau=tau,
             solver=solver,
@@ -94,10 +100,6 @@ class FluidTank(ClassicCoreEnvironment):
             next_state: The computed next state after the one step simulation.
         """
         physical_state = state.physical_state
-
-        action = action / jnp.array(tree_flatten(self.env_properties.action_constraints)[0]).T
-        action = (action + 1) / 2
-        action = action * jnp.array(tree_flatten(self.env_properties.action_constraints)[0]).T
 
         args = (action, static_params)
 
@@ -152,43 +154,40 @@ class FluidTank(ClassicCoreEnvironment):
         """Returns default or random initial state for one batch."""
         if rng is None:
             phys = self.PhysicalState(
-                height=env_properties.physical_constraints.height / 2,
+                height=0.0,
             )
             subkey = jnp.nan
         else:
             state_norm = jax.random.uniform(rng, minval=0, maxval=1, shape=(1,))
             phys = self.PhysicalState(
-                height=state_norm[0] * env_properties.physical_constraints.height,
+                height=state_norm[0],
             )
             key, subkey = jax.random.split(rng)
         additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
         ref = self.PhysicalState(height=jnp.nan)
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        return self.denormalize_state(norm_state, env_properties)
 
     @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
         reward = 0
+        norm_state = self.normalize_state(state, env_properties)
         for name in self.control_state:
-            reward += -(
-                (
-                    (getattr(state.physical_state, name) - getattr(state.reference, name))
-                    / (getattr(env_properties.physical_constraints, name)).astype(float)
-                )
-                ** 2
-            )
+            reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
     def generate_observation(self, state, env_properties):
         """Returns observation for one batch."""
-        physical_constraints = env_properties.physical_constraints
-        obs = (state.physical_state.height - physical_constraints.height / 2) / (physical_constraints.height / 2)[None]
+        norm_state = self.normalize_state(state, env_properties)
+        norm_state_phys = norm_state.physical_state
+        obs = (norm_state_phys.height)[None]
         for name in self.control_state:
             obs = jnp.hstack(
                 (
                     obs,
-                    (getattr(state.reference, name) / (getattr(physical_constraints, name)).astype(float)),
+                    getattr(norm_state.reference, name),
                 )
             )
         return obs
@@ -196,10 +195,8 @@ class FluidTank(ClassicCoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def generate_state_from_observation(self, obs, env_properties, key=None):
         """Generates state from observation for one batch."""
-        physical_constraints = env_properties.physical_constraints
-        h_constr = physical_constraints.height.astype(float)
         phys = self.PhysicalState(
-            height=obs[0] * (h_constr / 2) + (h_constr / 2),
+            height=obs[0],
         )
         if key is not None:
             subkey = key
@@ -209,9 +206,24 @@ class FluidTank(ClassicCoreEnvironment):
         ref = self.PhysicalState(height=jnp.nan)
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                value = obs[1 + pos] * (h_constr / 2) + (h_constr / 2)
+                value = obs[1 + pos]
                 setattr(new_ref, name, value)
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        return self.denormalize_state(norm_state, env_properties)
+
+    def default_soft_constraints(self, state, action_norm, env_properties):
+        # action normalized or not?
+        state_norm = self.normalize_state(state, env_properties)
+        physical_state_norm = state_norm.physical_state
+        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+            for field in fields(phys_soft_const):
+                name = field.name
+                setattr(phys_soft_const, name, jnp.nan)
+
+        # define soft constraints for action
+        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+        # discuss kind of return - could be anything (array, dataclass, scalar)
+        return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, env_properties):
