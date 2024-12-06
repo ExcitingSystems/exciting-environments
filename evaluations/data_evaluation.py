@@ -42,10 +42,10 @@ class Evaluator(eqx.Module):
             ae=self.default_ae,
             mcudsa=self.default_mcudsa,
             ksfc=self.default_ksfc,
-            constraints=self.constraint_compliances,
+            constraints=self.default_constraint_compliances,
         )
 
-    @jdc.pytree_dataclass
+    @jdc.pytree_dataclass  # as eqx.module
     class Metrics:
         """Dataclass containing the provided metric functions for data evaluation."""
 
@@ -55,13 +55,34 @@ class Evaluator(eqx.Module):
         ksfc: Callable
         constraints: Callable
 
+    ##################################################################
+    # maybe
+    @jdc.pytree_dataclass
+    class Metrics:
+        """Dataclass containing the provided metric functions for data evaluation."""
+
+        jsd: jdc.pytree_dataclass
+        ae: jdc.pytree_dataclass
+        mcudsa: jdc.pytree_dataclass
+        ksfc: jdc.pytree_dataclass
+        constraints: jdc.pytree_dataclass
+
+    @jdc.pytree_dataclass
+    class Jsd:
+        """Dataclass containing the provided metric functions for data evaluation."""
+
+        func: jdc.pytree_dataclass
+        bandwith: jax.Array
+
+    #######################################################################################
+
     def valid_space_grid(self, data_grid, constr_func):
         valid_grid_point = jax.vmap(constr_func, in_axes=0)(data_grid) == 0
         constraint_data_grid = data_grid[jnp.where(valid_grid_point == True)]
         return constraint_data_grid
 
     def get_default_metrics(self, data_points, metrics=["jsd", "ae", "mcudsa", "ksfc", "constraints"]):
-        metrics_results_nan = self.Metrics(jds=jnp.nan, ae=jnp.nan, mcudsa=jnp.nan, ksfc=jnp.nan, constraints=jnp.nan)
+        metrics_results_nan = self.Metrics(jsd=jnp.nan, ae=jnp.nan, mcudsa=jnp.nan, ksfc=jnp.nan, constraints=jnp.nan)
         with jdc.copy_and_mutate(metrics_results_nan, validate=False) as metrics_results:
             for met_name in metrics:
                 metric_fun = getattr(self.metrics, met_name)
@@ -69,7 +90,7 @@ class Evaluator(eqx.Module):
                 setattr(metrics_results, met_name, metric_res)
         return metrics_results
 
-    def constraint_compliances(self, data_points):
+    def default_constraint_compliances(self, data_points):
         return jnp.sum(jax.vmap(self.constraint_function, in_axes=0)(data_points))
 
     def default_jsd(self, data_points, bandwidth=0.05):
