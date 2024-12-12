@@ -633,29 +633,19 @@ class PMSM(CoreEnvironment):
 
     def constraint_denormalization_ahead(self, actions, init_state, env_properties):
         act_len = actions.shape[0]
-        phys = self.PhysicalState(
-            u_d_buffer=jnp.full(act_len, init_state.physical_state.u_d_buffer),
-            u_q_buffer=jnp.full(act_len, init_state.physical_state.u_q_buffer),
-            epsilon=jnp.full(act_len, init_state.physical_state.epsilon)
-            + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el,
-            i_d=jnp.full(act_len, init_state.physical_state.i_d),
-            i_q=jnp.full(act_len, init_state.physical_state.i_q),
-            torque=jnp.full(act_len, init_state.physical_state.torque),
-            omega_el=jnp.full(act_len, init_state.physical_state.omega_el),
-        )
-        additions = None
-        ref = self.PhysicalState(
-            u_d_buffer=jnp.full(act_len, init_state.reference.u_d_buffer),
-            u_q_buffer=jnp.full(act_len, init_state.reference.u_q_buffer),
-            epsilon=jnp.full(act_len, init_state.reference.epsilon),
-            i_d=jnp.full(act_len, init_state.reference.i_d),
-            i_q=jnp.full(act_len, init_state.reference.i_q),
-            torque=jnp.full(act_len, init_state.reference.torque),
-            omega_el=jnp.full(act_len, init_state.reference.omega_el),
-        )
-        states = self.State(
-            physical_state=phys, PRNGKey=jnp.full(act_len, init_state.PRNGKey), additions=additions, reference=ref
-        )
+        with jdc.copy_and_mutate(init_state, validate=False) as states:
+            for field in fields(states.physical_state):
+                name = field.name
+                setattr(states.physical_state, name, jnp.full(act_len, getattr(states.physical_state, name)))
+            states.physical_state.epsilon = (
+                states.physical_state.epsilon
+                + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el
+            )
+            for field in fields(states.reference):
+                name = field.name
+                setattr(states.reference, name, jnp.full(act_len, getattr(states.reference, name)))
+            states.PRNGKey = jnp.full(act_len, init_state.PRNGKey)
+
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(actions, states, env_properties)
         return actions
 
