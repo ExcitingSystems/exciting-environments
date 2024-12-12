@@ -11,7 +11,7 @@ from dataclasses import fields
 
 
 from exciting_environments import CoreEnvironment
-from exciting_environments.pmsm import default_paras
+from exciting_environments.pmsm import default_params
 
 
 t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])  # only for alpha/beta -> abc
@@ -40,17 +40,20 @@ ROTATION_MAP = jnp.array(ROTATION_MAP)
 
 
 def t_dq_alpha_beta(eps):
+    """Compute the transformation matrix for converting between DQ and Alpha-Beta reference frames."""
     cos = jnp.cos(eps)
     sin = jnp.sin(eps)
     return jnp.column_stack((cos, sin, -sin, cos)).reshape(2, 2)
 
 
 def dq2abc(u_dq, eps):
+    """Transform voltages from DQ coordinates to ABC (three-phase) coordinates."""
     u_abc = t32 @ dq2albet(u_dq, eps).T
     return u_abc.T
 
 
 def dq2albet(u_dq, eps):
+    """Transform voltages from DQ coordinates to Alpha-Beta coordinates."""
     q = t_dq_alpha_beta(-eps)
     u_alpha_beta = q @ u_dq.T
 
@@ -58,6 +61,7 @@ def dq2albet(u_dq, eps):
 
 
 def albet2dq(u_albet, eps):
+    """Transform voltages from Alpha-Beta coordinates to DQ coordinates."""
     q_inv = t_dq_alpha_beta(eps)
     u_dq = q_inv @ u_albet.T
 
@@ -65,12 +69,14 @@ def albet2dq(u_albet, eps):
 
 
 def abc2dq(u_abc, eps):
+    """Transform voltages from ABC (three-phase) coordinates to DQ coordinates."""
     u_alpha_beta = t23 @ u_abc.T
     u_dq = albet2dq(u_alpha_beta.T, eps)
     return u_dq
 
 
 def step_eps(eps, omega_el, tau, tau_scale=1.0):
+    """Update the electrical angle over a time step with optional scaling."""
     eps += omega_el * tau * tau_scale
     eps %= 2 * jnp.pi
     boolean = eps > jnp.pi
@@ -80,7 +86,7 @@ def step_eps(eps, omega_el, tau, tau_scale=1.0):
 
 
 def apply_hex_constraint(u_albet):
-    """Clip voltages in alpha/beta coordinates into the voltage hexagon"""
+    """Clip voltages in alpha/beta coordinates into the voltage hexagon."""
     u_albet_c = u_albet[0] + 1j * u_albet[1]
     idx = (jnp.sin(jnp.angle(u_albet_c)[..., jnp.newaxis] - 2 / 3 * jnp.pi * jnp.arange(3)) >= 0).astype(int)
     rot_vec = ROTATION_MAP[idx[0], idx[1], idx[2]]
@@ -93,6 +99,7 @@ def apply_hex_constraint(u_albet):
 
 
 def clip_in_abc_coordinates(u_dq, u_dc, omega_el, eps, tau):
+    """Clip voltages in ABC (three-phase) coordinates and transform back to DQ coordinates."""
     eps_advanced = step_eps(eps, omega_el, tau, 0.5)
     u_abc = dq2abc(u_dq, eps_advanced)
     # clip in abc coordinates
@@ -149,55 +156,16 @@ class PMSM(CoreEnvironment):
         self._solver = solver
 
         if LUT_motor_name is not None:
-            default_physical_constraints, default_action_constraints, default_static_params, self.pmsm_lut = (
-                default_paras(LUT_motor_name)
-            )
-
+            motor_params = default_params(LUT_motor_name)
+            default_physical_constraints = motor_params.physical_constraints.__dict__
+            default_action_constraints = motor_params.action_constraints.__dict__
+            default_static_params = motor_params.static_params.__dict__
+            pmsm_lut_predefined = motor_params.pmsm_lut
             if saturated:
-                saturated_quants = [
-                    "L_dd",
-                    "L_dq",
-                    "L_qd",
-                    "L_qq",
-                    "Psi_d",
-                    "Psi_q",
-                ]
-                i_d_max = np.max(self.pmsm_lut["i_d_vec"])
-                i_q_max = np.max(self.pmsm_lut["i_q_vec"])
-                i_d_min = np.min(self.pmsm_lut["i_d_vec"])
-                i_q_min = np.min(self.pmsm_lut["i_q_vec"])
-                i_d_stepsize = (i_d_max - i_d_min) / (self.pmsm_lut["i_d_vec"].shape[1] - 1)
-                i_q_stepsize = (i_q_max - i_q_min) / (self.pmsm_lut["i_q_vec"].shape[1] - 1)
-                for q in saturated_quants:
-                    qmap = self.pmsm_lut[q]
-                    x, y = np.indices(qmap.shape)
-                    nan_mask = np.isnan(qmap)
-                    qmap[nan_mask] = griddata(
-                        (x[~nan_mask], y[~nan_mask]),  # points we know
-                        qmap[~nan_mask],  # values we know
-                        (x[nan_mask], y[nan_mask]),  # points to interpolate
-                        method="nearest",
-                    )  # extrapolation can only do nearest
-
-                    # repeat values ​​on the edge to have the linear extrapolation create constant extrapolation
-                    a = np.vstack([qmap[0, :], qmap, qmap[-1, :]])
-                    b = np.hstack([a[:, :1], a, a[:, -1:]])
-
-                    self.pmsm_lut[q] = b
-
-                n_grid_points_y, n_grid_points_x = self.pmsm_lut[saturated_quants[0]].shape
-                x, y = np.linspace(i_d_min - i_d_stepsize, i_d_max + i_d_stepsize, n_grid_points_x), np.linspace(
-                    i_q_min - i_q_stepsize, i_q_max + i_q_stepsize, n_grid_points_y
-                )
-                self.LUT_interpolators = {
-                    q: jax.scipy.interpolate.RegularGridInterpolator(
-                        (x, y), self.pmsm_lut[q][:, :].T, method="linear", bounds_error=False, fill_value=None
-                    )
-                    for q in saturated_quants
-                }
                 default_static_params["l_d"] = jnp.nan
                 default_static_params["l_q"] = jnp.nan
                 default_static_params["psi_p"] = jnp.nan
+                self.LUT_interpolators, self.pmsm_lut = self.generate_interpolators_and_lut(pmsm_lut_predefined)
 
             else:
                 saturated_quants = [
@@ -214,28 +182,6 @@ class PMSM(CoreEnvironment):
             if saturated:
                 raise Exception("LUT_motor_name is needed to load LUTs.")
 
-            default_physical_constraints = {
-                "u_d_buffer": 2 * 400 / 3,
-                "u_q_buffer": 2 * 400 / 3,
-                "epsilon": jnp.pi,
-                "i_d": 250,
-                "i_q": 250,
-                "omega_el": 3000 / 60 * 2 * jnp.pi,
-                "torque": 200,
-            }
-
-            default_action_constraints = {
-                "u_d": 2 * 400 / 3,
-                "u_q": 2 * 400 / 3,
-            }
-            default_static_params = {
-                "p": 3,
-                "r_s": 15e-3,
-                "l_d": 0.37e-3,
-                "l_q": 1.2e-3,
-                "psi_p": 65.6e-3,
-                "deadtime": 1,
-            }
             saturated_quants = [
                 "L_dd",
                 "L_dq",
@@ -244,6 +190,13 @@ class PMSM(CoreEnvironment):
                 "Psi_d",
                 "Psi_q",
             ]
+
+            motor_params = default_params(LUT_motor_name)
+            default_physical_constraints = motor_params.physical_constraints.__dict__
+            default_action_constraints = motor_params.action_constraints.__dict__
+            default_static_params = motor_params.static_params.__dict__
+            pmsm_lut_predefined = motor_params.__dict__
+            self.pmsm_lut = pmsm_lut_predefined
             self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
 
         if not static_params:
@@ -351,6 +304,51 @@ class PMSM(CoreEnvironment):
         physical_constraints: jdc.pytree_dataclass
         action_constraints: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
+
+    def generate_interpolators_and_lut(self, pmsm_lut):
+        saturated_quants = [
+            "L_dd",
+            "L_dq",
+            "L_qd",
+            "L_qq",
+            "Psi_d",
+            "Psi_q",
+        ]
+        i_d_max = np.max(pmsm_lut["i_d_vec"])
+        i_q_max = np.max(pmsm_lut["i_q_vec"])
+        i_d_min = np.min(pmsm_lut["i_d_vec"])
+        i_q_min = np.min(pmsm_lut["i_q_vec"])
+        i_d_stepsize = (i_d_max - i_d_min) / (pmsm_lut["i_d_vec"].shape[1] - 1)
+        i_q_stepsize = (i_q_max - i_q_min) / (pmsm_lut["i_q_vec"].shape[1] - 1)
+        for q in saturated_quants:
+            qmap = pmsm_lut[q]
+            x, y = np.indices(qmap.shape)
+            nan_mask = np.isnan(qmap)
+            qmap[nan_mask] = griddata(
+                (x[~nan_mask], y[~nan_mask]),  # points we know
+                qmap[~nan_mask],  # values we know
+                (x[nan_mask], y[nan_mask]),  # points to interpolate
+                method="nearest",
+            )  # extrapolation can only do nearest
+
+            # repeat values ​​on the edge to have the linear extrapolation create constant extrapolation
+            a = np.vstack([qmap[0, :], qmap, qmap[-1, :]])
+            b = np.hstack([a[:, :1], a, a[:, -1:]])
+
+            pmsm_lut[q] = b
+
+        n_grid_points_y, n_grid_points_x = pmsm_lut[saturated_quants[0]].shape
+        x, y = np.linspace(i_d_min - i_d_stepsize, i_d_max + i_d_stepsize, n_grid_points_x), np.linspace(
+            i_q_min - i_q_stepsize, i_q_max + i_q_stepsize, n_grid_points_y
+        )
+        LUT_interpolators = {
+            q: jax.scipy.interpolate.RegularGridInterpolator(
+                (x, y), pmsm_lut[q][:, :].T, method="linear", bounds_error=False, fill_value=None
+            )
+            for q in saturated_quants
+        }
+
+        return LUT_interpolators, pmsm_lut
 
     def currents_to_torque(self, i_d, i_q, env_properties):
         torque = (
@@ -499,13 +497,13 @@ class PMSM(CoreEnvironment):
         else:
             torque = jnp.array([self.currents_to_torque(i_d_k1, i_q_k1, properties)])[0]
 
-        with jdc.copy_and_mutate(system_state, validate=False) as system_state_next:
+        with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
             system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
             system_state_next.i_d = i_d_k1
             system_state_next.i_q = i_q_k1
-            system_state_next.torque = torque  # [0]
+            system_state_next.torque = torque
 
-        with jdc.copy_and_mutate(state, validate=False) as state_next:
+        with jdc.copy_and_mutate(state, validate=True) as state_next:
             state_next.physical_state = system_state_next
         return state_next
 
@@ -863,7 +861,7 @@ class PMSM(CoreEnvironment):
         )
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[2 + pos] * (getattr(physical_constraints, name)).astype(float))
+                setattr(new_ref, name, obs[8 + pos] * (getattr(physical_constraints, name)).astype(float))
         return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
 
     def generate_truncated(self, system_state, env_properties):
