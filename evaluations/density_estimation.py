@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 
 import equinox as eqx
+from evaluations.utils import build_grid
 
 
 def select_bandwidth(
@@ -59,7 +60,8 @@ class DensityEstimate(eqx.Module):
 
         return cls(
             p=p,
-            n_observations=(density_estimate.n_observations + n_additional_observations),
+            n_observations=(density_estimate.n_observations +
+                            n_additional_observations),
             x_g=density_estimate.x_g,
             bandwidth=density_estimate.bandwidth,
         )
@@ -85,10 +87,12 @@ class DensityEstimate(eqx.Module):
 
         if observations.shape[0] == actions.shape[0] + 1:
             data_points = (
-                jnp.concatenate([observations[0:-1, :], actions], axis=-1)[None] if use_actions else observations[None]
+                jnp.concatenate([observations[0:-1, :], actions],
+                                axis=-1)[None] if use_actions else observations[None]
             )
         else:
-            data_points = jnp.concatenate([observations, actions], axis=-1)[None] if use_actions else observations[None]
+            data_points = jnp.concatenate(
+                [observations, actions], axis=-1)[None] if use_actions else observations[None]
 
         density_estimate = jax.vmap(
             update_density_estimate_multiple_observations,
@@ -115,7 +119,8 @@ def update_density_estimate_single_observation(
     Returns:
         The updated density estimate
     """
-    kernel_value = gaussian_kernel(x=density_estimate.x_g - data_point, bandwidth=density_estimate.bandwidth)
+    kernel_value = gaussian_kernel(
+        x=density_estimate.x_g - data_point, bandwidth=density_estimate.bandwidth)
     p_est = (
         1
         / (density_estimate.n_observations + 1)
@@ -156,18 +161,6 @@ def update_density_estimate_multiple_observations(
     return DensityEstimate.from_estimate(
         p=p_est, n_additional_observations=data_points.shape[0], density_estimate=density_estimate
     )
-
-
-def build_grid(dim, low, high, points_per_dim):
-    """Build a uniform grid of points in the given dimension."""
-    xs = [jnp.linspace(low, high, points_per_dim) for _ in range(dim)]
-
-    x_g = jnp.meshgrid(*xs)
-    x_g = jnp.stack([_x for _x in x_g], axis=-1)
-    x_g = x_g.reshape(-1, dim)
-
-    assert x_g.shape[0] == points_per_dim**dim
-    return x_g
 
 
 def build_grid_2d(low, high, points_per_dim):
