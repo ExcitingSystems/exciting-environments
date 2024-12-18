@@ -21,85 +21,34 @@ from evaluations.metrics import (
 )
 
 
-class Evaluator(eqx.Module):
+class JensenShannonDivergence(eqx.Module):
+    bandwidth: float
+    grid: jax.Array
+    target_distribution: jax.Array
 
-    constraint_function: Callable
-    points_per_dim: int
-    data_dim: int
-    hypercube_grid: jax.Array
-    constraint_data_space_grid: jax.Array
-    metrics: jdc.pytree_dataclass
+    def __init__(self, grid, bandwidth=0.05, target_distribution=None):
+        self.bandwidth = bandwidth
+        self.grid = grid
+        if target_distribution is None:
+            # generate uniform target distribution
+            self.target_distribution = self.generate_distribution(grid, bandwidth)
+        else:
+            self.target_distribution = target_distribution
 
-    def __init__(self, constraint_function, data_dim, points_per_dim):
-        self.constraint_function = constraint_function
-        self.points_per_dim = points_per_dim
-        self.data_dim = data_dim
-        hypercube_grid = build_grid(data_dim, -1, 1, points_per_dim)
-        self.constraint_data_space_grid = self.valid_space_grid(hypercube_grid, constraint_function)
-        self.hypercube_grid = hypercube_grid
-        self.metrics = self.Metrics(
-            jsd=self.default_jsd,
-            ae=self.default_ae,
-            mcudsa=self.default_mcudsa,
-            ksfc=self.default_ksfc,
-            constraints=self.default_constraint_compliances,
+    def __call__(self, data_points):
+
+        data_distribution = self.generate_distribution(data_points, self.bandwidth)
+        return JSDLoss(
+            p=data_distribution,
+            q=self.target_distribution,
         )
 
-    @jdc.pytree_dataclass  # as eqx.module
-    class Metrics:
-        """Dataclass containing the provided metric functions for data evaluation."""
-
-        jsd: Callable
-        ae: Callable
-        mcudsa: Callable
-        ksfc: Callable
-        constraints: Callable
-
-    ##################################################################
-    # maybe
-    @jdc.pytree_dataclass
-    class Metrics:
-        """Dataclass containing the provided metric functions for data evaluation."""
-
-        jsd: jdc.pytree_dataclass
-        ae: jdc.pytree_dataclass
-        mcudsa: jdc.pytree_dataclass
-        ksfc: jdc.pytree_dataclass
-        constraints: jdc.pytree_dataclass
-
-    @jdc.pytree_dataclass
-    class Jsd:
-        """Dataclass containing the provided metric functions for data evaluation."""
-
-        func: jdc.pytree_dataclass
-        bandwith: jax.Array
-
-    #######################################################################################
-
-    def valid_space_grid(self, data_grid, constr_func):
-        valid_grid_point = jax.vmap(constr_func, in_axes=0)(data_grid) == 0
-        constraint_data_grid = data_grid[jnp.where(valid_grid_point == True)]
-        return constraint_data_grid
-
-    def get_default_metrics(self, data_points, metrics=["jsd", "ae", "mcudsa", "ksfc", "constraints"]):
-        metrics_results_nan = self.Metrics(jsd=jnp.nan, ae=jnp.nan, mcudsa=jnp.nan, ksfc=jnp.nan, constraints=jnp.nan)
-        with jdc.copy_and_mutate(metrics_results_nan, validate=False) as metrics_results:
-            for met_name in metrics:
-                metric_fun = getattr(self.metrics, met_name)
-                metric_res = metric_fun(data_points)
-                setattr(metrics_results, met_name, metric_res)
-        return metrics_results
-
-    def default_constraint_compliances(self, data_points):
-        return jnp.sum(jax.vmap(self.constraint_function, in_axes=0)(data_points))
-
-    def default_jsd(self, data_points, bandwidth=0.05):
-        # losses use predefined constrained grid -> maybe option to choose different resolution for different metrics -> grid must be computed again
-        n_grid_points = self.constraint_data_space_grid.shape[0]
+    def generate_distribution(self, data_points, bandwidth):
+        n_grid_points = self.grid.shape[0]
 
         density_estimate = DensityEstimate(
             p=jnp.zeros([n_grid_points, 1]),
-            x_g=self.constraint_data_space_grid,
+            x_g=self.grid,
             bandwidth=jnp.array([bandwidth]),
             n_observations=jnp.array([0]),
         )
@@ -121,40 +70,120 @@ class Evaluator(eqx.Module):
                 data_points,
             )
 
-        # default uniform traget distribution #TODO extend to different options
-        target_distribution = jnp.ones(density_estimate.p.shape)
-        target_distribution /= jnp.sum(target_distribution)
+        return density_estimate.p / jnp.sum(density_estimate.p)
 
-        return JSDLoss(
-            p=density_estimate.p / jnp.sum(density_estimate.p),
-            q=target_distribution,
-        )
 
-    def default_ae(self, data_points):
+class ConstraintCompliances(eqx.Module):
+    constraint_function: Callable
+
+    def __init__(self, constraint_function):
+        self.constraint_function = constraint_function
+
+    def __call__(self, data_points):
+        return jnp.sum(jax.vmap(self.constraint_function, in_axes=0)(data_points))
+
+
+class AudzeEglaise(eqx.Module):
+
+    def __call__(self, data_points):
         return audze_eglais(data_points)
 
-    def default_mcudsa(self, data_points):
-        # losses use predefined constrained grid -> maybe option to choose different resolution for different metrics -> grid must be computed again
-        if self.data_dim > 2:
-            return blockwise_mcudsa(data_points=data_points, support_points=self.constraint_data_space_grid)
-        else:
-            return MC_uniform_sampling_distribution_approximation(
-                data_points=data_points, support_points=self.constraint_data_space_grid
-            )
 
-    def default_ksfc(self, data_points, variance=0.01, eps=1e-6):
+class MCUniformSamplingDistributionApproximation(eqx.Module):
+    grid: jax.Array
+
+    def __init__(self, grid):
+        self.grid = grid
+
+    def __call__(self, data_points):
+        if self.grid.shape[1] > 2:
+            return blockwise_mcudsa(data_points=data_points, support_points=self.grid)
+        else:
+            return MC_uniform_sampling_distribution_approximation(data_points=data_points, support_points=self.grid)
+
+
+class KissSpaceFillingCosts(eqx.Module):
+    grid: jax.Array
+    variance: float
+    eps: float
+
+    def __init__(self, grid, variance=0.01, eps=1e-6):
+        self.grid = grid
+        self.variance = variance
+        self.eps = eps
+
+    def __call__(self, data_points):
         # losses use predefined constrained grid -> maybe option to choose different resolution for different metrics -> grid must be computed again
-        if self.data_dim > 2:
+        data_dim = self.grid.shape[1]
+        if data_dim > 2:
             return blockwise_ksfc(
                 data_points=data_points,
-                support_points=self.constraint_data_space_grid,
-                variances=jnp.ones([self.data_dim]) * variance,
-                eps=eps,
+                support_points=self.grid,
+                variances=jnp.ones([data_dim]) * self.variance,
+                eps=self.eps,
             )
         else:
             return kiss_space_filling_cost(
                 data_points=data_points,
-                support_points=self.constraint_data_space_grid,
-                variances=jnp.ones([self.data_dim]) * variance,
-                eps=eps,
+                support_points=self.grid,
+                variances=jnp.ones([data_dim]) * self.variance,
+                eps=self.eps,
             )
+
+
+class Evaluator(eqx.Module):
+
+    constraint_function: Callable
+    constraint_data_space_grid: jax.Array
+    jsd: eqx.Module
+    ae: eqx.Module
+    mcudsa: eqx.Module
+    ksfc: eqx.Module
+    cc: eqx.Module
+
+    def __init__(
+        self, constraint_function, data_dim, points_per_dim, jsd=None, ae=None, mcudsa=None, ksfc=None, cc=None
+    ):
+        self.constraint_function = constraint_function
+        hypercube_grid = build_grid(data_dim, -1, 1, points_per_dim)
+        self.constraint_data_space_grid = self.valid_space_grid(hypercube_grid, constraint_function)
+
+        # create metrics with default params
+        # TODO tests?
+        if type(jsd) is JensenShannonDivergence:
+            self.jsd = jsd
+        else:
+            self.jsd = JensenShannonDivergence(grid=self.constraint_data_space_grid)
+
+        if type(ae) is AudzeEglaise:
+            self.ae = ae
+        else:
+            self.ae = AudzeEglaise()
+
+        if type(mcudsa) is MCUniformSamplingDistributionApproximation:
+            self.mcudsa = mcudsa
+        else:
+            self.mcudsa = MCUniformSamplingDistributionApproximation(grid=self.constraint_data_space_grid)
+
+        if type(ksfc) is KissSpaceFillingCosts:
+            self.ksfc = ksfc
+        else:
+            self.ksfc = KissSpaceFillingCosts(grid=self.constraint_data_space_grid)
+
+        if type(cc) is ConstraintCompliances:
+            self.cc = cc
+        else:
+            self.cc = ConstraintCompliances(constraint_function=constraint_function)
+
+    def valid_space_grid(self, data_grid, constr_func):
+        valid_grid_point = jax.vmap(constr_func, in_axes=0)(data_grid) == 0
+        constraint_data_grid = data_grid[jnp.where(valid_grid_point == True)]
+        return constraint_data_grid
+
+    def get_default_metrics(self, data_points, metrics=["jsd", "ae", "mcudsa", "ksfc", "cc"]):
+        metrics_results = {}
+        for met_name in metrics:
+            metric_fun = getattr(self, met_name)
+            metric_res = metric_fun(data_points)
+            metrics_results[met_name] = metric_res
+        return metrics_results
