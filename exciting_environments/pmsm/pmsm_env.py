@@ -417,11 +417,6 @@ class PMSM(CoreEnvironment):
         )
         return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
 
-    def vmap_init_state(self, rng: chex.PRNGKey = None):
-        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
-            self.env_properties, rng, jnp.ones(self.batch_size)
-        )
-
     @partial(jax.jit, static_argnums=[0, 3])
     def ode_step(self, state, u_dq, properties):
         """Computes state by simulating one step.
@@ -526,7 +521,7 @@ class PMSM(CoreEnvironment):
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, properties, obs_stepsize, action_stepsize):
-        """Computes state by simulating one step.
+        """Computes multiple simulation steps.
 
         Args:
             system_state: The state from which to calculate state for the next step.
@@ -658,12 +653,12 @@ class PMSM(CoreEnvironment):
         The actions are interpolated with zero order hold inbetween their values.
 
         Args:
-            init_state: The initial state of the simulation
+            init_state: The initial state of the simulation.
             actions: A set of actions to be applied to the environment, the value changes every
-            action_stepsize (shape=(n_action_steps, action_dim))
-            env_properties: The constant properties of the simulation
-            obs_stepsize: The sampling time for the observations
-            action_stepsize: The time between changes in the input/action
+            action_stepsize (shape=(n_action_steps, action_dim)).
+            env_properties: The constant properties of the simulation.
+            obs_stepsize: The sampling time for the observations.
+            action_stepsize: The time between changes in the input/action.
         """
 
         actions = self.constraint_denormalization_ahead(actions, init_state, env_properties)
@@ -851,8 +846,8 @@ class PMSM(CoreEnvironment):
         )
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[8 + pos] * (getattr(physical_constraints, name)).astype(float))
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+                setattr(new_ref, name, (obs[8 + pos] * (getattr(physical_constraints, name)).astype(float)))
+        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
 
     def generate_truncated(self, system_state, env_properties):
         """Returns truncated information for one batch."""
