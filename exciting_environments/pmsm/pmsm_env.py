@@ -1,10 +1,12 @@
+from functools import partial
+from typing import Callable
+
 import numpy as np
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 import jax_dataclasses as jdc
 import chex
-from functools import partial
 import diffrax
 from scipy.interpolate import griddata
 from dataclasses import fields
@@ -114,8 +116,9 @@ class PMSM(CoreEnvironment):
         batch_size: int = 8,
         saturated=False,
         LUT_motor_name: str = None,
-        physical_constraints: dict = None,
-        action_constraints: dict = None,
+        physical_normalizations: dict = None,
+        action_normalizations: dict = None,
+        soft_constraints: Callable = None,
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
@@ -157,8 +160,8 @@ class PMSM(CoreEnvironment):
 
         if LUT_motor_name is not None:
             motor_params = default_params(LUT_motor_name)
-            default_physical_constraints = motor_params.physical_constraints.__dict__
-            default_action_constraints = motor_params.action_constraints.__dict__
+            default_physical_normalizations = motor_params.physical_normalizations.__dict__
+            default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
             pmsm_lut_predefined = motor_params.pmsm_lut
             if saturated:
@@ -192,8 +195,8 @@ class PMSM(CoreEnvironment):
             ]
 
             motor_params = default_params(LUT_motor_name)
-            default_physical_constraints = motor_params.physical_constraints.__dict__
-            default_action_constraints = motor_params.action_constraints.__dict__
+            default_physical_normalizations = motor_params.physical_normalizations.__dict__
+            default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
             pmsm_lut_predefined = motor_params.__dict__
             self.pmsm_lut = pmsm_lut_predefined
@@ -202,39 +205,43 @@ class PMSM(CoreEnvironment):
         if not static_params:
             static_params = default_static_params
 
-        if not physical_constraints:
-            physical_constraints = default_physical_constraints
+        if not physical_normalizations:
+            physical_normalizations = default_physical_normalizations
         else:
-            i_d_constr = physical_constraints["i_d"]
-            i_q_constr = physical_constraints["i_q"]
-            def_i_d_constr = default_physical_constraints["i_d"]
-            def_i_q_constr = default_physical_constraints["i_q"]
+            i_d_lims = physical_normalizations["i_d"]
+            i_q_lims = physical_normalizations["i_q"]
+            def_i_d_lims = default_physical_normalizations["i_d"]
+            def_i_q_lims = default_physical_normalizations["i_q"]
 
-            if i_d_constr > def_i_d_constr:
+            if (i_d_lims.min < def_i_d_lims.min) or (i_d_lims.max > def_i_d_lims.max):
                 print(
-                    f"The defined permitted range of i_d (+-{i_d_constr}) exceeds the limits of the LUT (+-{def_i_d_constr}). Values outside this range are extrapolated."
+                    f"The defined permitted range of i_d ({i_d_lims}) exceeds the limits of the LUT ({def_i_d_lims}). Values outside this range are extrapolated."
                 )
-            if i_q_constr > def_i_q_constr:
+            if (i_q_lims.min < def_i_q_lims.min) or (i_q_lims.max > def_i_q_lims.max):
                 print(
-                    f"The defined permitted range of i_q (+-{i_q_constr}) exceeds the limits of the LUT (+-{def_i_q_constr}). Values outside this range are extrapolated."
+                    f"The defined permitted range of i_q ({i_q_lims}) exceeds the limits of the LUT ({def_i_q_lims}). Values outside this range are extrapolated."
                 )
 
-        if not action_constraints:
-            action_constraints = default_action_constraints
+        if not action_normalizations:
+            action_normalizations = default_action_normalizations
 
         if not control_state:
             control_state = []
 
+        if not soft_constraints:
+            soft_constraints = self.default_soft_constraints
+
         self.control_state = control_state
+        self.soft_constraints = soft_constraints
 
         static_params = self.StaticParams(**static_params)
-        physical_constraints = self.PhysicalState(**physical_constraints)
-        action_constraints = self.Action(**action_constraints)
+        physical_normalizations = self.PhysicalState(**physical_normalizations)
+        action_normalizations = self.Action(**action_normalizations)
 
         env_properties = self.EnvProperties(
             saturated=saturated,
-            physical_constraints=physical_constraints,
-            action_constraints=action_constraints,
+            physical_normalizations=physical_normalizations,
+            action_normalizations=action_normalizations,
             static_params=static_params,
         )
         super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
@@ -301,9 +308,27 @@ class PMSM(CoreEnvironment):
         """Dataclass used for simulation which contains environment specific dataclasses."""
 
         saturated: jax.Array
-        physical_constraints: jdc.pytree_dataclass
-        action_constraints: jdc.pytree_dataclass
+        physical_normalizations: jdc.pytree_dataclass
+        action_normalizations: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
+
+    # incorporate in motor_parameters
+    def default_soft_constraints(self, state, action_norm, env_properties):
+        # action normalized or not?
+        # state_norm = self.normalize_state(state, env_properties)
+        # physical_state_norm = state_norm.physical_state
+        # with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+        #     for field in fields(phys_soft_const):
+        #         name = field.name
+        #         setattr(phys_soft_const, name, jnp.nan)
+        #     # define soft constraints for physical state
+        #     soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "omega")) - 1.0)
+        #     setattr(phys_soft_const, "omega", soft_constr)
+
+        # # define soft constraints for action
+        # act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+        # # discuss kind of return - could be anything (array, dataclass, scalar)
+        return None, None
 
     def generate_interpolators_and_lut(self, pmsm_lut):
         saturated_quants = [
@@ -374,10 +399,15 @@ class PMSM(CoreEnvironment):
                 u_d_buffer=0.0,
                 u_q_buffer=0.0,
                 epsilon=0.0,
-                i_d=-env_properties.physical_constraints.i_d / 2,
+                i_d=(env_properties.physical_normalizations.i_d.min + env_properties.physical_normalizations.i_d.max)
+                / 2,
                 i_q=0.0,
                 torque=0.0,
-                omega_el=(env_properties.physical_constraints.omega_el) / 2,
+                omega_el=(
+                    env_properties.physical_normalizations.omega_el.min
+                    + env_properties.physical_normalizations.omega_el.max
+                )
+                / 2,
             )
 
             rng = jnp.nan
@@ -386,8 +416,27 @@ class PMSM(CoreEnvironment):
             state_norm = jax.random.uniform(subkey, minval=-1, maxval=1, shape=(2,))
             rng, subkey = jax.random.split(rng)
             i_dq_norm = jax.random.ball(subkey, 2)
-            i_d = -jnp.abs(i_dq_norm[0] * env_properties.physical_constraints.i_d)
-            i_q = i_dq_norm[1] * env_properties.physical_constraints.i_q
+            i_max = jnp.max(
+                jnp.array(
+                    [
+                        jnp.abs(env_properties.physical_normalizations.i_d.min),
+                        jnp.abs(env_properties.physical_normalizations.i_d.max),
+                        jnp.abs(env_properties.physical_normalizations.i_q.min),
+                        jnp.abs(env_properties.physical_normalizations.i_q.max),
+                    ]
+                )
+            )
+            i_dq_rand = i_dq_norm * i_max
+            i_d = (
+                i_dq_rand[0]
+                - 2 * jax.nn.relu(i_dq_rand[0] - env_properties.physical_normalizations.i_d.max)
+                + 2 * jax.nn.relu(-i_dq_rand[0] + env_properties.physical_normalizations.i_d.min)
+            )
+            i_q = (
+                i_dq_rand[1]
+                - 2 * jax.nn.relu(i_dq_rand[1] - env_properties.physical_normalizations.i_q.max)
+                + 2 * jax.nn.relu(-i_dq_rand[1] + env_properties.physical_normalizations.i_q.min)
+            )
             torque = jax.lax.cond(
                 env_properties.saturated,
                 self.currents_to_torque_saturated,
@@ -399,11 +448,23 @@ class PMSM(CoreEnvironment):
             phys = self.PhysicalState(
                 u_d_buffer=0.0,
                 u_q_buffer=0.0,
-                epsilon=state_norm[0] * env_properties.physical_constraints.epsilon,
+                epsilon=(state_norm[0] + 1)
+                / 2
+                * (
+                    env_properties.physical_normalizations.epsilon.max
+                    - env_properties.physical_normalizations.epsilon.min
+                )
+                + env_properties.physical_normalizations.epsilon.min,
                 i_d=i_d,
                 i_q=i_q,
                 torque=torque,
-                omega_el=jnp.abs(state_norm[1]) * env_properties.physical_constraints.omega_el,
+                omega_el=(state_norm[1] + 1)
+                / 2
+                * (
+                    env_properties.physical_normalizations.omega_el.max
+                    - env_properties.physical_normalizations.omega_el.min
+                )
+                + env_properties.physical_normalizations.omega_el.min,
             )
         additions = None
         ref = self.PhysicalState(
@@ -515,7 +576,10 @@ class PMSM(CoreEnvironment):
         )
         u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
         u_dq = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon) * jnp.hstack(
-            [env_properties.action_constraints.u_d, env_properties.action_constraints.u_q]
+            [
+                env_properties.action_normalizations.u_d.max,
+                env_properties.action_normalizations.u_q.max,
+            ]  # TODO incorporate min
         )
         return u_dq[0]
 
@@ -796,24 +860,25 @@ class PMSM(CoreEnvironment):
 
     def generate_observation(self, system_state, env_properties):
         """Returns observation for one batch."""
-        physical_constraints = env_properties.physical_constraints
         eps = system_state.physical_state.epsilon
         cos_eps = jnp.cos(eps)
         sin_eps = jnp.sin(eps)
+        norm_state = self.normalize_state(system_state, env_properties)
+        norm_state_phys = norm_state.physical_state
         obs = jnp.hstack(
             (
-                (system_state.physical_state.i_d + (physical_constraints.i_d * 0.5)) / (physical_constraints.i_d * 0.5),
-                system_state.physical_state.i_q / physical_constraints.i_q,
-                system_state.physical_state.omega_el / physical_constraints.omega_el,
-                system_state.physical_state.torque / physical_constraints.torque,
+                norm_state_phys.i_d,
+                norm_state_phys.i_q,
+                norm_state_phys.omega_el,
+                norm_state_phys.torque,
                 cos_eps,
                 sin_eps,
-                system_state.physical_state.u_d_buffer / physical_constraints.u_d_buffer,
-                system_state.physical_state.u_q_buffer / physical_constraints.u_q_buffer,
+                norm_state_phys.u_d_buffer,
+                norm_state_phys.u_q_buffer,
             )
         )
         for name in self.control_state:
-            obs = jnp.hstack((obs, getattr(system_state.reference, name)))
+            obs = jnp.hstack((obs, getattr(norm_state.reference, name)))
         return obs
 
     @partial(jax.jit, static_argnums=0)
@@ -823,16 +888,14 @@ class PMSM(CoreEnvironment):
             subkey = key
         else:
             subkey = jnp.nan
-        physical_constraints = env_properties.physical_constraints
         phys = self.PhysicalState(
-            u_d_buffer=obs[6] * (physical_constraints.u_d_buffer).astype(float),
-            u_q_buffer=obs[7] * (physical_constraints.u_q_buffer).astype(float),
-            epsilon=jnp.arctan2(obs[5], obs[4]),
-            i_d=obs[0] * ((physical_constraints.i_d).astype(float) * 0.5)
-            - ((physical_constraints.i_d).astype(float) * 0.5),
-            i_q=obs[1] * (physical_constraints.i_q).astype(float),
-            torque=obs[3] * (physical_constraints.torque).astype(float),
-            omega_el=obs[2] * (env_properties.physical_constraints.omega_el).astype(float),
+            u_d_buffer=obs[6],
+            u_q_buffer=obs[7],
+            epsilon=jnp.arctan2(obs[5], obs[4]) / jnp.pi,
+            i_d=obs[0],
+            i_q=obs[1],
+            torque=obs[3],
+            omega_el=obs[2],
         )
         additions = None
         ref = self.PhysicalState(
@@ -846,15 +909,16 @@ class PMSM(CoreEnvironment):
         )
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, (obs[8 + pos] * (getattr(physical_constraints, name)).astype(float)))
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+                setattr(new_ref, name, obs[8 + pos])
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        return self.denormalize_state(norm_state, env_properties)
 
     def generate_truncated(self, system_state, env_properties):
         """Returns truncated information for one batch."""
-        physical_constraints = env_properties.physical_constraints
-        physical_state = system_state.physical_state
-        i_d_norm = physical_state.i_d / physical_constraints.i_d
-        i_q_norm = physical_state.i_q / physical_constraints.i_q
+        state_norm = self.normalize_state(system_state, env_properties)
+        physical_state_norm = state_norm.physical_state
+        i_d_norm = physical_state_norm.i_d
+        i_q_norm = physical_state_norm.i_q
         i_s = jnp.sqrt(i_d_norm**2 + i_q_norm**2)
         return i_s > 1
 
@@ -865,17 +929,23 @@ class PMSM(CoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
+
+        state_norm = self.normalize_state(state, env_properties)
         reward = 0
         if "i_d" in self.control_state and "i_q" in self.control_state:
             reward += self.current_reward_func(
-                state.physical_state.i_d, state.physical_state.i_q, state.reference.i_d, state.reference.i_q, 0.85
+                state_norm.physical_state.i_d,
+                state_norm.physical_state.i_q,
+                state_norm.reference.i_d,
+                state_norm.reference.i_q,
+                0.85,
             )
         if "torque" in self.control_state:
             reward += self.torque_reward_func(
-                state.physical_state.i_d,
-                state.physical_state.i_q,
-                state.physical_state.torque,
-                state.reference.torque,
+                state_norm.physical_state.i_d,
+                state_norm.physical_state.i_q,
+                state_norm.physical_state.torque,
+                state_norm.reference.torque,
                 1,
                 0.85,
             )

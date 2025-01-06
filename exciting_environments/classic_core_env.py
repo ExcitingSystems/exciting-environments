@@ -16,7 +16,7 @@ from exciting_environments import CoreEnvironment
 class ClassicCoreEnvironment(CoreEnvironment):
     """
     Description:
-        Core Structure of provided Environments.
+        Core Structure of most of the provided Environments.
 
     """
 
@@ -147,6 +147,14 @@ class ClassicCoreEnvironment(CoreEnvironment):
         obs = self.generate_observation(state, env_properties)
 
         return obs, state
+
+    @partial(jax.jit, static_argnums=0)
+    def denormalize_action(self, action_norm, env_properties):
+        # TODO generalize for multidimensional actions
+        normalizations = jnp.array(tree_flatten(env_properties.action_normalizations)[0]).T.astype(float)
+        action_normalizations = env_properties.action_normalizations
+        action = (action_norm + 1) / 2 * (normalizations[1] - normalizations[0]) + normalizations[0]
+        return action
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):

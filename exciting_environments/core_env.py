@@ -83,6 +83,55 @@ class CoreEnvironment(ABC):
                     )
         return dataclass_in_axes
 
+    # @partial(jax.jit, static_argnums=0)
+    # def normalize_state(self, state, env_properties):
+    #     physical_normalizations = env_properties.physical_normalizations
+    #     with jdc.copy_and_mutate(state, validate=True) as norm_state:
+    #         for field in fields(norm_state.physical_state):
+    #             name = field.name
+    #             norm_single_state = (
+    #                 2
+    #                 * (
+    #                     getattr(norm_state.physical_state, name)
+    #                     - getattr(physical_normalizations, name)[0].astype(float)
+    #                 )
+    #                 / (
+    #                     getattr(physical_normalizations, name)[1].astype(float)
+    #                     - getattr(physical_normalizations, name)[0].astype(float)
+    #                 )
+    #                 - 1
+    #             )
+    #             norm_ref_single_state = (
+    #                 2
+    #                 * (getattr(norm_state.reference, name) - getattr(physical_normalizations, name)[0].astype(float))
+    #                 / (
+    #                     getattr(physical_normalizations, name)[1].astype(float)
+    #                     - getattr(physical_normalizations, name)[0].astype(float)
+    #                 )
+    #                 - 1
+    #             )
+    #             setattr(norm_state.physical_state, name, norm_single_state)
+    #             setattr(norm_state.reference, name, norm_ref_single_state)
+    #     return norm_state
+
+    # @partial(jax.jit, static_argnums=0)
+    # def denormalize_state(self, norm_state, env_properties):
+    #     physical_normalizations = env_properties.physical_normalizations
+    #     with jdc.copy_and_mutate(norm_state, validate=True) as state:
+    #         for field in fields(state.physical_state):
+    #             name = field.name
+    #             single_state = (getattr(state.physical_state, name) + 1) / 2 * (
+    #                 getattr(physical_normalizations, name)[1].astype(float)
+    #                 - getattr(physical_normalizations, name)[0].astype(float)
+    #             ) + getattr(physical_normalizations, name)[0].astype(float)
+    #             ref_single_state = (getattr(state.reference, name) + 1) / 2 * (
+    #                 getattr(physical_normalizations, name)[1].astype(float)
+    #                 - getattr(physical_normalizations, name)[0].astype(float)
+    #             ) + getattr(physical_normalizations, name)[0].astype(float)
+    #             setattr(state.physical_state, name, single_state)
+    #             setattr(state.reference, name, ref_single_state)
+    #     return state
+
     @partial(jax.jit, static_argnums=0)
     def normalize_state(self, state, env_properties):
         physical_normalizations = env_properties.physical_normalizations
@@ -93,20 +142,20 @@ class CoreEnvironment(ABC):
                     2
                     * (
                         getattr(norm_state.physical_state, name)
-                        - getattr(physical_normalizations, name)[0].astype(float)
+                        - getattr(physical_normalizations, name).min.astype(float)
                     )
                     / (
-                        getattr(physical_normalizations, name)[1].astype(float)
-                        - getattr(physical_normalizations, name)[0].astype(float)
+                        getattr(physical_normalizations, name).max.astype(float)
+                        - getattr(physical_normalizations, name).min.astype(float)
                     )
                     - 1
                 )
                 norm_ref_single_state = (
                     2
-                    * (getattr(norm_state.reference, name) - getattr(physical_normalizations, name)[0].astype(float))
+                    * (getattr(norm_state.reference, name) - getattr(physical_normalizations, name).min.astype(float))
                     / (
-                        getattr(physical_normalizations, name)[1].astype(float)
-                        - getattr(physical_normalizations, name)[0].astype(float)
+                        getattr(physical_normalizations, name).max.astype(float)
+                        - getattr(physical_normalizations, name).min.astype(float)
                     )
                     - 1
                 )
@@ -121,24 +170,16 @@ class CoreEnvironment(ABC):
             for field in fields(state.physical_state):
                 name = field.name
                 single_state = (getattr(state.physical_state, name) + 1) / 2 * (
-                    getattr(physical_normalizations, name)[1].astype(float)
-                    - getattr(physical_normalizations, name)[0].astype(float)
-                ) + getattr(physical_normalizations, name)[0].astype(float)
+                    getattr(physical_normalizations, name).max.astype(float)
+                    - getattr(physical_normalizations, name).min.astype(float)
+                ) + getattr(physical_normalizations, name).min.astype(float)
                 ref_single_state = (getattr(state.reference, name) + 1) / 2 * (
-                    getattr(physical_normalizations, name)[1].astype(float)
-                    - getattr(physical_normalizations, name)[0].astype(float)
-                ) + getattr(physical_normalizations, name)[0].astype(float)
+                    getattr(physical_normalizations, name).max.astype(float)
+                    - getattr(physical_normalizations, name).min.astype(float)
+                ) + getattr(physical_normalizations, name).min.astype(float)
                 setattr(state.physical_state, name, single_state)
                 setattr(state.reference, name, ref_single_state)
         return state
-
-    @partial(jax.jit, static_argnums=0)
-    def denormalize_action(self, action_norm, env_properties):
-        # TODO generalize for multidimensional actions
-        normalizations = jnp.array(tree_flatten(env_properties.action_normalizations)[0]).T.astype(float)
-        action_normalizations = env_properties.action_normalizations
-        action = (action_norm + 1) / 2 * (normalizations[1] - normalizations[0]) + normalizations[0]
-        return action
 
     @partial(jax.jit, static_argnums=0)
     def vmap_step(self, state, action):
