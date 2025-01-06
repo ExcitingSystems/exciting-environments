@@ -36,6 +36,7 @@ pythonpath = [
     "."
 ]
 
+
 [project.urls]
 "Homepage" = "https://excitingsystems.github.io/exciting-environments/"
 

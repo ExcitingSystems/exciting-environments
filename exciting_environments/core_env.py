@@ -187,10 +187,11 @@ class CoreEnvironment(ABC):
         The actions are interpolated with zero order hold inbetween their values.
 
         Args:
-            init_state: The initial state of the simulation
+            init_state: The initial state of the simulation.
             actions: A set of actions to be applied to the environment, the value changes every
-            obs_stepsize: The sampling time for the observations
-            action_stepsize: The time between changes in the input/action
+            action_stepsize (shape=(batch_size, n_action_steps, action_dim)).
+            obs_stepsize: The sampling time for the observations.
+            action_stepsize: The time between changes in the input/action.
         """
         assert (
             obs_stepsize <= action_stepsize
@@ -218,7 +219,7 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_generate_rew_trunc_term_ahead(self, states, actions):
-        """Computes reward,truncated and terminated for the data of multiple (batch_size) batches simulated by vmap_sim_ahead"""
+        """Computes reward,truncated and terminated for the data of multiple (batch_size) batches simulated by vmap_sim_ahead."""
 
         assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
