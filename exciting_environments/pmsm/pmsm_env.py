@@ -575,13 +575,9 @@ class PMSM(CoreEnvironment):
             ),
         )
         u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
-        u_dq = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon) * jnp.hstack(
-            [
-                env_properties.action_normalizations.u_d.max,
-                env_properties.action_normalizations.u_q.max,
-            ]  # TODO incorporate min
-        )
-        return u_dq[0]
+        u_dq_norm_clip = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon)
+        u_dq = self.denormalize_action(u_dq_norm_clip[0], env_properties)
+        return u_dq
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, properties, obs_stepsize, action_stepsize):
@@ -646,7 +642,7 @@ class PMSM(CoreEnvironment):
                 i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
                 i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
                 eps_diff = omega_el
-                d_y = i_d_diff, i_q_diff, eps_diff  # [0]
+                d_y = i_d_diff, i_q_diff, eps_diff
                 return d_y
 
         term = diffrax.ODETerm(vector_field)

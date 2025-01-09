@@ -11,6 +11,7 @@ import diffrax
 from dataclasses import fields
 
 from exciting_environments import ClassicCoreEnvironment
+from exciting_environments.utils import Normalization
 
 
 class MassSpringDamper(ClassicCoreEnvironment):
@@ -78,10 +79,13 @@ class MassSpringDamper(ClassicCoreEnvironment):
         """
 
         if not physical_normalizations:
-            physical_normalizations = {"deflection": 10 * jnp.array([-1, 1]), "velocity": 10 * jnp.array([-1, 1])}
+            physical_normalizations = {
+                "deflection": Normalization(min=-10, max=10),
+                "velocity": Normalization(min=-10, max=10),
+            }
 
         if not action_normalizations:
-            action_normalizations = {"force": 20 * jnp.array([-1, 1])}
+            action_normalizations = {"force": Normalization(min=-20, max=20)}
 
         if not soft_constraints:
             soft_constraints = self.default_soft_constraints

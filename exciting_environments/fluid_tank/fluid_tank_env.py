@@ -11,6 +11,7 @@ import diffrax
 from dataclasses import fields
 
 from exciting_environments import ClassicCoreEnvironment
+from exciting_environments.utils import Normalization
 
 
 class FluidTank(ClassicCoreEnvironment):
@@ -31,10 +32,10 @@ class FluidTank(ClassicCoreEnvironment):
         tau: float = 1e-3,
     ):
         if not physical_normalizations:
-            physical_normalizations = {"height": jnp.array([0, 3])}
+            physical_normalizations = {"height": Normalization(min=0, max=3)}
 
         if not action_normalizations:
-            action_normalizations = {"inflow": jnp.array([0, 0.2])}
+            action_normalizations = {"inflow": Normalization(min=0, max=0.2)}
 
         if not soft_constraints:
             soft_constraints = self.default_soft_constraints

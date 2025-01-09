@@ -9,6 +9,7 @@ import jax_dataclasses as jdc
 import diffrax
 import chex
 from dataclasses import fields
+from exciting_environments.utils import Normalization
 
 from exciting_environments import ClassicCoreEnvironment
 
@@ -79,10 +80,13 @@ class Pendulum(ClassicCoreEnvironment):
         """
 
         if not physical_normalizations:
-            physical_normalizations = {"theta": jnp.pi * jnp.array([-1, 1]), "omega": 10 * jnp.array([-1, 1])}
+            physical_normalizations = {
+                "theta": Normalization(min=-jnp.pi, max=jnp.pi),
+                "omega": Normalization(min=-10, max=10),
+            }
 
         if not action_normalizations:
-            action_normalizations = {"torque": 20 * jnp.array([-1, 1])}
+            action_normalizations = {"torque": Normalization(min=-20, max=20)}
 
         if not soft_constraints:
             soft_constraints = self.default_soft_constraints

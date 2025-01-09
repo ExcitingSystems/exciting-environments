@@ -11,6 +11,7 @@ import diffrax
 from dataclasses import fields
 
 from exciting_environments import ClassicCoreEnvironment
+from exciting_environments.utils import Normalization
 
 
 class CartPole(ClassicCoreEnvironment):
@@ -83,13 +84,13 @@ class CartPole(ClassicCoreEnvironment):
 
         if not physical_normalizations:
             physical_normalizations = {
-                "deflection": 2.4 * jnp.array([-1, 1]),
-                "velocity": 8 * jnp.array([-1, 1]),
-                "theta": jnp.pi * jnp.array([-1, 1]),
-                "omega": 8 * jnp.array([-1, 1]),
+                "deflection": Normalization(min=-2.4, max=2.4),
+                "velocity": Normalization(min=-8, max=8),
+                "theta": Normalization(min=-jnp.pi, max=jnp.pi),
+                "omega": Normalization(min=-8, max=8),
             }
         if not action_normalizations:
-            action_normalizations = {"force": 20 * jnp.array([-1, 1])}
+            action_normalizations = {"force": Normalization(min=-20, max=20)}
 
         if not soft_constraints:
             soft_constraints = self.default_soft_constraints

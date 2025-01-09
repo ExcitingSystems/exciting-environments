@@ -182,6 +182,15 @@ class CoreEnvironment(ABC):
         return state
 
     @partial(jax.jit, static_argnums=0)
+    def denormalize_action(self, action_norm, env_properties):
+        normalizations = env_properties.action_normalizations
+        action_denorm = jnp.zeros_like(action_norm)
+        for i, field in enumerate(fields(normalizations)):
+            norms = getattr(normalizations, field.name)
+            action_denorm = action_denorm.at[i].set((action_norm[i] + 1) / 2 * (norms.max - norms.min) + norms.min)
+        return action_denorm
+
+    @partial(jax.jit, static_argnums=0)
     def vmap_step(self, state, action):
         """Computes one JAX-JIT compiled simulation step for multiple (batch_size) batches.
 
