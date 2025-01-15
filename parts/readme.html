@@ -7,7 +7,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Readme File &mdash; Exciting Environments 1.0.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
 
   
@@ -93,8 +93,8 @@
 <section id="getting-started">
 <h3>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading"></a></h3>
 <p>A basic routine is as simple as:</p>
-<div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">jax.numpy</span> <span class="k">as</span> <span class="nn">jnp</span>
-<span class="kn">import</span> <span class="nn">exciting_environments</span> <span class="k">as</span> <span class="nn">excenvs</span>
+<div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">exciting_environments</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">excenvs</span>
 
 <span class="n">env</span> <span class="o">=</span> <span class="n">excenvs</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="s2">&quot;Pendulum-v0&quot;</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">action_constraints</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;torque&quot;</span><span class="p">:</span> <span class="mi">15</span><span class="p">},</span> <span class="n">tau</span><span class="o">=</span><span class="mf">2e-2</span><span class="p">)</span>
 <span class="n">obs</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
@@ -119,9 +119,9 @@
 <p>which produces $5$ identical trajectories in parallel:</p>
 <a class="reference external image-reference" href="https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example.png?raw=true"><img alt="" src="https://github.com/ExcitingSystems/exciting-environments/blob/main/fig/excenvs_pendulum_simulation_example.png?raw=true" /></a>
 <p>alternatively, simulate full trajectories:</p>
-<div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">jax.numpy</span> <span class="k">as</span> <span class="nn">jnp</span>
-<span class="kn">import</span> <span class="nn">exciting_environments</span> <span class="k">as</span> <span class="nn">excenvs</span>
-<span class="kn">import</span> <span class="nn">diffrax</span>
+<div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">exciting_environments</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">excenvs</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">diffrax</span>
 
 <span class="n">env</span> <span class="o">=</span> <span class="n">excenvs</span><span class="o">.</span><span class="n">make</span><span class="p">(</span>
     <span class="s2">&quot;Pendulum-v0&quot;</span><span class="p">,</span> <span class="n">solver</span><span class="o">=</span><span class="n">diffrax</span><span class="o">.</span><span class="n">Tsit5</span><span class="p">(),</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">action_constraints</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;torque&quot;</span><span class="p">:</span> <span class="mi">15</span><span class="p">},</span> <span class="n">tau</span><span class="o">=</span><span class="mf">2e-2</span>
