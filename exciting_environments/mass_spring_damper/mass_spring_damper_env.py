@@ -33,7 +33,7 @@ class MassSpringDamper(ClassicCoreEnvironment):
         >>> from exciting_environments import GymWrapper
         >>>
         >>> # Create the environment
-        >>> msd=excenv.MassSpringDamper(batch_size=4,action_normalizations={"force":10})
+        >>> msd=excenv.MassSpringDamper(batch_size=4)
         >>>
         >>> # Use GymWrapper for Simulation (optional)
         >>> gym_msd=GymWrapper(env=msd)

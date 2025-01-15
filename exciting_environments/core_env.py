@@ -71,66 +71,14 @@ class CoreEnvironment(ABC):
                     setattr(dataclass_in_axes, name, None)
                 elif isinstance(value, jax.numpy.ndarray):
                     if value.shape[0] == self.batch_size:
-                        # assert (
-                        #     len(value) == self.batch_size
-                        # ), f"{name} is expected to be a scalar, a pytree_dataclass or a jnp.Array with len(jnp.Array)=batch_size={self.batch_size}"
                         setattr(dataclass_in_axes, name, 0)
                     else:
                         setattr(dataclass_in_axes, name, None)
                 else:
                     raise ValueError(
-                        f'Passed env property "{name}" needs to be a scalar, jnp.array or jdc.pytree_dataclass, but {type(name)} is given.'
+                        f'Passed env property "{name}" needs to be a scalar, jnp.array or jdc.pytree_dataclass, but {type(value)} is given.'
                     )
         return dataclass_in_axes
-
-    # @partial(jax.jit, static_argnums=0)
-    # def normalize_state(self, state, env_properties):
-    #     physical_normalizations = env_properties.physical_normalizations
-    #     with jdc.copy_and_mutate(state, validate=True) as norm_state:
-    #         for field in fields(norm_state.physical_state):
-    #             name = field.name
-    #             norm_single_state = (
-    #                 2
-    #                 * (
-    #                     getattr(norm_state.physical_state, name)
-    #                     - getattr(physical_normalizations, name)[0].astype(float)
-    #                 )
-    #                 / (
-    #                     getattr(physical_normalizations, name)[1].astype(float)
-    #                     - getattr(physical_normalizations, name)[0].astype(float)
-    #                 )
-    #                 - 1
-    #             )
-    #             norm_ref_single_state = (
-    #                 2
-    #                 * (getattr(norm_state.reference, name) - getattr(physical_normalizations, name)[0].astype(float))
-    #                 / (
-    #                     getattr(physical_normalizations, name)[1].astype(float)
-    #                     - getattr(physical_normalizations, name)[0].astype(float)
-    #                 )
-    #                 - 1
-    #             )
-    #             setattr(norm_state.physical_state, name, norm_single_state)
-    #             setattr(norm_state.reference, name, norm_ref_single_state)
-    #     return norm_state
-
-    # @partial(jax.jit, static_argnums=0)
-    # def denormalize_state(self, norm_state, env_properties):
-    #     physical_normalizations = env_properties.physical_normalizations
-    #     with jdc.copy_and_mutate(norm_state, validate=True) as state:
-    #         for field in fields(state.physical_state):
-    #             name = field.name
-    #             single_state = (getattr(state.physical_state, name) + 1) / 2 * (
-    #                 getattr(physical_normalizations, name)[1].astype(float)
-    #                 - getattr(physical_normalizations, name)[0].astype(float)
-    #             ) + getattr(physical_normalizations, name)[0].astype(float)
-    #             ref_single_state = (getattr(state.reference, name) + 1) / 2 * (
-    #                 getattr(physical_normalizations, name)[1].astype(float)
-    #                 - getattr(physical_normalizations, name)[0].astype(float)
-    #             ) + getattr(physical_normalizations, name)[0].astype(float)
-    #             setattr(state.physical_state, name, single_state)
-    #             setattr(state.reference, name, ref_single_state)
-    #     return state
 
     @partial(jax.jit, static_argnums=0)
     def normalize_state(self, state, env_properties):
