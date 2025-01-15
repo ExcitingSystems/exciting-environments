@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from typing import Callable
-
+from dataclasses import fields
 from scipy.io import loadmat
 from pathlib import Path
 import os
@@ -42,11 +42,23 @@ class MotorParams:
     physical_normalizations: PhysicalNormalizations
     action_normalizations: ActionNormalizations
     static_params: StaticParams
-    # TODO default_soft_constraints: Callable
+    default_soft_constraints: Callable
     pmsm_lut: dict
 
 
 # Predefined motor configurations
+
+
+def default_soft_constraints(self, state, action_norm, env_properties):
+    state_norm = self.normalize_state(state, env_properties)
+    physical_state_norm = state_norm.physical_state
+    with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+        for field in fields(phys_soft_const):
+            name = field.name
+            setattr(phys_soft_const, name, jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0))
+    return phys_soft_const, None
+
+
 BRUSA = MotorParams(
     physical_normalizations=PhysicalNormalizations(
         u_d_buffer=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
@@ -69,6 +81,7 @@ BRUSA = MotorParams(
         psi_p=65.65e-3,
         deadtime=1,
     ),
+    default_soft_constraints=default_soft_constraints,
     pmsm_lut=loadmat(Path(__file__).parent / Path("LUT_BRUSA_jax_grad.mat")),
 )
 
@@ -94,6 +107,7 @@ SEW = MotorParams(
         psi_p=122e-3,
         deadtime=1,
     ),
+    default_soft_constraints=default_soft_constraints,
     pmsm_lut=loadmat(Path(__file__).parent / Path("LUT_SEW_jax_grad.mat")),
 )
 
@@ -112,13 +126,14 @@ DEFAULT = MotorParams(
         u_q=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
     ),
     static_params=StaticParams(
-        p=4,
+        p=3,
         r_s=15e-3,
         l_d=0.37e-3,
         l_q=1.2e-3,
         psi_p=65.6e-3,
         deadtime=1,
     ),
+    default_soft_constraints=default_soft_constraints,
     pmsm_lut=None,
 )
 

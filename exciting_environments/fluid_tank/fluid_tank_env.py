@@ -213,7 +213,6 @@ class FluidTank(ClassicCoreEnvironment):
         return self.denormalize_state(norm_state, env_properties)
 
     def default_soft_constraints(self, state, action_norm, env_properties):
-        # action normalized or not?
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
         with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
@@ -223,7 +222,6 @@ class FluidTank(ClassicCoreEnvironment):
 
         # define soft constraints for action
         act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        # discuss kind of return - could be anything (array, dataclass, scalar)
         return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)

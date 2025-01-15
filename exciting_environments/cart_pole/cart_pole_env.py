@@ -60,19 +60,19 @@ class CartPole(ClassicCoreEnvironment):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            physical_normalizations(dict): Constraints of physical state of the environment.
-                deflection(float): Deflection of the cart. Default: 10
-                velocity(float): Velocity of the cart. Default: 10
-                theta(float): Rotation angle of the pole. Default: jnp.pi
-                omega(float): Angular velocity. Default: 10
-            action_normalizations(dict): Constraints of the action.
-                force(float): Maximum torque that can be applied to the system as action. Default: 20
+            physical_normalizations(dict): min-max normalization values of the physical state of the environment.
+                deflection(float): Deflection of the cart. Default: min=-10, max=10
+                velocity(float): Velocity of the cart. Default: min=-10, max=10
+                theta(float): Rotation angle of the pole. Default: min=-jnp.pi, max=jnp.pi
+                omega(float): Angular velocity. Default: min=-10, max=10
+            action_normalizations(dict): min-max normalization values of the input/action.
+                force(float): Maximum torque that can be applied to the system as action. Default: min=-20, max=20
             soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params(dict): Parameters of environment which do not change during simulation.
-                mu_p(float): Coefficient of friction of pole on cart. Default: 0
-                mu_c(float): Coefficient of friction of cart on track. Default: 0
-                l(float): Half-pole length. Default: 1
-                m_p(float): Mass of the pole. Default: 1
+                mu_p(float): Coefficient of friction of pole on cart. Default: 0.000002
+                mu_c(float): Coefficient of friction of cart on track. Default: 0.0005
+                l(float): Half-pole length. Default: 0.5
+                m_p(float): Mass of the pole. Default: 0.1
                 m_c(float): Mass of the cart. Default: 1
                 g(float): Gravitational acceleration. Default: 9.81
             control_state (list): Components of the physical state that are considered in reference tracking.
@@ -390,7 +390,6 @@ class CartPole(ClassicCoreEnvironment):
         return self.denormalize_state(norm_state, env_properties)
 
     def default_soft_constraints(self, state, action_norm, env_properties):
-        # action normalized or not?
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
         with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
@@ -407,7 +406,6 @@ class CartPole(ClassicCoreEnvironment):
 
         # define soft constraints for action
         act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        # discuss kind of return - could be anything (array, dataclass, scalar)
         return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)

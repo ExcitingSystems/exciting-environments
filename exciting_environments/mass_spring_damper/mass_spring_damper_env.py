@@ -61,11 +61,11 @@ class MassSpringDamper(ClassicCoreEnvironment):
         """
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
-            physical_normalizations(dict): Constraints of the physical state of the environment.
-                deflection(float): Deflection of the mass. Default: 10
-                velocity(float): Velocity of the mass. Default: 10
-            action_normalizations(dict): Constraints of the action.
-                force(float): Maximum force that can be applied to the system as action. Default: 20
+            physical_normalizations(dict): min-max normalization values of the physical state of the environment.
+                deflection(float): Deflection of the mass. Default: min=-10, max=10
+                velocity(float): Velocity of the mass. Default: min=-10, max=10
+            action_normalizations(dict): min-max normalization values of the input/action.
+                force(float): Maximum force that can be applied to the system as action. Default: min=-20, max=20
             soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params(dict): Parameters of environment which do not change during simulation.
                 d(float): Damping constant. Default: 1
@@ -298,7 +298,6 @@ class MassSpringDamper(ClassicCoreEnvironment):
         return self.denormalize_state(norm_state, env_properties)
 
     def default_soft_constraints(self, state, action_norm, env_properties):
-        # action normalized or not?
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
         with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
@@ -310,7 +309,6 @@ class MassSpringDamper(ClassicCoreEnvironment):
 
         # define soft constraints for action
         act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        # discuss kind of return - could be anything (array, dataclass, scalar)
         return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)

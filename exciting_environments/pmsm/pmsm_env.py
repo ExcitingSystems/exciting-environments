@@ -1,6 +1,6 @@
 from functools import partial
 from typing import Callable
-
+from types import MethodType
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -128,18 +128,19 @@ class PMSM(CoreEnvironment):
         Args:
             batch_size (int): Number of parallel environment simulations. Default: 8
             saturated (bool): Permanent magnet flux linkages and inductances are taken from LUT_motor_name specific LUTs. Default: False
-            LUT_motor_name (str): Sets physical_constraints, action_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
-            physical_constraints (dict): Constraints of the physical state of the environment.
-                u_d_buffer (float): Direct share of the delayed action due to system deadtime. Default: 2 * 400 / 3
-                u_q_buffer (float): Quadrature share of the delayed action due to system deadtime. Default: 2 * 400 / 3
-                epsilon (float): Electrical rotation angle. Default: jnp.pi
-                i_d (float): Direct share of the current in dq-coordinates. Default: 250
-                i_q (float): Quadrature share of the current in dq-coordinates. Default: 250
-                omega_el (float): Electrical angular velocity. Default: 3000 / 60 * 2 * jnp.pi
-                torque (float): Torque caused by the current. Default: 200
-            action_constraints (dict): Constraints of the input/action.
-                u_d (float): Direct share of the voltage in dq-coordinates. Default: 2 * 400 / 3
-                u_q (float): Quadrature share of the voltage in dq-coordinates. Default: 2 * 400 / 3
+            LUT_motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
+            physical_normalizations (dict): min-max normalization values of the physical state of the environment.
+                u_d_buffer (float): Direct share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+                u_q_buffer (float): Quadrature share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+                epsilon (float): Electrical rotation angle. Default: min=-jnp.pi, max=jnp.pi
+                i_d (float): Direct share of the current in dq-coordinates. Default: min=-250, max=0
+                i_q (float): Quadrature share of the current in dq-coordinates. Default: min=-250, max=250
+                omega_el (float): Electrical angular velocity. Default: min=0, max=3 * 11000 * 2 * jnp.pi / 60
+                torque (float): Torque caused by the current. Default: min=-200, max=200
+            action_normalizations (dict): min-max normalization values of the input/action.
+                u_d (float): Direct share of the voltage in dq-coordinates. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+                u_q (float): Quadrature share of the voltage in dq-coordinates. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+            soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params (dict): Parameters of environment which do not change during simulation.
                 p (int): Pole pair number. Default: 3
                 r_s (float): Stator resistance. Default: 15e-3
@@ -151,7 +152,7 @@ class PMSM(CoreEnvironment):
             solver (diffrax.solver): Solver used to compute state for next step.
             tau (float): Duration of one control/simulation step in seconds. Default: 1e-4.
 
-        Note: Attributes of physical_constraints, action_constraints and static_params can also be
+        Note: Attributes of physical_normalizations, action_constraints and static_params can also be
             passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
         self.batch_size = batch_size
@@ -163,6 +164,7 @@ class PMSM(CoreEnvironment):
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
+            default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
             pmsm_lut_predefined = motor_params.pmsm_lut
             if saturated:
                 default_static_params["l_d"] = jnp.nan
@@ -229,7 +231,7 @@ class PMSM(CoreEnvironment):
             control_state = []
 
         if not soft_constraints:
-            soft_constraints = self.default_soft_constraints
+            soft_constraints = default_soft_constraints
 
         self.control_state = control_state
         self.soft_constraints = soft_constraints
@@ -311,24 +313,6 @@ class PMSM(CoreEnvironment):
         physical_normalizations: jdc.pytree_dataclass
         action_normalizations: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
-
-    # incorporate in motor_parameters
-    def default_soft_constraints(self, state, action_norm, env_properties):
-        # action normalized or not?
-        # state_norm = self.normalize_state(state, env_properties)
-        # physical_state_norm = state_norm.physical_state
-        # with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
-        #     for field in fields(phys_soft_const):
-        #         name = field.name
-        #         setattr(phys_soft_const, name, jnp.nan)
-        #     # define soft constraints for physical state
-        #     soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "omega")) - 1.0)
-        #     setattr(phys_soft_const, "omega", soft_constr)
-
-        # # define soft constraints for action
-        # act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        # # discuss kind of return - could be anything (array, dataclass, scalar)
-        return None, None
 
     def generate_interpolators_and_lut(self, pmsm_lut):
         saturated_quants = [

@@ -62,10 +62,10 @@ class Pendulum(ClassicCoreEnvironment):
         Args:
             batch_size (int): Number of parallel environment simulations. Default: 8
             physical_normalizations (dict): Min and max values of the physical state of the environment for normalization.
-                theta (float): Rotation angle. Default: jnp.pi
-                omega (float): Angular velocity. Default: 10
+                theta (float): Rotation angle. Default: min=-jnp.pi, max=jnp.pi
+                omega (float): Angular velocity. Default: min=-10, max=10
             action_normalizations (dict): Min and max values of the input/action for normalization.
-                torque (float): Maximum torque that can be applied to the system as an action. Default: 20
+                torque (float): Maximum torque that can be applied to the system as an action. Default: min=-20, max=20
             soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params (dict): Parameters of environment which do not change during simulation.
                 l (float): Length of the pendulum. Default: 1
@@ -306,7 +306,6 @@ class Pendulum(ClassicCoreEnvironment):
         return self.denormalize_state(norm_state, env_properties)
 
     def default_soft_constraints(self, state, action_norm, env_properties):
-        # action normalized or not?
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
         with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
@@ -319,7 +318,6 @@ class Pendulum(ClassicCoreEnvironment):
 
         # define soft constraints for action
         act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        # discuss kind of return - could be anything (array, dataclass, scalar)
         return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)
