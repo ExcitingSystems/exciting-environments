@@ -374,7 +374,8 @@ class PMSM(CoreEnvironment):
     def currents_to_torque_saturated(self, i_d, i_q, env_properties):
         Psi_d = self.LUT_interpolators["Psi_d"](jnp.array([i_d, i_q]))
         Psi_q = self.LUT_interpolators["Psi_q"](jnp.array([i_d, i_q]))
-        return (Psi_d * i_q - Psi_q * i_d)[0]
+        t = 3 / 2 * env_properties.static_params.p * (Psi_d * i_q - Psi_q * i_d)[0]
+        return t
 
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
         """Returns default initial state for all batches."""
