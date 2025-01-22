@@ -776,7 +776,7 @@ class PMSM(CoreEnvironment):
 
     @property
     def obs_description(self):
-        return self._obs_description
+        return np.hstack([np.array(self._obs_description), np.array([name + "_ref" for name in self.control_state])])
 
     def reset(
         self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
