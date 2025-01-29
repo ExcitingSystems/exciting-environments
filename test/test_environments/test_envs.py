@@ -3,6 +3,7 @@ import exciting_environments as excenvs
 import jax
 import jax.numpy as jnp
 import numpy as np
+import diffrax
 
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
@@ -136,7 +137,7 @@ def test_step(env_id):
 
 @pytest.mark.parametrize("env_id", env_ids)
 def test_simulate_ahead(env_id):
-    if env_id is not "FluidTank-v0":
+    if env_id != "FluidTank-v0":
         sim_steps = 10
         batch_size = 4
         env = excenvs.make(env_id, batch_size=batch_size)
@@ -166,8 +167,30 @@ def test_simulate_ahead(env_id):
         ), "State changes structure during vmapped simulate ahead."
 
 
-# def compare_step_sim
-# TODO
+@pytest.mark.parametrize("env_id", env_ids)
+def test_similarity_step_sim_ahead_results(env_id):
+    if env_id != "FluidTank-v0":
+        sim_steps = 10
+        batch_size = 4
+        env = excenvs.make(env_id, batch_size=batch_size, solver=diffrax.Euler())
+
+        # single
+        obs, state = env.reset(env.env_properties)
+        acts = jnp.ones((sim_steps, env.action_dim))
+
+        # sim ahead
+        obs_ahead, states_ahead, last_state_ahead = env.sim_ahead(state, acts, env.env_properties, env.tau, env.tau)
+        last_obs_ahead = env.generate_observation(last_state_ahead, env.env_properties)
+        # steps
+        for _ in range(sim_steps):
+            action = jnp.ones(env.action_dim)
+            obs_step, state = env.step(state, action, env.env_properties)
+
+        # compare final observations
+        assert jnp.allclose(
+            last_obs_ahead, obs_step, 1e-16
+        ), "Simulate ahead and stepwise simulation return significantly deviating results for diffrax.Euler solver."
+
 
 # Gym Wrapper Tests
 ##########################
@@ -204,12 +227,6 @@ def test_gym_execution(env_id, no_of_steps):
 #     assert jnp.all(jnp.isfinite(obs)), "Initial observations contain invalid values"
 #     assert jnp.all(jnp.isfinite(state)), "Initial states contain invalid values"
 
-
-###########################################################################################################################
-
-###########################################################################################################################
-
-
 # @pytest.mark.parametrize("env_class", [MassSpringDamper, Pendulum])
 # def test_step_returns_correct_outputs(env_class):
 #     """Ensure step function returns outputs of expected type and shape."""
@@ -225,3 +242,8 @@ def test_gym_execution(env_id, no_of_steps):
 #     assert reward.shape == (4,), "Reward shape mismatch"
 #     assert terminated.shape == (4,), "Terminated flag shape mismatch"
 #     assert truncated.shape == (4,), "Truncated flag shape mismatch"
+
+
+###########################################################################################################################
+
+###########################################################################################################################
