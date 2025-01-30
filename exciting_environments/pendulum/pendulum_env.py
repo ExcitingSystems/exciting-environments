@@ -9,12 +9,12 @@ import jax_dataclasses as jdc
 import diffrax
 import chex
 from dataclasses import fields
-from exciting_environments.utils import Normalization
+from exciting_environments.utils import MinMaxNormalization
 
-from exciting_environments import ClassicCoreEnvironment
+from exciting_environments import CoreEnvironment
 
 
-class Pendulum(ClassicCoreEnvironment):
+class Pendulum(CoreEnvironment):
     """
     State Variables:
         ``['theta', 'omega']``
@@ -81,12 +81,12 @@ class Pendulum(ClassicCoreEnvironment):
 
         if not physical_normalizations:
             physical_normalizations = {
-                "theta": Normalization(min=-jnp.pi, max=jnp.pi),
-                "omega": Normalization(min=-10, max=10),
+                "theta": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
+                "omega": MinMaxNormalization(min=-10, max=10),
             }
 
         if not action_normalizations:
-            action_normalizations = {"torque": Normalization(min=-20, max=20)}
+            action_normalizations = {"torque": MinMaxNormalization(min=-20, max=20)}
 
         if not soft_constraints:
             soft_constraints = self.default_soft_constraints
@@ -104,14 +104,12 @@ class Pendulum(ClassicCoreEnvironment):
         action_normalizations = self.Action(**action_normalizations)
         static_params = self.StaticParams(**static_params)
 
-        super().__init__(
-            batch_size,
-            physical_normalizations,
-            action_normalizations,
-            static_params,
-            tau=tau,
-            solver=solver,
+        env_properties = self.EnvProperties(
+            physical_normalizations=physical_normalizations,
+            action_normalizations=action_normalizations,
+            static_params=static_params,
         )
+        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
 
     @jdc.pytree_dataclass
     class PhysicalState:
@@ -338,19 +336,3 @@ class Pendulum(ClassicCoreEnvironment):
     @property
     def action_description(self):
         return np.array(["torque"])
-
-    def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
-    ):
-        """Resets one batch to default, random or passed initial state."""
-        if initial_state is not None:
-            assert tree_structure(self.init_state(env_properties)) == tree_structure(
-                initial_state
-            ), f"initial_state should have the same dataclass structure as init_state()"
-            state = initial_state
-        else:
-            state = self.init_state(env_properties, rng)
-
-        obs = self.generate_observation(state, env_properties)
-
-        return obs, state

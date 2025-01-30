@@ -200,6 +200,7 @@ class PMSM(CoreEnvironment):
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
+            default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
             pmsm_lut_predefined = motor_params.__dict__
             self.pmsm_lut = pmsm_lut_predefined
             self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
@@ -259,8 +260,6 @@ class PMSM(CoreEnvironment):
             "u_d_buffer",
             "u_q_buffer",
         ]
-        self.action_dim = len(fields(self.Action))
-        self.physical_state_dim = len(fields(self.PhysicalState))
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -296,14 +295,14 @@ class PMSM(CoreEnvironment):
         u_d: jax.Array
         u_q: jax.Array
 
-    @jdc.pytree_dataclass
-    class State:
-        """Dataclass used for simulation which contains environment specific dataclasses."""
+    # @jdc.pytree_dataclass
+    # class State:
+    #     """Dataclass used for simulation which contains environment specific dataclasses."""
 
-        physical_state: jdc.pytree_dataclass
-        PRNGKey: jax.Array
-        additions: jdc.pytree_dataclass
-        reference: jdc.pytree_dataclass
+    #     physical_state: jdc.pytree_dataclass
+    #     PRNGKey: jax.Array
+    #     additions: jdc.pytree_dataclass
+    #     reference: jdc.pytree_dataclass
 
     @jdc.pytree_dataclass
     class EnvProperties:
@@ -464,7 +463,7 @@ class PMSM(CoreEnvironment):
         return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
 
     @partial(jax.jit, static_argnums=[0, 3])
-    def ode_step(self, state, u_dq, properties):
+    def _ode_solver_step(self, state, u_dq, properties):
         """Computes state by simulating one step.
 
         Args:
@@ -807,7 +806,7 @@ class PMSM(CoreEnvironment):
 
             u_dq = action
 
-        next_state = self.ode_step(state, u_dq, env_properties)
+        next_state = self._ode_solver_step(state, u_dq, env_properties)
         with jdc.copy_and_mutate(next_state, validate=True) as next_state_update:
             next_state_update.physical_state.u_d_buffer = updated_buffer[0]
             next_state_update.physical_state.u_q_buffer = updated_buffer[1]
@@ -822,22 +821,6 @@ class PMSM(CoreEnvironment):
     @property
     def obs_description(self):
         return self._obs_description
-
-    def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
-    ):
-        """Resets one batch to default, random or passed initial state."""
-        if initial_state is not None:
-            assert tree_structure(self.init_state(env_properties)) == tree_structure(
-                initial_state
-            ), f"initial_state should have the same dataclass structure as init_state()"
-            state = initial_state
-        else:
-            state = self.init_state(env_properties, rng)
-
-        obs = self.generate_observation(state, env_properties)
-
-        return obs, state
 
     def generate_observation(self, system_state, env_properties):
         """Returns observation for one batch."""

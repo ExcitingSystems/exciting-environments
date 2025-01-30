@@ -7,7 +7,7 @@ from scipy.io import loadmat
 from pathlib import Path
 import os
 import jax_dataclasses as jdc
-from exciting_environments.utils import Normalization
+from exciting_environments.utils import MinMaxNormalization
 
 
 @jdc.pytree_dataclass
@@ -61,17 +61,17 @@ def default_soft_constraints(self, state, action_norm, env_properties):
 
 BRUSA = MotorParams(
     physical_normalizations=PhysicalNormalizations(
-        u_d_buffer=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-        u_q_buffer=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-        epsilon=Normalization(min=(-jnp.pi), max=(jnp.pi)),
-        i_d=Normalization(min=(-250), max=(0)),
-        i_q=Normalization(min=(-250), max=(250)),
-        omega_el=Normalization(min=0, max=(3 * 11000 * 2 * jnp.pi / 60)),
-        torque=Normalization(min=(-200), max=(200)),
+        u_d_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
+        i_d=MinMaxNormalization(min=(-250), max=(0)),
+        i_q=MinMaxNormalization(min=(-250), max=(250)),
+        omega_el=MinMaxNormalization(min=0, max=(3 * 11000 * 2 * jnp.pi / 60)),
+        torque=MinMaxNormalization(min=(-200), max=(200)),
     ),
     action_normalizations=ActionNormalizations(
-        u_d=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-        u_q=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_d=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
     ),
     static_params=StaticParams(
         p=3,
@@ -87,17 +87,17 @@ BRUSA = MotorParams(
 
 SEW = MotorParams(
     physical_normalizations=PhysicalNormalizations(
-        u_d_buffer=Normalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
-        u_q_buffer=Normalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
-        epsilon=Normalization(min=(-jnp.pi), max=(jnp.pi)),
-        i_d=Normalization(min=(-16), max=(0)),
-        i_q=Normalization(min=(-16), max=(16)),
-        omega_el=Normalization(min=0, max=(4 * 2000 / 60 * 2 * jnp.pi)),
-        torque=Normalization(min=(-15), max=(15)),
+        u_d_buffer=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
+        u_q_buffer=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
+        epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
+        i_d=MinMaxNormalization(min=(-16), max=(0)),
+        i_q=MinMaxNormalization(min=(-16), max=(16)),
+        omega_el=MinMaxNormalization(min=0, max=(4 * 2000 / 60 * 2 * jnp.pi)),
+        torque=MinMaxNormalization(min=(-15), max=(15)),
     ),
     action_normalizations=ActionNormalizations(
-        u_d=Normalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
-        u_q=Normalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
+        u_d=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
+        u_q=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
     ),
     static_params=StaticParams(
         p=4,
@@ -113,17 +113,17 @@ SEW = MotorParams(
 
 DEFAULT = MotorParams(
     physical_normalizations=PhysicalNormalizations(
-        u_d_buffer=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-        u_q_buffer=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-        epsilon=Normalization(min=(-jnp.pi), max=(jnp.pi)),
-        i_d=Normalization(min=(-250), max=(0)),
-        i_q=Normalization(min=(-250), max=(250)),
-        omega_el=Normalization(min=0, max=(3 * 11000 * 2 * jnp.pi / 60)),
-        torque=Normalization(min=(-200), max=(200)),
+        u_d_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
+        i_d=MinMaxNormalization(min=(-250), max=(0)),
+        i_q=MinMaxNormalization(min=(-250), max=(250)),
+        omega_el=MinMaxNormalization(min=0, max=(3 * 11000 * 2 * jnp.pi / 60)),
+        torque=MinMaxNormalization(min=(-200), max=(200)),
     ),
     action_normalizations=ActionNormalizations(
-        u_d=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-        u_q=Normalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_d=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
     ),
     static_params=StaticParams(
         p=3,

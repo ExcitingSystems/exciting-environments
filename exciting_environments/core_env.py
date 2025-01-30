@@ -53,6 +53,64 @@ class CoreEnvironment(ABC):
         self._solver = solver
         self.env_properties = env_properties
         self.in_axes_env_properties = self.create_in_axes_dataclass(env_properties)
+        self.action_dim = len(fields(self.Action))
+        self.physical_state_dim = len(fields(self.PhysicalState))
+
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class PhysicalState:
+        """The physical state x(t) of the underlying system and whose derivative
+        w.r.t. time is described in the underlying ODE.
+
+        The values stored in this dataclass are expected to be actual physical values
+        that are unnormalized.
+        """
+
+        pass
+
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class Additions:
+        """Additional information that can change from iteration to iteration and that is
+        stored in the state of the system"""
+
+        pass
+
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class StaticParams:
+        """Static parameters of the environment that stay constant during simulation.
+        This could be the length of a pendulum, the capacitance of a capacitor,
+        the mass of a specific element and similar..
+        """
+
+        pass
+
+    @abstractmethod
+    @jdc.pytree_dataclass
+    class Action:
+        """The input/action applied to the environment that is used to influence the
+        dynamics from the outside.
+        """
+
+        pass
+
+    @jdc.pytree_dataclass
+    class State:
+        """The state of the environment."""
+
+        physical_state: jdc.pytree_dataclass
+        PRNGKey: jax.Array
+        additions: jdc.pytree_dataclass
+        reference: jdc.pytree_dataclass
+
+    @jdc.pytree_dataclass
+    class EnvProperties:
+        """The properties of the environment that stay constant during simulation."""
+
+        physical_normalizations: jdc.pytree_dataclass
+        action_normalizations: jdc.pytree_dataclass
+        static_params: jdc.pytree_dataclass
 
     def create_in_axes_dataclass(self, dataclass):
         with jdc.copy_and_mutate(dataclass, validate=False) as dataclass_in_axes:
@@ -86,27 +144,10 @@ class CoreEnvironment(ABC):
         with jdc.copy_and_mutate(state, validate=True) as norm_state:
             for field in fields(norm_state.physical_state):
                 name = field.name
-                norm_single_state = (
-                    2
-                    * (
-                        getattr(norm_state.physical_state, name)
-                        - getattr(physical_normalizations, name).min.astype(float)
-                    )
-                    / (
-                        getattr(physical_normalizations, name).max.astype(float)
-                        - getattr(physical_normalizations, name).min.astype(float)
-                    )
-                    - 1
+                norm_single_state = getattr(physical_normalizations, name).normalize(
+                    getattr(state.physical_state, name)
                 )
-                norm_ref_single_state = (
-                    2
-                    * (getattr(norm_state.reference, name) - getattr(physical_normalizations, name).min.astype(float))
-                    / (
-                        getattr(physical_normalizations, name).max.astype(float)
-                        - getattr(physical_normalizations, name).min.astype(float)
-                    )
-                    - 1
-                )
+                norm_ref_single_state = getattr(physical_normalizations, name).normalize(getattr(state.reference, name))
                 setattr(norm_state.physical_state, name, norm_single_state)
                 setattr(norm_state.reference, name, norm_ref_single_state)
         return norm_state
@@ -117,14 +158,12 @@ class CoreEnvironment(ABC):
         with jdc.copy_and_mutate(norm_state, validate=True) as state:
             for field in fields(state.physical_state):
                 name = field.name
-                single_state = (getattr(state.physical_state, name) + 1) / 2 * (
-                    getattr(physical_normalizations, name).max.astype(float)
-                    - getattr(physical_normalizations, name).min.astype(float)
-                ) + getattr(physical_normalizations, name).min.astype(float)
-                ref_single_state = (getattr(state.reference, name) + 1) / 2 * (
-                    getattr(physical_normalizations, name).max.astype(float)
-                    - getattr(physical_normalizations, name).min.astype(float)
-                ) + getattr(physical_normalizations, name).min.astype(float)
+                single_state = getattr(physical_normalizations, name).denormalize(
+                    getattr(norm_state.physical_state, name)
+                )
+                ref_single_state = getattr(physical_normalizations, name).denormalize(
+                    getattr(norm_state.reference, name)
+                )
                 setattr(state.physical_state, name, single_state)
                 setattr(state.reference, name, ref_single_state)
         return state
@@ -135,8 +174,205 @@ class CoreEnvironment(ABC):
         action_denorm = jnp.zeros_like(action_norm)
         for i, field in enumerate(fields(normalizations)):
             norms = getattr(normalizations, field.name)
-            action_denorm = action_denorm.at[i].set((action_norm[i] + 1) / 2 * (norms.max - norms.min) + norms.min)
+            action_denorm = action_denorm.at[i].set(norms.denormalize(action_norm[i]))
         return action_denorm
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def _ode_solver_step(self, state, action, static_params):
+        """Computes state by simulating one step.
+
+        Args:
+            state: The state from which to calculate state for the next step.
+            action: The action to apply to the environment.
+            static_params: Parameter of the environment, that do not change over time.
+
+        Returns:
+            state: The computed state after the one step simulation.
+        """
+
+        return
+
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    @abstractmethod
+    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+        """Computes states by simulating a trajectory with given actions.
+
+        Args:
+           init_state: The initial state of the simulation.
+           actions: A set of actions to be applied to the environment, the value changes every
+           action_stepsize (shape=(batch_size, n_action_steps, action_dim)).
+           static_params: The static parameters of the environment.
+           obs_stepsize: The sampling time for the observations.
+           action_stepsize: The time between changes in the input/action.
+
+           Returns:
+            states: The computed states during the simulated trajectory.
+        """
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+        """Returns default or random initial state."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_observation(self, state, env_properties):
+        """Returns observation."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_state_from_observation(self, obs, env_properties, key=None):
+        """Generates state from observation."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_reward(self, state, action, env_properties):
+        """Returns a reward for given state and action."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_truncated(self, state, env_properties):
+        """Returns truncated information."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_terminated(self, state, reward, env_properties):
+        """Returns terminated information."""
+        return
+
+    def reset(
+        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
+    ):
+        """Resets one batch to default, random or passed initial state."""
+        if initial_state is not None:
+            assert tree_structure(self.init_state(env_properties)) == tree_structure(
+                initial_state
+            ), f"initial_state should have the same dataclass structure as init_state()"
+            state = initial_state
+        else:
+            state = self.init_state(env_properties, rng)
+
+        obs = self.generate_observation(state, env_properties)
+
+        return obs, state
+
+    @partial(jax.jit, static_argnums=0)
+    def step(self, state, action_norm, env_properties):
+        """Computes one JAX-JIT compiled simulation step for one batch.
+
+        Args:
+            state: The current state of the simulation from which to calculate the next state.
+            action: The action to apply to the environment.
+            env_properties: Contains action/state constraints and static parameters.
+
+        Returns:
+            observation: The gathered observation.
+            state: New state for the next step.
+        """
+
+        assert action_norm.shape == (self.action_dim,), (
+            f"The action needs to be of shape (action_dim,) which is "
+            + f"{(self.action_dim,)}, but {action_norm.shape} is given"
+        )
+
+        physical_state_shape = jnp.array(tree_flatten(state.physical_state)[0]).T.shape
+
+        assert physical_state_shape == (self.physical_state_dim,), (
+            "The physical state needs to be of shape (physical_state_dim,) which is "
+            + f"{(self.physical_state_dim,)}, but {physical_state_shape} is given"
+        )
+
+        # denormalize action
+        action = self.denormalize_action(action_norm, env_properties)
+
+        state = self._ode_solver_step(state, action, env_properties.static_params)
+        obs = self.generate_observation(state, env_properties)
+
+        return obs, state
+
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):
+        """Computes multiple JAX-JIT compiled simulation steps for one batch.
+
+        The length of the set of inputs together with the action_stepsize determine the
+        overall length of the simulation -> overall_time = actions.shape[0] * action_stepsize
+        The actions are interpolated with zero order hold inbetween their values.
+
+        Args:
+            init_state: The initial state of the simulation
+            actions: A set of actions to be applied to the environment, the value changes every
+            action_stepsize (shape=(n_action_steps, action_dim))
+            env_properties: The constant properties of the simulation
+            obs_stepsize: The sampling time for the observations
+            action_stepsize: The time between changes in the input/action
+
+        Returns:
+            observations: The gathered observations.
+            states: The computed states during the simulated trajectory.
+            last_state: The last state of the simulations.
+        """
+
+        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+
+        init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
+        assert init_physical_state_shape == (self.physical_state_dim,), (
+            "The initial physical state needs to be of shape (env.physical_state_dim,) which is "
+            + f"{(self.physical_state_dim,)}, but {init_physical_state_shape} is given"
+        )
+
+        # denormalize actions
+        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(actions, env_properties)
+
+        single_state_struct = tree_structure(init_state)
+
+        # compute states trajectory for given actions
+        states = self._ode_solver_simulate_ahead(
+            init_state, actions, env_properties.static_params, obs_stepsize, action_stepsize
+        )
+
+        # generate observations for all timesteps
+        observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
+
+        # get last state so that the simulation can be continued from the end point
+        states_flatten, _ = tree_flatten(states)
+        last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
+
+        return observations, states, last_state
+
+    def generate_rew_trunc_term_ahead(self, states, actions, env_properties):
+        """Computes reward,truncated and terminated for the data simulated by sim_ahead"""
+
+        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.shape[-1] == self.action_dim
+        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+
+        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(actions, env_properties)
+
+        states_flatten, struct = tree_flatten(states)
+
+        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+
+        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
+            states_without_init_state,
+            jnp.expand_dims(jnp.repeat(actions, int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0])), 1),
+            env_properties,
+        )
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, env_properties)
+        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, None))(
+            states_without_init_state, reward, env_properties
+        )
+        return reward, truncated, terminated
 
     @partial(jax.jit, static_argnums=0)
     def vmap_step(self, state, action):
@@ -190,6 +426,11 @@ class CoreEnvironment(ABC):
             action_stepsize (shape=(batch_size, n_action_steps, action_dim)).
             obs_stepsize: The sampling time for the observations.
             action_stepsize: The time between changes in the input/action.
+
+        Returns:
+            observations: The gathered observations.
+            states: The computed states during the simulated trajectory.
+            last_state: The last state of the simulations.
         """
         assert (
             obs_stepsize <= action_stepsize

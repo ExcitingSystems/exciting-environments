@@ -10,11 +10,11 @@ import chex
 import diffrax
 from dataclasses import fields
 
-from exciting_environments import ClassicCoreEnvironment
-from exciting_environments.utils import Normalization
+from exciting_environments import CoreEnvironment
+from exciting_environments.utils import MinMaxNormalization
 
 
-class CartPole(ClassicCoreEnvironment):
+class CartPole(CoreEnvironment):
     """
     State Variables
         ``['deflection', 'velocity', 'theta', 'omega']``
@@ -84,13 +84,13 @@ class CartPole(ClassicCoreEnvironment):
 
         if not physical_normalizations:
             physical_normalizations = {
-                "deflection": Normalization(min=-2.4, max=2.4),
-                "velocity": Normalization(min=-8, max=8),
-                "theta": Normalization(min=-jnp.pi, max=jnp.pi),
-                "omega": Normalization(min=-8, max=8),
+                "deflection": MinMaxNormalization(min=-2.4, max=2.4),
+                "velocity": MinMaxNormalization(min=-8, max=8),
+                "theta": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
+                "omega": MinMaxNormalization(min=-8, max=8),
             }
         if not action_normalizations:
-            action_normalizations = {"force": Normalization(min=-20, max=20)}
+            action_normalizations = {"force": MinMaxNormalization(min=-20, max=20)}
 
         if not soft_constraints:
             soft_constraints = self.default_soft_constraints
@@ -115,14 +115,12 @@ class CartPole(ClassicCoreEnvironment):
         action_normalizations = self.Action(**action_normalizations)
         static_params = self.StaticParams(**static_params)
 
-        super().__init__(
-            batch_size,
-            physical_normalizations,
-            action_normalizations,
-            static_params,
-            tau=tau,
-            solver=solver,
+        env_properties = self.EnvProperties(
+            physical_normalizations=physical_normalizations,
+            action_normalizations=action_normalizations,
+            static_params=static_params,
         )
+        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
 
     @jdc.pytree_dataclass
     class PhysicalState:
@@ -370,7 +368,6 @@ class CartPole(ClassicCoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def generate_state_from_observation(self, obs, env_properties, key=None):
         """Generates state from observation for one batch."""
-        physical_normalizations = env_properties.physical_normalizations
         phys = self.PhysicalState(
             deflection=obs[0],
             velocity=obs[1],
@@ -392,17 +389,15 @@ class CartPole(ClassicCoreEnvironment):
     def default_soft_constraints(self, state, action_norm, env_properties):
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
+        constrained_states = ["deflection", "velocity", "omega"]
         with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
             for field in fields(phys_soft_const):
                 name = field.name
-                setattr(phys_soft_const, name, jnp.nan)
-            # define soft constraints for physical state
-            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "deflection")) - 1.0)
-            setattr(phys_soft_const, "deflection", soft_constr)
-            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "velocity")) - 1.0)
-            setattr(phys_soft_const, "velocity", soft_constr)
-            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "omega")) - 1.0)
-            setattr(phys_soft_const, "omega", soft_constr)
+                if name in constrained_states:
+                    soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0)
+                    setattr(phys_soft_const, name, soft_constr)
+                else:
+                    setattr(phys_soft_const, name, jnp.nan)
 
         # define soft constraints for action
         act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
@@ -431,19 +426,3 @@ class CartPole(ClassicCoreEnvironment):
                 np.array([name + "_ref" for name in self.control_state]),
             ]
         )
-
-    def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
-    ):
-        """Resets one batch to default, random or passed initial state."""
-        if initial_state is not None:
-            assert tree_structure(self.init_state(env_properties)) == tree_structure(
-                initial_state
-            ), f"initial_state should have the same dataclass structure as init_state(env_properties)"
-            state = initial_state
-        else:
-            state = self.init_state(env_properties, rng)
-
-        obs = self.generate_observation(state, env_properties)
-
-        return obs, state

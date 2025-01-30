@@ -10,11 +10,11 @@ import chex
 import diffrax
 from dataclasses import fields
 
-from exciting_environments import ClassicCoreEnvironment
-from exciting_environments.utils import Normalization
+from exciting_environments import CoreEnvironment
+from exciting_environments.utils import MinMaxNormalization
 
 
-class FluidTank(ClassicCoreEnvironment):
+class FluidTank(CoreEnvironment):
     """Fluid tank based on torricelli's principle.
 
     Based on ex. 7.3.2 on p. 355 of "System Dynamics" from Palm, William III.
@@ -32,10 +32,10 @@ class FluidTank(ClassicCoreEnvironment):
         tau: float = 1e-3,
     ):
         if not physical_normalizations:
-            physical_normalizations = {"height": Normalization(min=0, max=3)}
+            physical_normalizations = {"height": MinMaxNormalization(min=0, max=3)}
 
         if not action_normalizations:
-            action_normalizations = {"inflow": Normalization(min=0, max=0.2)}
+            action_normalizations = {"inflow": MinMaxNormalization(min=0, max=0.2)}
 
         if not soft_constraints:
             soft_constraints = self.default_soft_constraints
@@ -54,14 +54,12 @@ class FluidTank(ClassicCoreEnvironment):
         action_normalizations = self.Action(**action_normalizations)
         static_params = self.StaticParams(**static_params)
 
-        super().__init__(
-            batch_size,
-            physical_normalizations,
-            action_normalizations,
-            static_params,
-            tau=tau,
-            solver=solver,
+        env_properties = self.EnvProperties(
+            physical_normalizations=physical_normalizations,
+            action_normalizations=action_normalizations,
+            static_params=static_params,
         )
+        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
 
     @jdc.pytree_dataclass
     class PhysicalState:
@@ -245,19 +243,3 @@ class FluidTank(ClassicCoreEnvironment):
     @property
     def action_description(self):
         return np.array(["inflow"])
-
-    def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
-    ):
-        """Resets one batch to default, random or passed initial state."""
-        if initial_state is not None:
-            assert tree_structure(self.init_state()) == tree_structure(
-                initial_state
-            ), f"initial_state should have the same dataclass structure as init_state()"
-            state = initial_state
-        else:
-            state = self.init_state(env_properties, rng)
-
-        obs = self.generate_observation(state, env_properties)
-
-        return obs, state
