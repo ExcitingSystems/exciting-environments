@@ -71,17 +71,25 @@ class CoreEnvironment(ABC):
     @abstractmethod
     @jdc.pytree_dataclass
     class Additions:
-        """Additional information that can change from iteration to iteration and that is
-        stored in the state of the system"""
+        """
+        Stores additional environment state variables that may change over time.
+
+        These variables do not directly belong to the physical state but are
+        necessary for computations (e.g., internal buffers).
+        """
 
         pass
 
     @abstractmethod
     @jdc.pytree_dataclass
     class StaticParams:
-        """Static parameters of the environment that stay constant during simulation.
-        This could be the length of a pendulum, the capacitance of a capacitor,
-        the mass of a specific element and similar..
+        """
+        Holds static parameters of the environment that remain constant during simulation.
+
+        Examples:
+            - Length of a pendulum
+            - Capacitance of a capacitor
+            - Mass of an object
         """
 
         pass
@@ -89,8 +97,10 @@ class CoreEnvironment(ABC):
     @abstractmethod
     @jdc.pytree_dataclass
     class Action:
-        """The input/action applied to the environment that is used to influence the
-        dynamics from the outside.
+        """
+        Represents the input/action applied to the environment.
+
+        The action influences the system dynamics through the function `f(x(t), u(t))`.
         """
 
         pass
@@ -98,71 +108,129 @@ class CoreEnvironment(ABC):
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def _ode_solver_step(self, state, action, static_params):
-        """Computes state by simulating one step.
+        """
+        Performs a single step of state evolution using the ODE solver.
 
         Args:
-            state: The state from which to calculate state for the next step.
-            action: The action to apply to the environment.
-            static_params: Parameter of the environment, that do not change over time.
+            state: The current state of the system.
+            action: The action applied at the current step.
+            static_params: Static parameters of the environment.
 
         Returns:
-            state: The computed state after the one step simulation.
+            state: The updated state after one simulation step.
         """
-
         return
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     @abstractmethod
     def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
-        """Computes states by simulating a trajectory with given actions.
+        """
+        Simulates a trajectory by applying a sequence of actions.
 
         Args:
-           init_state: The initial state of the simulation.
-           actions: A set of actions to be applied to the environment, the value changes every
-           action_stepsize (shape=(batch_size, n_action_steps, action_dim)).
-           static_params: The static parameters of the environment.
-           obs_stepsize: The sampling time for the observations.
-           action_stepsize: The time between changes in the input/action.
+            init_state: Initial state at the start of the trajectory.
+            actions: Sequence of actions to be applied (shape=(n_action_steps, action_dim)).
+            static_params: Static environment parameters.
+            obs_stepsize: Sampling interval for observations.
+            action_stepsize: Interval between consecutive action updates.
 
-           Returns:
-            states: The computed states during the simulated trajectory.
+        Returns:
+            states: Simulated trajectory states over time.
         """
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
-        """Returns default or random initial state."""
+        """
+        Generates an initial state for the environment.
+
+        Args:
+            env_properties: Environment properties.
+            rng (optional): Random key for random initialization.
+            vmap_helper (optional): Helper variable for vectorized computation.
+
+        Returns:
+            state: The initial state.
+        """
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_observation(self, state, env_properties):
-        """Returns observation."""
+        """
+        Generates an observation from the given state.
+
+        Args:
+            state: Current state of the environment.
+            env_properties: Environment properties.
+
+        Returns:
+            observation: The computed observation.
+        """
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_state_from_observation(self, obs, env_properties, key=None):
-        """Generates state from observation."""
+        """
+        Generates state from a given observation.
+
+        Args:
+            obs: The given observation.
+            env_properties: Environment properties.
+            key (optional): Random key.
+
+        Returns:
+            state: Computed state.
+        """
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_reward(self, state, action, env_properties):
-        """Returns a reward for given state and action."""
+        """
+        Computes the reward for a given state-action pair.
+
+        Args:
+            state: The current environment state.
+            action: The action applied at the current step.
+            env_properties: Environment properties.
+
+        Returns:
+            reward: Computed reward value.
+        """
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_truncated(self, state, env_properties):
-        """Returns truncated information."""
+        """
+        Computes truncated flag for given state.
+
+        Args:
+            state: The current environment state.
+            env_properties: Environment properties.
+
+        Returns:
+            truncated: Computed truncated flag.
+        """
         return
 
     @partial(jax.jit, static_argnums=0)
     @abstractmethod
     def generate_terminated(self, state, reward, env_properties):
-        """Returns terminated information."""
+        """
+        Computes terminated flag for given state and reward.
+
+        Args:
+            state: The current environment state.
+            reward: The reward for current state-action pair.
+            env_properties: Environment properties.
+
+        Returns:
+            terminated: Computed terminated flag.
+        """
         return
 
     @jdc.pytree_dataclass
@@ -210,6 +278,16 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def normalize_state(self, state, env_properties):
+        """
+        Normalizes the state using predefined normalization parameters.
+
+        Args:
+            state: Current environment state.
+            env_properties: Environment properties containing normalization parameters.
+
+        Returns:
+            norm_state: Normalized state.
+        """
         physical_normalizations = env_properties.physical_normalizations
         with jdc.copy_and_mutate(state, validate=True) as norm_state:
             for field in fields(norm_state.physical_state):
@@ -224,6 +302,16 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def denormalize_state(self, norm_state, env_properties):
+        """
+        Denormalizes a given normalized state.
+
+        Args:
+            norm_state: The normalized state to be converted back.
+            env_properties: Environment properties containing normalization parameters.
+
+        Returns:
+            state: The denormalized state.
+        """
         physical_normalizations = env_properties.physical_normalizations
         with jdc.copy_and_mutate(norm_state, validate=True) as state:
             for field in fields(state.physical_state):
@@ -240,6 +328,16 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def denormalize_action(self, action_norm, env_properties):
+        """
+        Denormalizes a given normalized action.
+
+        Args:
+            action_norm: The normalized action to be denormalized.
+            env_properties: Environment properties containing normalization parameters.
+
+        Returns:
+            action: The denormalized action.
+        """
         normalizations = env_properties.action_normalizations
         action_denorm = jnp.zeros_like(action_norm)
         for i, field in enumerate(fields(normalizations)):
@@ -250,7 +348,19 @@ class CoreEnvironment(ABC):
     def reset(
         self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
     ):
-        """Resets one batch to default, random or passed initial state."""
+        """
+        Resets environment to default, random or passed initial state.
+
+        Args:
+            env_properties: Environment properties.
+            rng (optional): Random key for random initialization.
+            initial_state (optional): The initial_state to which the environment will be reset.
+            vmap_helper (optional): Helper variable for vectorized computation.
+
+        Returns:
+            obs: Observation of initial state.
+            state: The initial state.
+        """
         if initial_state is not None:
             assert tree_structure(self.init_state(env_properties)) == tree_structure(
                 initial_state
@@ -351,8 +461,19 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def generate_rew_trunc_term_ahead(self, states, actions, env_properties):
-        """Computes reward,truncated and terminated for the data simulated by sim_ahead"""
+        """
+        Computes rewards, truncated flags and terminated flags for data generated by `sim_ahead`.
 
+        Args:
+            states: A set of environment states over time, including the initial state.
+            actions: A set of actions applied sequentially (shape=(n_action_steps, action_dim)).
+            env_properties: The environment properties required for calculations.
+
+        Returns:
+            reward: Rewards computed for each step.
+            truncated: Truncated flags at each step.
+            terminated : Terminated flag at each step.
+        """
         assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
         assert (
             actions.shape[-1] == self.action_dim
@@ -381,11 +502,11 @@ class CoreEnvironment(ABC):
 
         Args:
             state: The current state of the simulation from which to calculate the next
-                state (shape=(batch_size, state_dim)).
+                state.
             action: The action to apply to the environment (shape=(batch_size, action_dim)).
 
         Returns:
-            observation: The gathered observations (shape=(batch_size,obs_dim)).
+            observation: The gathered observations.
             state: New state for the next step.
         """
         assert action.shape == (
@@ -459,7 +580,20 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_generate_rew_trunc_term_ahead(self, states, actions):
-        """Computes reward,truncated and terminated for the data of multiple (batch_size) batches simulated by vmap_sim_ahead."""
+        """
+         Computes reward, truncated, and terminated flags for multiple batches
+         simulated by `vmap_sim_ahead`.
+
+
+        Args:
+            states: Environment states over time, including the initial state.
+            actions: Actions applied sequentially (shape=(n_action_steps, action_dim)).
+
+         Returns:
+            reward: Rewards computed for each step for every batch.
+            truncated: Truncated flags at each step for every batch.
+            terminated : Terminated flag at each step for every batch.
+        """
 
         assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
@@ -476,14 +610,32 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_init_state(self, rng: chex.PRNGKey = None):
-        """Returns default or random initial state for all batches."""
+        """
+        Generates an initial state for all batches, either using default values or random initialization.
+
+        Args:
+            rng (optional): Random keys for random initializations.
+
+        Returns:
+            state: The initial state for all batches.
+        """
         return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
             self.env_properties, rng, jnp.ones(self.batch_size)
         )
 
     @partial(jax.jit, static_argnums=0)
     def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
-        """Resets environment (all batches) to default, random or passed initial state."""
+        """
+        Resets environment (all batches) to default, random or passed initial state.
+
+        Args:
+            rng (optional): Random keys for random initializations.
+            initial_state (optional): initial_state to which the environment will be reset.
+
+        Returns:
+            obs: Observation of initial state for all batches.
+            state: The initial state for all batches.
+        """
         if initial_state is not None:
             assert tree_structure(self.vmap_init_state()) == tree_structure(
                 initial_state
@@ -498,7 +650,16 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=0)
     def vmap_generate_state_from_observation(self, obs, key=None):
-        """Generates state from observation for all batches."""
+        """
+        Generates state for each batch from a given observation.
+
+        Args:
+            obs: The given observation of all batches.
+            key (optional): Random keys.
+
+        Returns:
+            state: Computed state for each batch.
+        """
         state = jax.vmap(self.generate_state_from_observation, in_axes=(0, self.in_axes_env_properties, 0))(
             obs, self.env_properties, key
         )
