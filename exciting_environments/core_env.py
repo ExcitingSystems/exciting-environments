@@ -95,6 +95,76 @@ class CoreEnvironment(ABC):
 
         pass
 
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def _ode_solver_step(self, state, action, static_params):
+        """Computes state by simulating one step.
+
+        Args:
+            state: The state from which to calculate state for the next step.
+            action: The action to apply to the environment.
+            static_params: Parameter of the environment, that do not change over time.
+
+        Returns:
+            state: The computed state after the one step simulation.
+        """
+
+        return
+
+    @partial(jax.jit, static_argnums=[0, 4, 5])
+    @abstractmethod
+    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+        """Computes states by simulating a trajectory with given actions.
+
+        Args:
+           init_state: The initial state of the simulation.
+           actions: A set of actions to be applied to the environment, the value changes every
+           action_stepsize (shape=(batch_size, n_action_steps, action_dim)).
+           static_params: The static parameters of the environment.
+           obs_stepsize: The sampling time for the observations.
+           action_stepsize: The time between changes in the input/action.
+
+           Returns:
+            states: The computed states during the simulated trajectory.
+        """
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+        """Returns default or random initial state."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_observation(self, state, env_properties):
+        """Returns observation."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_state_from_observation(self, obs, env_properties, key=None):
+        """Generates state from observation."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_reward(self, state, action, env_properties):
+        """Returns a reward for given state and action."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_truncated(self, state, env_properties):
+        """Returns truncated information."""
+        return
+
+    @partial(jax.jit, static_argnums=0)
+    @abstractmethod
+    def generate_terminated(self, state, reward, env_properties):
+        """Returns terminated information."""
+        return
+
     @jdc.pytree_dataclass
     class State:
         """The state of the environment."""
@@ -176,76 +246,6 @@ class CoreEnvironment(ABC):
             norms = getattr(normalizations, field.name)
             action_denorm = action_denorm.at[i].set(norms.denormalize(action_norm[i]))
         return action_denorm
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def _ode_solver_step(self, state, action, static_params):
-        """Computes state by simulating one step.
-
-        Args:
-            state: The state from which to calculate state for the next step.
-            action: The action to apply to the environment.
-            static_params: Parameter of the environment, that do not change over time.
-
-        Returns:
-            state: The computed state after the one step simulation.
-        """
-
-        return
-
-    @partial(jax.jit, static_argnums=[0, 4, 5])
-    @abstractmethod
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
-        """Computes states by simulating a trajectory with given actions.
-
-        Args:
-           init_state: The initial state of the simulation.
-           actions: A set of actions to be applied to the environment, the value changes every
-           action_stepsize (shape=(batch_size, n_action_steps, action_dim)).
-           static_params: The static parameters of the environment.
-           obs_stepsize: The sampling time for the observations.
-           action_stepsize: The time between changes in the input/action.
-
-           Returns:
-            states: The computed states during the simulated trajectory.
-        """
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
-        """Returns default or random initial state."""
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_observation(self, state, env_properties):
-        """Returns observation."""
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_state_from_observation(self, obs, env_properties, key=None):
-        """Generates state from observation."""
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_reward(self, state, action, env_properties):
-        """Returns a reward for given state and action."""
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_truncated(self, state, env_properties):
-        """Returns truncated information."""
-        return
-
-    @partial(jax.jit, static_argnums=0)
-    @abstractmethod
-    def generate_terminated(self, state, reward, env_properties):
-        """Returns terminated information."""
-        return
 
     def reset(
         self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
@@ -349,6 +349,7 @@ class CoreEnvironment(ABC):
 
         return observations, states, last_state
 
+    @partial(jax.jit, static_argnums=0)
     def generate_rew_trunc_term_ahead(self, states, actions, env_properties):
         """Computes reward,truncated and terminated for the data simulated by sim_ahead"""
 
