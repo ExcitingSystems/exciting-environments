@@ -1,14 +1,17 @@
 import jax
 import jax.numpy as jnp
 
+from typing import Callable
+from dataclasses import fields
 from scipy.io import loadmat
 from pathlib import Path
 import os
 import jax_dataclasses as jdc
+from exciting_environments.utils import MinMaxNormalization
 
 
 @jdc.pytree_dataclass
-class PhysicalConstraints:
+class PhysicalNormalizations:
     u_d_buffer: float
     u_q_buffer: float
     epsilon: float
@@ -19,7 +22,7 @@ class PhysicalConstraints:
 
 
 @jdc.pytree_dataclass
-class ActionConstraints:
+class ActionNormalizations:
     u_d: float
     u_q: float
 
@@ -36,26 +39,39 @@ class StaticParams:
 
 @jdc.pytree_dataclass
 class MotorParams:
-    physical_constraints: PhysicalConstraints
-    action_constraints: ActionConstraints
+    physical_normalizations: PhysicalNormalizations
+    action_normalizations: ActionNormalizations
     static_params: StaticParams
+    default_soft_constraints: Callable
     pmsm_lut: dict
 
 
 # Predefined motor configurations
+
+
+def default_soft_constraints(self, state, action_norm, env_properties):
+    state_norm = self.normalize_state(state, env_properties)
+    physical_state_norm = state_norm.physical_state
+    with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+        for field in fields(phys_soft_const):
+            name = field.name
+            setattr(phys_soft_const, name, jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0))
+    return phys_soft_const, None
+
+
 BRUSA = MotorParams(
-    physical_constraints=PhysicalConstraints(
-        u_d_buffer=2 * 400 / 3,
-        u_q_buffer=2 * 400 / 3,
-        epsilon=jnp.pi,
-        i_d=250,
-        i_q=250,
-        omega_el=3 * 11000 * 2 * jnp.pi / 60,
-        torque=200,
+    physical_normalizations=PhysicalNormalizations(
+        u_d_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
+        i_d=MinMaxNormalization(min=(-250), max=(0)),
+        i_q=MinMaxNormalization(min=(-250), max=(250)),
+        omega_el=MinMaxNormalization(min=0, max=(3 * 11000 * 2 * jnp.pi / 60)),
+        torque=MinMaxNormalization(min=(-200), max=(200)),
     ),
-    action_constraints=ActionConstraints(
-        u_d=2 * 400 / 3,
-        u_q=2 * 400 / 3,
+    action_normalizations=ActionNormalizations(
+        u_d=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
     ),
     static_params=StaticParams(
         p=3,
@@ -65,22 +81,23 @@ BRUSA = MotorParams(
         psi_p=65.65e-3,
         deadtime=1,
     ),
+    default_soft_constraints=default_soft_constraints,
     pmsm_lut=loadmat(Path(__file__).parent / Path("LUT_BRUSA_jax_grad.mat")),
 )
 
 SEW = MotorParams(
-    physical_constraints=PhysicalConstraints(
-        u_d_buffer=2 * 550 / 3,
-        u_q_buffer=2 * 550 / 3,
-        epsilon=jnp.pi,
-        i_d=16,
-        i_q=16,
-        omega_el=4 * 2000 / 60 * 2 * jnp.pi,
-        torque=15,
+    physical_normalizations=PhysicalNormalizations(
+        u_d_buffer=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
+        u_q_buffer=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
+        epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
+        i_d=MinMaxNormalization(min=(-16), max=(0)),
+        i_q=MinMaxNormalization(min=(-16), max=(16)),
+        omega_el=MinMaxNormalization(min=0, max=(4 * 2000 / 60 * 2 * jnp.pi)),
+        torque=MinMaxNormalization(min=(-15), max=(15)),
     ),
-    action_constraints=ActionConstraints(
-        u_d=2 * 550 / 3,
-        u_q=2 * 550 / 3,
+    action_normalizations=ActionNormalizations(
+        u_d=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
+        u_q=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
     ),
     static_params=StaticParams(
         p=4,
@@ -90,31 +107,33 @@ SEW = MotorParams(
         psi_p=122e-3,
         deadtime=1,
     ),
+    default_soft_constraints=default_soft_constraints,
     pmsm_lut=loadmat(Path(__file__).parent / Path("LUT_SEW_jax_grad.mat")),
 )
 
 DEFAULT = MotorParams(
-    physical_constraints=PhysicalConstraints(
-        u_d_buffer=2 * 400 / 3,
-        u_q_buffer=2 * 400 / 3,
-        epsilon=jnp.pi,
-        i_d=250,
-        i_q=250,
-        omega_el=3 * 1000 / 60 * 2 * jnp.pi,
-        torque=200,
+    physical_normalizations=PhysicalNormalizations(
+        u_d_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
+        i_d=MinMaxNormalization(min=(-250), max=(0)),
+        i_q=MinMaxNormalization(min=(-250), max=(250)),
+        omega_el=MinMaxNormalization(min=0, max=(3 * 11000 * 2 * jnp.pi / 60)),
+        torque=MinMaxNormalization(min=(-200), max=(200)),
     ),
-    action_constraints=ActionConstraints(
-        u_d=2 * 400 / 3,
-        u_q=2 * 400 / 3,
+    action_normalizations=ActionNormalizations(
+        u_d=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
+        u_q=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
     ),
     static_params=StaticParams(
-        p=4,
+        p=3,
         r_s=15e-3,
         l_d=0.37e-3,
         l_q=1.2e-3,
         psi_p=65.6e-3,
         deadtime=1,
     ),
+    default_soft_constraints=default_soft_constraints,
     pmsm_lut=None,
 )
 

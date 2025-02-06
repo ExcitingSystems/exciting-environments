@@ -8,11 +8,13 @@ from jax.tree_util import tree_flatten, tree_structure
 import jax_dataclasses as jdc
 import diffrax
 import chex
+from dataclasses import fields
+from exciting_environments.utils import MinMaxNormalization
 
-from exciting_environments import ClassicCoreEnvironment
+from exciting_environments import CoreEnvironment
 
 
-class Pendulum(ClassicCoreEnvironment):
+class Pendulum(CoreEnvironment):
     """
     State Variables:
         ``['theta', 'omega']``
@@ -31,7 +33,7 @@ class Pendulum(ClassicCoreEnvironment):
         >>> from exciting_environments import GymWrapper
         >>>
         >>> # Create the environment
-        >>> pend=excenvs.Pendulum(batch_size=4, action_constraints={"torque": 10}, tau=2e-2)
+        >>> pend=excenvs.Pendulum(batch_size=4)
         >>>
         >>> # Use GymWrapper for Simulation (optional)
         >>> gym_pend=GymWrapper(env=pend)
@@ -40,7 +42,7 @@ class Pendulum(ClassicCoreEnvironment):
         >>> gym_pend.reset()
         >>>
         >>> # Perform step
-        >>> obs, reward, terminated, truncated = gym_pend.step(action=jnp.ones(4).reshape(-1,1))
+        >>> obs, reward, terminated,  truncated = gym_pend.step(action=jnp.ones(4).reshape(-1,1))
         >>>
 
     """
@@ -48,8 +50,9 @@ class Pendulum(ClassicCoreEnvironment):
     def __init__(
         self,
         batch_size: int = 8,
-        physical_constraints: dict = None,
-        action_constraints: dict = None,
+        physical_normalizations: dict = None,
+        action_normalizations: dict = None,
+        soft_constraints: Callable = None,
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
@@ -58,11 +61,12 @@ class Pendulum(ClassicCoreEnvironment):
         """
         Args:
             batch_size (int): Number of parallel environment simulations. Default: 8
-            physical_constraints (dict): Constraints of the physical state of the environment.
-                theta (float): Rotation angle. Default: jnp.pi
-                omega (float): Angular velocity. Default: 10
-            action_constraints (dict): Constraints of the input/action.
-                torque (float): Maximum torque that can be applied to the system as an action. Default: 20
+            physical_normalizations (dict): Min and max values of the physical state of the environment for normalization.
+                theta (float): Rotation angle. Default: min=-jnp.pi, max=jnp.pi
+                omega (float): Angular velocity. Default: min=-10, max=10
+            action_normalizations (dict): Min and max values of the input/action for normalization.
+                torque (float): Maximum torque that can be applied to the system as an action. Default: min=-20, max=20
+            soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params (dict): Parameters of environment which do not change during simulation.
                 l (float): Length of the pendulum. Default: 1
                 m (float): Mass of the pendulum tip. Default: 1
@@ -71,15 +75,21 @@ class Pendulum(ClassicCoreEnvironment):
             solver (diffrax.solver): Solver used to compute state for next step.
             tau (float): Duration of one control step in seconds. Default: 1e-4.
 
-        Note: Attributes of physical_constraints, action_constraints and static_params can also be
+        Note: Attributes of physical_normalizations, action_normalizations and static_params can also be
             passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
 
-        if not physical_constraints:
-            physical_constraints = {"theta": jnp.pi, "omega": 10}
+        if not physical_normalizations:
+            physical_normalizations = {
+                "theta": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
+                "omega": MinMaxNormalization(min=-10, max=10),
+            }
 
-        if not action_constraints:
-            action_constraints = {"torque": 20}
+        if not action_normalizations:
+            action_normalizations = {"torque": MinMaxNormalization(min=-20, max=20)}
+
+        if not soft_constraints:
+            soft_constraints = self.default_soft_constraints
 
         if not static_params:
             static_params = {"g": 9.81, "l": 2, "m": 1}
@@ -88,19 +98,18 @@ class Pendulum(ClassicCoreEnvironment):
             control_state = []
 
         self.control_state = control_state
+        self.soft_constraints = soft_constraints
 
-        physical_constraints = self.PhysicalState(**physical_constraints)
-        action_constraints = self.Action(**action_constraints)
+        physical_normalizations = self.PhysicalState(**physical_normalizations)
+        action_normalizations = self.Action(**action_normalizations)
         static_params = self.StaticParams(**static_params)
 
-        super().__init__(
-            batch_size,
-            physical_constraints,
-            action_constraints,
-            static_params,
-            tau=tau,
-            solver=solver,
+        env_properties = self.EnvProperties(
+            physical_normalizations=physical_normalizations,
+            action_normalizations=action_normalizations,
+            static_params=static_params,
         )
+        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
 
     @jdc.pytree_dataclass
     class PhysicalState:
@@ -225,61 +234,52 @@ class Pendulum(ClassicCoreEnvironment):
         """Returns default or random initial state for one batch."""
         if rng is None:
             phys = self.PhysicalState(
-                theta=jnp.pi,
+                theta=1.0,
                 omega=0.0,
             )
             subkey = jnp.nan
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(2,))
             phys = self.PhysicalState(
-                theta=state_norm[0] * env_properties.physical_constraints.theta,
-                omega=state_norm[1] * env_properties.physical_constraints.omega,
+                theta=state_norm[0],
+                omega=state_norm[1],
             )
             key, subkey = jax.random.split(rng)
         additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
         ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
-
-    @partial(jax.jit, static_argnums=0)
-    def vmap_init_state(self, rng: chex.PRNGKey = None):
-        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
-            self.env_properties, rng, jnp.ones(self.batch_size)
-        )
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        return self.denormalize_state(norm_state, env_properties)
 
     @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
         reward = 0
+        norm_state = self.normalize_state(state, env_properties)
         for name in self.control_state:
             if name == "theta":
                 theta = getattr(state.physical_state, name)
                 theta_ref = getattr(state.reference, name)
                 reward += -((jnp.sin(theta) - jnp.sin(theta_ref)) ** 2 + (jnp.cos(theta) - jnp.cos(theta_ref)) ** 2)
             else:
-                reward += -(
-                    (
-                        (getattr(state.physical_state, name) - getattr(state.reference, name))
-                        / (getattr(env_properties.physical_constraints, name)).astype(float)
-                    )
-                    ** 2
-                )
+                reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
     def generate_observation(self, state, env_properties):
         """Returns observation for one batch."""
-        physical_constraints = env_properties.physical_constraints
+        norm_state = self.normalize_state(state, env_properties)
+        norm_state_phys = norm_state.physical_state
         obs = jnp.hstack(
             (
-                state.physical_state.theta / physical_constraints.theta,
-                state.physical_state.omega / physical_constraints.omega,
+                norm_state_phys.theta,
+                norm_state_phys.omega,
             )
         )
         for name in self.control_state:
             obs = jnp.hstack(
                 (
                     obs,
-                    (getattr(state.reference, name) / (getattr(physical_constraints, name)).astype(float)),
+                    getattr(norm_state.reference, name),
                 )
             )
         return obs
@@ -287,10 +287,9 @@ class Pendulum(ClassicCoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def generate_state_from_observation(self, obs, env_properties, key=None):
         """Generates state from observation for one batch."""
-        physical_constraints = env_properties.physical_constraints
         phys = self.PhysicalState(
-            theta=obs[0] * (physical_constraints.theta).astype(float),
-            omega=obs[1] * (physical_constraints.omega).astype(float),
+            theta=obs[0],
+            omega=obs[1],
         )
         if key is not None:
             subkey = key
@@ -300,8 +299,24 @@ class Pendulum(ClassicCoreEnvironment):
         ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[2 + pos] * (getattr(physical_constraints, name)).astype(float))
-        return self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+                setattr(new_ref, name, obs[2 + pos])
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        return self.denormalize_state(norm_state, env_properties)
+
+    def default_soft_constraints(self, state, action_norm, env_properties):
+        state_norm = self.normalize_state(state, env_properties)
+        physical_state_norm = state_norm.physical_state
+        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+            for field in fields(phys_soft_const):
+                name = field.name
+                setattr(phys_soft_const, name, jnp.nan)
+            # define soft constraints for physical state
+            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "omega")) - 1.0)
+            setattr(phys_soft_const, "omega", soft_constr)
+
+        # define soft constraints for action
+        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+        return phys_soft_const, act_soft_constr
 
     @partial(jax.jit, static_argnums=0)
     def generate_truncated(self, state, env_properties):
@@ -321,19 +336,3 @@ class Pendulum(ClassicCoreEnvironment):
     @property
     def action_description(self):
         return np.array(["torque"])
-
-    def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
-    ):
-        """Resets one batch to default, random or passed initial state."""
-        if initial_state is not None:
-            assert tree_structure(self.init_state(env_properties)) == tree_structure(
-                initial_state
-            ), f"initial_state should have the same dataclass structure as init_state()"
-            state = initial_state
-        else:
-            state = self.init_state(env_properties, rng)
-
-        obs = self.generate_observation(state, env_properties)
-
-        return obs, state
