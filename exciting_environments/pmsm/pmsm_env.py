@@ -295,15 +295,6 @@ class PMSM(CoreEnvironment):
         u_d: jax.Array
         u_q: jax.Array
 
-    # @jdc.pytree_dataclass
-    # class State:
-    #     """Dataclass used for simulation which contains environment specific dataclasses."""
-
-    #     physical_state: jdc.pytree_dataclass
-    #     PRNGKey: jax.Array
-    #     additions: jdc.pytree_dataclass
-    #     reference: jdc.pytree_dataclass
-
     @jdc.pytree_dataclass
     class EnvProperties:
         """Dataclass used for simulation which contains environment specific dataclasses."""

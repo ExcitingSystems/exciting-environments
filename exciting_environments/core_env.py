@@ -63,7 +63,7 @@ class CoreEnvironment(ABC):
         w.r.t. time is described in the underlying ODE.
 
         The values stored in this dataclass are expected to be actual physical values
-        that are unnormalized.
+        that are unnormalized and given in SI units.
         """
 
         pass
