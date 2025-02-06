@@ -1,4 +1,5 @@
 from exciting_environments import CartPole, MassSpringDamper, Pendulum, FluidTank, PMSM
+from exciting_environments import CartPole, MassSpringDamper, Pendulum, FluidTank, PMSM
 
 
 def make(env_id: str, **env_kwargs):
