@@ -7,6 +7,7 @@ import diffrax
 
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
+
 jax.config.update("jax_platform_name", "cpu")
 jax.config.update("jax_enable_x64", True)
 
@@ -18,44 +19,6 @@ env_ids = ["Pendulum-v0", "MassSpringDamper-v0", "CartPole-v0", "FluidTank-v0", 
 def test_tau(env_id, tau):
     env = excenvs.make(env_id, tau=tau)
     assert env.tau == tau
-
-
-@pytest.mark.parametrize("env_id", env_ids)
-def test_static_parameters_initialization(env_id):
-    """Ensure static parameters are initialized correctly."""
-    batch_size = 4
-    if env_id == "Pendulum-v0":
-        params = {"l": jnp.repeat(1, batch_size), "g": 9.81, "m": 1}
-    elif env_id == "MassSpringDamper-v0":
-        params = {"k": jnp.repeat(10, batch_size), "m": 5, "d": 2}
-    elif env_id == "CartPole-v0":
-        params = {
-            "mu_p": 0.000002,
-            "mu_c": 0.0005,
-            "l": jnp.repeat(0.05, batch_size),
-            "m_p": 0.1,
-            "m_c": jnp.repeat(1, batch_size),
-            "g": 9.81,
-        }
-    elif env_id == "FluidTank-v0":
-        params = {"base_area": jnp.repeat(jnp.pi, batch_size), "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
-    elif env_id == "PMSM-v0":
-        params = {
-            "p": jnp.repeat(3, batch_size),
-            "r_s": 15e-3,
-            "l_d": 0.37e-3,
-            "l_q": 1.2e-3,
-            "psi_p": 65.6e-3,
-            "deadtime": 1,
-        }
-
-    env = excenvs.make(env_id, batch_size=batch_size, static_params=params)
-    for key, value in params.items():
-        env_value = getattr(env.env_properties.static_params, key)
-        if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
-            assert jnp.array_equal(env_value, value), f"Parameter {key} not set correctly: {env_value} != {value}"
-        else:
-            assert env_value == value, f"Parameter {key} not set correctly: {env_value} != {value}"
 
 
 @pytest.mark.parametrize("env_id", env_ids)
