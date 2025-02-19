@@ -135,20 +135,18 @@ def test_step_results():
     file_path = os.path.join(data_dir, "sim_properties.pkl")
     with open(file_path, "rb") as f:
         loaded_data = pickle.load(f)
-    # with open(str(Path(__file__).parent) + "/data/sim_properties.pkl", "rb") as f:  # "rb" for read binary
-    #     loaded_data = pickle.load(f)
     loaded_params = loaded_data["params"]
     loaded_action_normalizations = loaded_data["action_normalizations"]
     loaded_physical_normalizations = loaded_data["physical_normalizations"]
     loaded_tau = loaded_data["tau"]
-    # loaded_solver = loaded_data["solver"]
     env = excenvs.make(
         "Pendulum-v0",
+        solver=diffrax.Euler(),
         tau=loaded_tau,
         static_params=loaded_params,
         physical_normalizations=loaded_physical_normalizations,
         action_normalizations=loaded_action_normalizations,
-    )  # solver=loaded_solver(),
+    )
     observations_data = jnp.load(str(Path(__file__).parent) + "/data/observations.npy")
     actions_data = jnp.load(str(Path(__file__).parent) + "/data/actions.npy")
     state = env.generate_state_from_observation(observations_data[0], env.env_properties)

@@ -155,14 +155,14 @@ def test_step_results():
     loaded_action_normalizations = loaded_data["action_normalizations"]
     loaded_physical_normalizations = loaded_data["physical_normalizations"]
     loaded_tau = loaded_data["tau"]
-    # loaded_solver = loaded_data["solver"]
     env = excenvs.make(
         "PMSM-v0",
+        solver=diffrax.Euler(),
         tau=loaded_tau,
         static_params=loaded_params,
         physical_normalizations=loaded_physical_normalizations,
         action_normalizations=loaded_action_normalizations,
-    )  # solver=loaded_solver,
+    )
     observations_data = jnp.load(str(Path(__file__).parent) + "\\data\\observations.npy")
     actions_data = jnp.load(str(Path(__file__).parent) + "\\data\\actions.npy")
     state = env.generate_state_from_observation(observations_data[0], env.env_properties)

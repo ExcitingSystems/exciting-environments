@@ -155,11 +155,10 @@ def test_step_results():
     loaded_action_normalizations = loaded_data["action_normalizations"]
     loaded_physical_normalizations = loaded_data["physical_normalizations"]
     loaded_tau = loaded_data["tau"]
-    loaded_solver = loaded_data["solver"]
     env = excenvs.make(
         "CartPole-v0",
         tau=loaded_tau,
-        solver=loaded_solver,
+        solver=diffrax.Euler(),
         static_params=loaded_params,
         physical_normalizations=loaded_physical_normalizations,
         action_normalizations=loaded_action_normalizations,
