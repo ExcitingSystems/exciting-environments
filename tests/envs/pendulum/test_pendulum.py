@@ -137,7 +137,7 @@ def test_step_results():
     env = excenvs.make(
         "Pendulum-v0",
         tau=loaded_tau,
-        solver=loaded_solver,
+        solver=loaded_solver(),
         static_params=loaded_params,
         physical_normalizations=loaded_physical_normalizations,
         action_normalizations=loaded_action_normalizations,
