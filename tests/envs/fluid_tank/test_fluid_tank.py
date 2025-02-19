@@ -146,7 +146,7 @@ def test_step_results():
     observations2 = []
     observations2.append(observations_data[0])
     for i in range(10000):
-        action = actions_data[i][None]
+        action = actions_data[i]
         obs, state = env.step(state, action, env.env_properties)
         observations2.append(obs)
     observations2 = jnp.array(observations2)
