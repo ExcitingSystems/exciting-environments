@@ -45,7 +45,7 @@ class GymWrapper(ABC):
                 "hold_steps_min": 10,
                 "hold_steps_max": 1000,
             }
-        self.reference_hold_steps = jnp.zeros(self.env.batch_size)
+        self.reference_hold_steps = jnp.zeros((self.env.batch_size, 1))
 
         self.state = tree_flatten(init_state)[0]
         self.state_tree_struct = tree_structure(init_state)

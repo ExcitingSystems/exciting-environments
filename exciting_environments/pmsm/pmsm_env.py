@@ -875,7 +875,7 @@ class PMSM(CoreEnvironment):
         i_d_norm = physical_state_norm.i_d
         i_q_norm = physical_state_norm.i_q
         i_s = jnp.sqrt(i_d_norm**2 + i_q_norm**2)
-        return i_s > 1
+        return i_s[None] > 1
 
     def generate_terminated(self, system_state, reward, env_properties):
         """Returns terminated information for one batch."""
