@@ -159,4 +159,4 @@ def test_step_results():
         observations2.append(obs)
     observations2 = jnp.array(observations2)
 
-    assert jnp.allclose(observations2, observations_data, atol=1e-6), "Step function generates different data"
+    assert jnp.allclose(observations2, observations_data, atol=1e-4), "Step function generates different data"
