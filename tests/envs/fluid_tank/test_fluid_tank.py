@@ -7,6 +7,7 @@ import diffrax
 from exciting_environments.utils import MinMaxNormalization
 from pathlib import Path
 import pickle
+import os
 
 
 def test_default_initialization():
@@ -122,7 +123,9 @@ def test_custom_initialization():
 
 
 def test_step_results():
-    with open(str(Path(__file__).parent) + "\\data\\sim_properties.pkl", "rb") as f:  # "rb" for read binary
+    data_dir = os.path.join(Path(__file__).parent, "data")  # Use os.path.join
+    file_path = os.path.join(data_dir, "sim_properties.pkl")
+    with open(file_path, "rb") as f:
         loaded_data = pickle.load(f)
     loaded_params = loaded_data["params"]
     loaded_action_normalizations = loaded_data["action_normalizations"]
