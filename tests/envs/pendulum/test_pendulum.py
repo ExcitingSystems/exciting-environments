@@ -9,6 +9,8 @@ from pathlib import Path
 import pickle
 import os
 
+jax.config.update("jax_enable_x64", True)
+
 
 def test_default_initialization():
     """Ensure default static parameters and normalizations are not changed by accident."""
