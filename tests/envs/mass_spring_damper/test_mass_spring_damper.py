@@ -6,15 +6,19 @@ import numpy as np
 import diffrax
 from exciting_environments.utils import MinMaxNormalization
 from pathlib import Path
+import pickle
 
 
 def test_default_initialization():
     """Ensure default static parameters and normalizations are not changed by accident."""
     batch_size = 4
-    params = {"base_area": jnp.pi, "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
-    action_normalizations = {"inflow": MinMaxNormalization(min=0, max=0.2)}
-    physical_normalizations = {"height": MinMaxNormalization(min=0, max=3)}
-    env = excenvs.make("FluidTank-v0", batch_size=batch_size)
+    params = {"k": 100, "d": 1, "m": 1}
+    action_normalizations = {"force": MinMaxNormalization(min=-20, max=20)}
+    physical_normalizations = {
+        "deflection": MinMaxNormalization(min=-10, max=10),
+        "velocity": MinMaxNormalization(min=-10, max=10),
+    }
+    env = excenvs.make("MassSpringDamper-v0", batch_size=batch_size)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -64,11 +68,14 @@ def test_default_initialization():
 def test_custom_initialization():
     """Ensure static parameters and normalizations are initialized correctly."""
     batch_size = 4
-    params = {"base_area": jnp.repeat(jnp.pi, batch_size), "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
-    action_normalizations = {"inflow": MinMaxNormalization(min=jnp.repeat(0.02, batch_size), max=0.3)}
-    physical_normalizations = {"height": MinMaxNormalization(min=1, max=5)}
+    physical_normalizations = {
+        "deflection": MinMaxNormalization(min=jnp.repeat(0, batch_size), max=130),
+        "velocity": MinMaxNormalization(min=-105, max=10),
+    }
+    action_normalizations = {"force": MinMaxNormalization(min=-10, max=20)}
+    params = {"k": jnp.repeat(10, batch_size), "m": 5, "d": 2}
     env = excenvs.make(
-        "FluidTank-v0",
+        "MassSpringDamper-v0",
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -121,7 +128,21 @@ def test_custom_initialization():
 
 
 def test_step_results():
-    env = excenvs.make("FluidTank-v0", tau=1e-4, solver=diffrax.Euler())
+    with open(str(Path(__file__).parent) + "\\data\\sim_properties.pkl", "rb") as f:  # "rb" for read binary
+        loaded_data = pickle.load(f)
+    loaded_params = loaded_data["params"]
+    loaded_action_normalizations = loaded_data["action_normalizations"]
+    loaded_physical_normalizations = loaded_data["physical_normalizations"]
+    loaded_tau = loaded_data["tau"]
+    loaded_solver = loaded_data["solver"]
+    env = excenvs.make(
+        "MassSpringDamper-v0",
+        tau=loaded_tau,
+        solver=loaded_solver,
+        static_params=loaded_params,
+        physical_normalizations=loaded_physical_normalizations,
+        action_normalizations=loaded_action_normalizations,
+    )
     observations_data = jnp.load(str(Path(__file__).parent) + "\\data\\observations.npy")
     actions_data = jnp.load(str(Path(__file__).parent) + "\\data\\actions.npy")
     state = env.generate_state_from_observation(observations_data[0], env.env_properties)
@@ -132,4 +153,5 @@ def test_step_results():
         obs, state = env.step(state, action, env.env_properties)
         observations2.append(obs)
     observations2 = jnp.array(observations2)
-    assert jnp.array_equal(observations2, observations_data), "Step function generates different data"
+    difference = jnp.mean(jnp.abs(observations2 - observations_data) ** 2)
+    assert difference == 0, "Step function generates different data"

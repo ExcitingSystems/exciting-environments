@@ -6,27 +6,16 @@ import numpy as np
 import diffrax
 from exciting_environments.utils import MinMaxNormalization
 from pathlib import Path
+import pickle
 
 
 def test_default_initialization():
     """Ensure default static parameters and normalizations are not changed by accident."""
     batch_size = 4
-    params = {
-        "mu_p": 0.000002,
-        "mu_c": 0.0005,
-        "l": 0.5,
-        "m_p": 0.1,
-        "m_c": 1,
-        "g": 9.81,
-    }
-    action_normalizations = {"force": MinMaxNormalization(min=-20, max=20)}
-    physical_normalizations = {
-        "deflection": MinMaxNormalization(min=-2.4, max=2.4),
-        "velocity": MinMaxNormalization(min=-8, max=8),
-        "theta": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
-        "omega": MinMaxNormalization(min=-8, max=8),
-    }
-    env = excenvs.make("CartPole-v0", batch_size=batch_size)
+    params = {"base_area": jnp.pi, "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
+    action_normalizations = {"inflow": MinMaxNormalization(min=0, max=0.2)}
+    physical_normalizations = {"height": MinMaxNormalization(min=0, max=3)}
+    env = excenvs.make("FluidTank-v0", batch_size=batch_size)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -73,26 +62,14 @@ def test_default_initialization():
             ), f"Default action_normalization {key} is different: {env_norm.max} != {norm.max}"
 
 
-def test_static_parameters_initialization():
+def test_custom_initialization():
     """Ensure static parameters and normalizations are initialized correctly."""
     batch_size = 4
-    physical_normalizations = {
-        "deflection": MinMaxNormalization(min=-2.5, max=2.9),
-        "velocity": MinMaxNormalization(min=-1, max=2),
-        "theta": MinMaxNormalization(min=-jnp.pi / 2, max=jnp.pi / 3),
-        "omega": MinMaxNormalization(min=-3, max=76),
-    }
-    action_normalizations = {"force": MinMaxNormalization(min=-21, max=10)}
-    params = {
-        "mu_p": 0.000002,
-        "mu_c": 0.0005,
-        "l": jnp.repeat(0.05, batch_size),
-        "m_p": 0.1,
-        "m_c": jnp.repeat(1, batch_size),
-        "g": 35.81,
-    }
+    params = {"base_area": jnp.repeat(jnp.pi, batch_size), "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
+    action_normalizations = {"inflow": MinMaxNormalization(min=jnp.repeat(0.02, batch_size), max=0.3)}
+    physical_normalizations = {"height": MinMaxNormalization(min=1, max=5)}
     env = excenvs.make(
-        "CartPole-v0",
+        "FluidTank-v0",
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -145,7 +122,22 @@ def test_static_parameters_initialization():
 
 
 def test_step_results():
-    env = excenvs.make("CartPole-v0", tau=1e-4, solver=diffrax.Euler())
+    with open(str(Path(__file__).parent) + "\\data\\sim_properties.pkl", "rb") as f:  # "rb" for read binary
+        loaded_data = pickle.load(f)
+    loaded_params = loaded_data["params"]
+    loaded_action_normalizations = loaded_data["action_normalizations"]
+    loaded_physical_normalizations = loaded_data["physical_normalizations"]
+    loaded_tau = loaded_data["tau"]
+    loaded_solver = loaded_data["solver"]
+    env = excenvs.make(
+        "FluidTank-v0",
+        tau=loaded_tau,
+        solver=loaded_solver,
+        static_params=loaded_params,
+        physical_normalizations=loaded_physical_normalizations,
+        action_normalizations=loaded_action_normalizations,
+    )
+
     observations_data = jnp.load(str(Path(__file__).parent) + "\\data\\observations.npy")
     actions_data = jnp.load(str(Path(__file__).parent) + "\\data\\actions.npy")
     state = env.generate_state_from_observation(observations_data[0], env.env_properties)
