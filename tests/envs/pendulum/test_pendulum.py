@@ -127,7 +127,7 @@ def test_custom_initialization():
 
 
 def test_step_results():
-    with open(str(Path(__file__).parent) + "\\data\\sim_properties.pkl", "rb") as f:  # "rb" for read binary
+    with open(str(Path(__file__).parent) + "/data/sim_properties.pkl", "rb") as f:  # "rb" for read binary
         loaded_data = pickle.load(f)
     loaded_params = loaded_data["params"]
     loaded_action_normalizations = loaded_data["action_normalizations"]
@@ -142,8 +142,8 @@ def test_step_results():
         physical_normalizations=loaded_physical_normalizations,
         action_normalizations=loaded_action_normalizations,
     )
-    observations_data = jnp.load(str(Path(__file__).parent) + "\\data\\observations.npy")
-    actions_data = jnp.load(str(Path(__file__).parent) + "\\data\\actions.npy")
+    observations_data = jnp.load(str(Path(__file__).parent) + "/data/observations.npy")
+    actions_data = jnp.load(str(Path(__file__).parent) + "/data/actions.npy")
     state = env.generate_state_from_observation(observations_data[0], env.env_properties)
     observations2 = []
     observations2.append(observations_data[0])
