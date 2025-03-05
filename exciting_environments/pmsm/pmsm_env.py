@@ -11,6 +11,7 @@ import diffrax
 from scipy.interpolate import griddata
 from dataclasses import fields
 
+from copy import deepcopy
 
 from exciting_environments import CoreEnvironment
 from exciting_environments.pmsm import default_params
@@ -160,7 +161,7 @@ class PMSM(CoreEnvironment):
         self._solver = solver
 
         if LUT_motor_name is not None:
-            motor_params = default_params(LUT_motor_name)
+            motor_params = deepcopy(default_params(LUT_motor_name))
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
@@ -196,7 +197,7 @@ class PMSM(CoreEnvironment):
                 "Psi_q",
             ]
 
-            motor_params = default_params(LUT_motor_name)
+            motor_params = deepcopy(default_params(LUT_motor_name))
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
