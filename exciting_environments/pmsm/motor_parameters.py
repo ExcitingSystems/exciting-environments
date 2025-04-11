@@ -35,6 +35,7 @@ class StaticParams:
     l_d: float  # D-axis inductance
     l_q: float  # Q-axis inductance
     psi_p: float  # Permanent magnet flux linkage
+    u_dc: float  # DC voltage
     deadtime: int  # Deadtime compensation
 
 
@@ -80,6 +81,7 @@ BRUSA = MotorParams(
         l_d=0.37e-3,
         l_q=1.2e-3,
         psi_p=65.65e-3,
+        u_dc=400,
         deadtime=1,
     ),
     default_soft_constraints=default_soft_constraints,
@@ -106,6 +108,7 @@ SEW = MotorParams(
         l_d=1.44e-3,
         l_q=1.44e-3,
         psi_p=122e-3,
+        u_dc=500,
         deadtime=1,
     ),
     default_soft_constraints=default_soft_constraints,
@@ -132,6 +135,7 @@ DEFAULT = MotorParams(
         l_d=0.37e-3,
         l_q=1.2e-3,
         psi_p=65.6e-3,
+        u_dc=400,
         deadtime=1,
     ),
     default_soft_constraints=default_soft_constraints,

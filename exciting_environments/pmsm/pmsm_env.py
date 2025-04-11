@@ -89,7 +89,7 @@ def step_eps(eps, omega_el, tau, tau_scale=1.0):
 
 def apply_hex_constraint(u_albet):
     """Clip voltages in alpha/beta coordinates into the voltage hexagon."""
-    u_albet_c = u_albet[0] + 1j * u_albet[1]
+    u_albet_c = (u_albet[0] + 1j * u_albet[1])
     idx = (jnp.sin(jnp.angle(u_albet_c)[..., jnp.newaxis] - 2 / 3 * jnp.pi * jnp.arange(3)) >= 0).astype(int)
     rot_vec = ROTATION_MAP[idx[0], idx[1], idx[2]]
     # rotate sectors upwards
@@ -270,6 +270,7 @@ class PMSM(CoreEnvironment):
         l_d: jax.Array
         l_q: jax.Array
         psi_p: jax.Array
+        u_dc: jax.Array
         deadtime: jax.Array
 
     @jdc.pytree_dataclass
@@ -538,10 +539,12 @@ class PMSM(CoreEnvironment):
             state_next.physical_state = system_state_next
         return state_next
 
-    def constraint_denormalization(self, u_dq, system_state, env_properties):
+    def constraint_denormalization(self, u_dq_norm, system_state, env_properties):
         """Denormalizes the u_dq and clips it with respect to the hexagon."""
+        u_dq = self.denormalize_action(u_dq_norm, env_properties)
+        u_dq_norm= u_dq* (1/(env_properties.static_params.u_dc/2)) # normalize to u_dc/2 for hexagon constraints
         u_albet_norm = dq2albet(
-            u_dq,
+            u_dq_norm,
             step_eps(
                 system_state.physical_state.epsilon,
                 self.env_properties.static_params.deadtime + 0.5,
@@ -551,7 +554,7 @@ class PMSM(CoreEnvironment):
         )
         u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
         u_dq_norm_clip = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon)
-        u_dq = self.denormalize_action(u_dq_norm_clip[0], env_properties)
+        u_dq = u_dq_norm_clip[0]*(env_properties.static_params.u_dc/2) # denormalize from u_dc/2 
         return u_dq
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
