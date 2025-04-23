@@ -107,7 +107,7 @@ SEW = MotorParams(
         l_d=1.44e-3,
         l_q=1.44e-3,
         psi_p=122e-3,
-        u_dc=500,
+        u_dc=550,
         deadtime=1,
     ),
     default_soft_constraints=default_soft_constraints,
