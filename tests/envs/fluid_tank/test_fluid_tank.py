@@ -137,8 +137,8 @@ def test_step_results():
         action_normalizations=loaded_action_normalizations,
     )
 
-    stored_observations = jnp.load(str(Path(__file__).parent) + "data/observations.npy")
-    actions_data = jnp.load(str(Path(__file__).parent) + "data/actions.npy")
+    stored_observations = jnp.load(str(Path(__file__).parent) + "/data/observations.npy")
+    actions_data = jnp.load(str(Path(__file__).parent) + "/data/actions.npy")
     state = env.generate_state_from_observation(stored_observations[0], env.env_properties)
     generated_observations = []
     generated_observations.append(stored_observations[0])
