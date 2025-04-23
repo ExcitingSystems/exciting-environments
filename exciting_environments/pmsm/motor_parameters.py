@@ -8,6 +8,7 @@ from pathlib import Path
 import os
 import jax_dataclasses as jdc
 from exciting_environments.utils import MinMaxNormalization
+from copy import deepcopy
 
 
 @jdc.pytree_dataclass
@@ -149,10 +150,10 @@ def default_params(name):
         MotorConfig: Configuration containing physical constraints, action constraints, static parameters, and LUT data.
     """
     if name is None:
-        return DEFAULT
+        return deepcopy(DEFAULT)
     elif name == "BRUSA":
-        return BRUSA
+        return deepcopy(BRUSA)
     elif name == "SEW":
-        return SEW
+        return deepcopy(SEW)
     else:
         raise ValueError(f"Motor name {name} is not known.")
