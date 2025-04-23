@@ -12,7 +12,7 @@ jax.config.update("jax_platform_name", "cpu")
 jax.config.update("jax_enable_x64", True)
 
 env_ids = ["Pendulum-v0", "MassSpringDamper-v0", "CartPole-v0", "FluidTank-v0", "PMSM-v0"]
-
+fully_observable_env_ids = env_ids
 
 @pytest.mark.parametrize("env_id", env_ids)
 @pytest.mark.parametrize("tau", [1e-4, 1e-5])
@@ -25,7 +25,8 @@ def test_tau(env_id, tau):
 def test_reset(env_id):
     batch_size = 4
     env = excenvs.make(env_id, batch_size=batch_size)
-    keys = jax.vmap(jax.random.PRNGKey)(np.random.randint(0, 2**31, size=(batch_size,)))
+    key = jax.random.PRNGkey(seed=1234)
+    keys = jax.random.split(key, num=batch_size)
 
     # single
     obs, state = env.reset(env.env_properties, keys[0])
@@ -50,7 +51,7 @@ def test_reset(env_id):
     assert type(state) == env.State, f"Default vmap_reset returns different state type."
 
 
-@pytest.mark.parametrize("env_id", env_ids)
+@pytest.mark.parametrize("env_id", fully_observable_env_ids)
 def test_gen_observation_gen_state(env_id):
     batch_size = 4
     env = excenvs.make(env_id, batch_size=batch_size)
