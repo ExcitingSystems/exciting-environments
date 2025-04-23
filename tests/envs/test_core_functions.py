@@ -25,7 +25,7 @@ def test_tau(env_id, tau):
 def test_reset(env_id):
     batch_size = 4
     env = excenvs.make(env_id, batch_size=batch_size)
-    key = jax.random.PRNGkey(seed=1234)
+    key = jax.random.PRNGKey(seed=1234)
     keys = jax.random.split(key, num=batch_size)
 
     # single
