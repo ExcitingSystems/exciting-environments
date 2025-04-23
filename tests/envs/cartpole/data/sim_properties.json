@@ -1,0 +1,35 @@
+{
+    "params": {
+        "mu_p": 2e-06,
+        "mu_c": 0.0005,
+        "l": 0.5,
+        "m_p": 0.1,
+        "m_c": 1,
+        "g": 9.81
+    },
+    "action_normalizations": {
+        "force": {
+            "min": -20,
+            "max": 20
+        }
+    },
+    "physical_normalizations": {
+        "deflection": {
+            "min": -2.4,
+            "max": 2.4
+        },
+        "velocity": {
+            "min": -8,
+            "max": 8
+        },
+        "theta": {
+            "min": -3.141592653589793,
+            "max": 3.141592653589793
+        },
+        "omega": {
+            "min": -8,
+            "max": 8
+        }
+    },
+    "tau": 0.0001
+}

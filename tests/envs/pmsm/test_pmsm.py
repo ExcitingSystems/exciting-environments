@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
-from exciting_environments.utils import MinMaxNormalization
+from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 from motor_parameters import default_params
 import pickle
@@ -92,6 +92,7 @@ def test_custom_initialization():
         "l_d": 0.37e-3,
         "l_q": 1.2e-3,
         "psi_p": 65.6e-3,
+        "u_dc":400,
         "deadtime": 1,
     }
     env = excenvs.make(
@@ -147,30 +148,26 @@ def test_custom_initialization():
 
 
 def test_step_results():
-    data_dir = os.path.join(Path(__file__).parent, "data")  # Use os.path.join
-    file_path = os.path.join(data_dir, "sim_properties.pkl")
-    with open(file_path, "rb") as f:
-        loaded_data = pickle.load(f)
-    loaded_params = loaded_data["params"]
-    loaded_action_normalizations = loaded_data["action_normalizations"]
-    loaded_physical_normalizations = loaded_data["physical_normalizations"]
-    loaded_tau = loaded_data["tau"]
+    data_dir = os.path.join(Path(__file__).parent, "data")
+    file_path = os.path.join(data_dir, "sim_properties.json")
+    loaded_params,loaded_action_normalizations,loaded_physical_normalizations,loaded_tau=load_sim_properties_from_json(file_path)
     env = excenvs.make(
         "PMSM-v0",
-        solver=diffrax.Euler(),
         tau=loaded_tau,
+        solver=diffrax.Euler(),
         static_params=loaded_params,
         physical_normalizations=loaded_physical_normalizations,
         action_normalizations=loaded_action_normalizations,
     )
-    observations_data = jnp.load(str(Path(__file__).parent) + "/data/observations.npy")
-    actions_data = jnp.load(str(Path(__file__).parent) + "/data/actions.npy")
-    state = env.generate_state_from_observation(observations_data[0], env.env_properties)
-    observations2 = []
-    observations2.append(observations_data[0])
+
+    stored_observations = jnp.load("data/observations.npy")
+    actions_data = jnp.load("data/actions.npy")
+    state = env.generate_state_from_observation(stored_observations[0], env.env_properties)
+    generated_observations = []
+    generated_observations.append(stored_observations[0])
     for i in range(1000):
         action = actions_data[i]
         obs, state = env.step(state, action, env.env_properties)
-        observations2.append(obs)
-    observations2 = jnp.array(observations2)
-    assert jnp.allclose(observations2, observations_data), "Step function generates different data"
+        generated_observations.append(obs)
+    generated_observations = jnp.array(generated_observations)
+    assert jnp.allclose(generated_observations, stored_observations, 1e-16), "Step function generates different data"

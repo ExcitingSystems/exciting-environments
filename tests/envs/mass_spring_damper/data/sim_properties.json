@@ -1,0 +1,24 @@
+{
+    "params": {
+        "k": 100,
+        "d": 1,
+        "m": 1
+    },
+    "action_normalizations": {
+        "force": {
+            "min": -20,
+            "max": 20
+        }
+    },
+    "physical_normalizations": {
+        "deflection": {
+            "min": -10,
+            "max": 10
+        },
+        "velocity": {
+            "min": -10,
+            "max": 10
+        }
+    },
+    "tau": 0.0001
+}
