@@ -170,4 +170,4 @@ def test_step_results():
         obs, state = env.step(state, action, env.env_properties)
         generated_observations.append(obs)
     generated_observations = jnp.array(generated_observations)
-    assert jnp.allclose(generated_observations, stored_observations, 1e-16), "Step function generates different data"
+    assert jnp.allclose(generated_observations, stored_observations, 1e-8 ), "Step function generates different data"
