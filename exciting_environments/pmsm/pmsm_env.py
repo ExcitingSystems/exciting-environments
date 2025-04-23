@@ -553,9 +553,56 @@ class PMSM(CoreEnvironment):
             ),
         )
         u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
-        u_dq_norm_clip = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon)
-        u_dq = u_dq_norm_clip[0]*(env_properties.static_params.u_dc/2) # denormalize from u_dc/2 
+        u_dq_norm_clip = albet2dq(
+            u_albet_norm_clip,
+            step_eps(
+                system_state.physical_state.epsilon,
+                self.env_properties.static_params.deadtime + 0.5,
+                self.tau,
+                system_state.physical_state.omega_el,
+            )
+            ) #
+        u_dq = u_dq_norm_clip[0] *(env_properties.static_params.u_dc/2) # denormalize from u_dc/2 
         return u_dq
+
+    def constraint_denormalization2(self, u_dq, system_state, env_properties):
+        """Denormalizes the u_dq and clips it with respect to the hexagon."""
+        u_albet_norm = dq2albet(
+            u_dq,
+            step_eps(
+                system_state.physical_state.epsilon,
+                self.env_properties.static_params.deadtime + 0.5,
+                self.tau,
+                system_state.physical_state.omega_el,
+            ),
+        )
+        u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
+        u_dq_norm_clip = albet2dq(u_albet_norm_clip, system_state.physical_state.epsilon)
+        u_dq = self.denormalize_action(u_dq_norm_clip[0], env_properties)
+        return u_dq
+
+    # def constraint_denormalization(self, u_dq, system_state, env_properties):
+    #     """Denormalizes the u_dq and clips it with respect to the hexagon."""
+    #     u_albet_norm = dq2albet(
+    #         u_dq,
+    #         step_eps(
+    #             system_state.physical_state.epsilon,
+    #             self.env_properties.static_params.deadtime + 0.5,
+    #             self.tau,
+    #             system_state.physical_state.omega_el,
+    #         ),
+    #     )
+    #     u_albet_norm_clip = apply_hex_constraint(u_albet_norm)
+    #     u_dq_norm_clip = albet2dq(
+    #         u_albet_norm_clip, 
+    #         step_eps(
+    #             system_state.physical_state.epsilon,
+    #             self.env_properties.static_params.deadtime + 0.5,
+    #             self.tau,
+    #             system_state.physical_state.omega_el,
+    #         )) #system_state.physical_state.epsilon
+    #     u_dq = self.denormalize_action(u_dq_norm_clip[0], env_properties)
+    #     return u_dq
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
     def _ode_solver_simulate_ahead(self, init_state, actions, properties, obs_stepsize, action_stepsize):
