@@ -35,7 +35,7 @@ class StaticParams:
     l_d: float  # D-axis inductance
     l_q: float  # Q-axis inductance
     psi_p: float  # Permanent magnet flux linkage
-    u_dc: float  # DC voltage
+    u_dc: float  # DC link voltage
     deadtime: int  # Deadtime compensation
 
 
@@ -57,7 +57,11 @@ def default_soft_constraints(self, state, action_norm, env_properties):
     with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
         for field in fields(phys_soft_const):
             name = field.name
-            setattr(phys_soft_const, name, jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0))
+            setattr(
+                phys_soft_const,
+                name,
+                jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0),
+            )
     return phys_soft_const, None
 
 
