@@ -1,0 +1,21 @@
+{
+    "params": {
+        "base_area": 3.141592653589793,
+        "orifice_area": 0.031415926535897934,
+        "c_d": 0.6,
+        "g": 9.81
+    },
+    "action_normalizations": {
+        "inflow": {
+            "min": 0,
+            "max": 0.2
+        }
+    },
+    "physical_normalizations": {
+        "height": {
+            "min": 0,
+            "max": 3
+        }
+    },
+    "tau": 0.0001
+}

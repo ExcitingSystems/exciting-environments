@@ -10,7 +10,6 @@ import jax_dataclasses as jdc
 from exciting_environments.utils import MinMaxNormalization
 from copy import deepcopy
 
-
 @jdc.pytree_dataclass
 class PhysicalNormalizations:
     u_d_buffer: float
@@ -35,7 +34,7 @@ class StaticParams:
     l_d: float  # D-axis inductance
     l_q: float  # Q-axis inductance
     psi_p: float  # Permanent magnet flux linkage
-    u_dc: float  # DC link voltage
+    u_dc: float  # DC voltage
     deadtime: int  # Deadtime compensation
 
 
@@ -57,11 +56,7 @@ def default_soft_constraints(self, state, action_norm, env_properties):
     with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
         for field in fields(phys_soft_const):
             name = field.name
-            setattr(
-                phys_soft_const,
-                name,
-                jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0),
-            )
+            setattr(phys_soft_const, name, jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0))
     return phys_soft_const, None
 
 
@@ -89,7 +84,7 @@ BRUSA = MotorParams(
         deadtime=1,
     ),
     default_soft_constraints=default_soft_constraints,
-    pmsm_lut=loadmat(Path(__file__).parent / Path("LUT_BRUSA_jax_grad.mat")),
+    pmsm_lut=None,
 )
 
 SEW = MotorParams(
@@ -116,7 +111,7 @@ SEW = MotorParams(
         deadtime=1,
     ),
     default_soft_constraints=default_soft_constraints,
-    pmsm_lut=loadmat(Path(__file__).parent / Path("LUT_SEW_jax_grad.mat")),
+    pmsm_lut=None,  
 )
 
 DEFAULT = MotorParams(

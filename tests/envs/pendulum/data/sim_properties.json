@@ -1,0 +1,24 @@
+{
+    "params": {
+        "g": 9.81,
+        "l": 2,
+        "m": 1
+    },
+    "action_normalizations": {
+        "torque": {
+            "min": -20,
+            "max": 20
+        }
+    },
+    "physical_normalizations": {
+        "theta": {
+            "min": -3.141592653589793,
+            "max": 3.141592653589793
+        },
+        "omega": {
+            "min": -10,
+            "max": 10
+        }
+    },
+    "tau": 0.0001
+}
