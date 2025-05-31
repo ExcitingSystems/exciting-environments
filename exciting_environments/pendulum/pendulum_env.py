@@ -109,7 +109,9 @@ class Pendulum(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(
+            batch_size, env_properties=env_properties, tau=tau, solver=solver
+        )
 
     @jdc.pytree_dataclass
     class PhysicalState:
@@ -121,6 +123,8 @@ class Pendulum(CoreEnvironment):
     @jdc.pytree_dataclass
     class Additions:
         """Dataclass containing additional information for simulation."""
+
+        solver_state: tuple
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -136,6 +140,16 @@ class Pendulum(CoreEnvironment):
 
         torque: jax.Array
 
+    def _ode(self, t, y, args, action):
+        theta, omega = y
+        params = args
+        d_omega = (action(t)[0] + params.l * params.m * params.g * jnp.sin(theta)) / (
+            params.m * (params.l) ** 2
+        )
+        d_theta = omega
+        d_y = d_theta, d_omega
+        return d_y
+
     @partial(jax.jit, static_argnums=0)
     def _ode_solver_step(self, state, action, static_params):
         """Computes the next state by simulating one step.
@@ -150,32 +164,36 @@ class Pendulum(CoreEnvironment):
         """
 
         physical_state = state.physical_state
-        args = (action, static_params)
+        args = static_params
 
-        def vector_field(t, y, args):
-            theta, omega = y
-            action, params = args
-            d_omega = (action[0] + params.l * params.m * params.g * jnp.sin(theta)) / (params.m * (params.l) ** 2)
-            d_theta = omega
-            d_y = d_theta, d_omega
-            return d_y
+        force = lambda t: action
+
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
         y0 = tuple([physical_state.theta, physical_state.omega])
-        env_state = self._solver.init(term, t0, t1, y0, args)
-        y, _, _, env_state, _ = self._solver.step(term, t0, t1, y0, args, env_state, made_jump=False)
+        solver_state = state.additions.solver_state
+        y, _, _, solver_state_k1, _ = self._solver.step(
+            term, t0, t1, y0, args, solver_state, made_jump=False
+        )
 
         theta_k1 = y[0]
         omega_k1 = y[1]
         theta_k1 = ((theta_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
         with jdc.copy_and_mutate(state, validate=True) as new_state:
-            new_state.physical_state = self.PhysicalState(theta=theta_k1, omega=omega_k1)
-        return new_state
+            new_state.physical_state = self.PhysicalState(
+                theta=theta_k1, omega=omega_k1
+            )
+        with jdc.copy_and_mutate(new_state, validate=False) as state_next:
+            state_next.additions.solver_state = solver_state_k1
+        return state_next
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+    def _ode_solver_simulate_ahead(
+        self, init_state, actions, static_params, obs_stepsize, action_stepsize
+    ):
         """Computes multiple simulation steps for one batch.
 
         Args:
@@ -191,21 +209,12 @@ class Pendulum(CoreEnvironment):
         """
 
         init_physical_state = init_state.physical_state
-        args = (actions, static_params)
+        args = static_params
 
-        def force(t, args):
-            actions = args
-            return actions[jnp.array(t / action_stepsize, int), 0]
+        def force(t):
+            return actions[jnp.array(t / action_stepsize, int)]
 
-        def vector_field(t, y, args):
-            theta, omega = y
-            actions, params = args
-            d_omega = (force(t, actions) + params.l * params.m * params.g * jnp.sin(theta)) / (
-                params.m * (params.l) ** 2
-            )
-            d_theta = omega
-            d_y = d_theta, d_omega
-            return d_y
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
@@ -213,7 +222,16 @@ class Pendulum(CoreEnvironment):
         init_physical_state_array, _ = tree_flatten(init_physical_state)
         y0 = tuple(init_physical_state_array)
         saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))  #
-        sol = diffrax.diffeqsolve(term, self._solver, t0, t1, dt0=obs_stepsize, y0=y0, args=args, saveat=saveat)
+        sol = diffrax.diffeqsolve(
+            term,
+            self._solver,
+            t0,
+            t1,
+            dt0=obs_stepsize,
+            y0=y0,
+            args=args,
+            saveat=saveat,
+        )
 
         theta_t = sol.ys[0]
         omega_t = sol.ys[1]
@@ -223,11 +241,21 @@ class Pendulum(CoreEnvironment):
 
         physical_states = self.PhysicalState(theta=theta_t, omega=omega_t)
         ref = self.PhysicalState(
-            theta=jnp.full(obs_len, init_state.reference.theta), omega=jnp.full(obs_len, init_state.reference.omega)
+            theta=jnp.full(obs_len, init_state.reference.theta),
+            omega=jnp.full(obs_len, init_state.reference.omega),
         )
-        additions = None
+        y0 = tuple([theta_t[-1], omega_t[-1]])
+        solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
+        additions = self.Additions(
+            solver_state=self.repeat_values(solver_state, obs_len)
+        )
         PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
-        return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions, reference=ref)
+        return self.State(
+            physical_state=physical_states,
+            PRNGKey=PRNGKey,
+            additions=additions,
+            reference=ref,
+        )
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
@@ -245,9 +273,25 @@ class Pendulum(CoreEnvironment):
                 omega=state_norm[1],
             )
             key, subkey = jax.random.split(rng)
-        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+
+        force = lambda t: jnp.array([0])
+
+        args = env_properties.static_params
+
+        vector_field = partial(self._ode, action=force)
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = self.tau
+        y0 = tuple([phys.theta, phys.omega])
+
+        solver_state = self._solver.init(term, t0, t1, y0, args)
+
+        additions = self.Additions(solver_state=solver_state)
         ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(
+            physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref
+        )
         return self.denormalize_state(norm_state, env_properties)
 
     @partial(jax.jit, static_argnums=0)
@@ -259,9 +303,18 @@ class Pendulum(CoreEnvironment):
             if name == "theta":
                 theta = getattr(state.physical_state, name)
                 theta_ref = getattr(state.reference, name)
-                reward += -((jnp.sin(theta) - jnp.sin(theta_ref)) ** 2 + (jnp.cos(theta) - jnp.cos(theta_ref)) ** 2)
+                reward += -(
+                    (jnp.sin(theta) - jnp.sin(theta_ref)) ** 2
+                    + (jnp.cos(theta) - jnp.cos(theta_ref)) ** 2
+                )
             else:
-                reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
+                reward += -(
+                    (
+                        getattr(norm_state.physical_state, name)
+                        - getattr(norm_state.reference, name)
+                    )
+                    ** 2
+                )
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
@@ -295,23 +348,43 @@ class Pendulum(CoreEnvironment):
             subkey = key
         else:
             subkey = jnp.nan
-        additions = None
+
+        force = lambda t: jnp.array([0])
+
+        args = env_properties.static_params
+
+        vector_field = partial(self._ode, action=force)
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = self.tau
+        y0 = tuple([phys.theta, phys.omega])
+
+        solver_state = self._solver.init(term, t0, t1, y0, args)
+
+        additions = self.Additions(solver_state=solver_state)
         ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
                 setattr(new_ref, name, obs[2 + pos])
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        norm_state = self.State(
+            physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref
+        )
         return self.denormalize_state(norm_state, env_properties)
 
     def default_soft_constraints(self, state, action_norm, env_properties):
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
-        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+        with jdc.copy_and_mutate(
+            physical_state_norm, validate=False
+        ) as phys_soft_const:
             for field in fields(phys_soft_const):
                 name = field.name
                 setattr(phys_soft_const, name, jnp.nan)
             # define soft constraints for physical state
-            soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, "omega")) - 1.0)
+            soft_constr = jax.nn.relu(
+                jnp.abs(getattr(physical_state_norm, "omega")) - 1.0
+            )
             setattr(phys_soft_const, "omega", soft_constr)
 
         # define soft constraints for action
@@ -331,7 +404,12 @@ class Pendulum(CoreEnvironment):
 
     @property
     def obs_description(self):
-        return np.hstack([np.array(["theta", "omega"]), np.array([name + "_ref" for name in self.control_state])])
+        return np.hstack(
+            [
+                np.array(["theta", "omega"]),
+                np.array([name + "_ref" for name in self.control_state]),
+            ]
+        )
 
     @property
     def action_description(self):

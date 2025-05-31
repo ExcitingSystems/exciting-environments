@@ -108,7 +108,9 @@ class MassSpringDamper(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(
+            batch_size, env_properties=env_properties, tau=tau, solver=solver
+        )
 
     @jdc.pytree_dataclass
     class PhysicalState:
@@ -120,6 +122,8 @@ class MassSpringDamper(CoreEnvironment):
     @jdc.pytree_dataclass
     class Additions:
         """Dataclass containing additional information for simulation."""
+
+        solver_state: tuple
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -135,6 +139,16 @@ class MassSpringDamper(CoreEnvironment):
 
         force: jax.Array
 
+    def _ode(self, t, y, args, action):
+        deflection, velocity = y
+        params = args
+        d_velocity = (
+            action(t)[0] - params.d * velocity - params.k * deflection
+        ) / params.m
+        d_deflection = velocity
+        d_y = d_deflection, d_velocity  # [0]
+        return d_y
+
     @partial(jax.jit, static_argnums=0)
     def _ode_solver_step(self, state, action, static_params):
         """Computes state by simulating one step.
@@ -149,32 +163,37 @@ class MassSpringDamper(CoreEnvironment):
         """
 
         physical_state = state.physical_state
-        args = (action, static_params)
+        args = static_params
 
-        def vector_field(t, y, args):
-            deflection, velocity = y
-            action, params = args
-            d_velocity = (action[0] - params.d * velocity - params.k * deflection) / params.m
-            d_deflection = velocity
-            d_y = d_deflection, d_velocity  # [0]
-            return d_y
+        force = lambda t: action
+
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
         y0 = tuple([physical_state.deflection, physical_state.velocity])
-        env_state = self._solver.init(term, t0, t1, y0, args)
-        y, _, _, env_state, _ = self._solver.step(term, t0, t1, y0, args, env_state, made_jump=False)
+        solver_state = state.additions.solver_state
+        y, _, _, solver_state_k1, _ = self._solver.step(
+            term, t0, t1, y0, args, solver_state, made_jump=False
+        )
 
         deflection_k1 = y[0]
         velocity_k1 = y[1]
 
         with jdc.copy_and_mutate(state, validate=True) as new_state:
-            new_state.physical_state = self.PhysicalState(deflection=deflection_k1, velocity=velocity_k1)
-        return new_state
+            new_state.physical_state = self.PhysicalState(
+                deflection=deflection_k1, velocity=velocity_k1
+            )
+
+        with jdc.copy_and_mutate(new_state, validate=False) as state_next:
+            state_next.additions.solver_state = solver_state_k1
+        return state_next
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+    def _ode_solver_simulate_ahead(
+        self, init_state, actions, static_params, obs_stepsize, action_stepsize
+    ):
         """Computes multiple simulation steps for one batch.
 
         Args:
@@ -190,19 +209,12 @@ class MassSpringDamper(CoreEnvironment):
         """
 
         init_physical_state = init_state.physical_state
-        args = (actions, static_params)
+        args = static_params
 
-        def force(t, args):
-            actions = args
-            return actions[jnp.array(t / action_stepsize, int), 0]
+        def force(t):
+            return actions[jnp.array(t / action_stepsize, int)]
 
-        def vector_field(t, y, args):
-            deflection, velocity = y
-            actions, params = args
-            d_velocity = (force(t, actions) - params.d * velocity - params.k * deflection) / params.m
-            d_deflection = velocity
-            d_y = d_deflection, d_velocity
-            return d_y
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
@@ -210,20 +222,40 @@ class MassSpringDamper(CoreEnvironment):
         init_physical_state_array, _ = tree_flatten(init_physical_state)
         y0 = tuple(init_physical_state_array)
         saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))  #
-        sol = diffrax.diffeqsolve(term, self._solver, t0, t1, dt0=obs_stepsize, y0=y0, args=args, saveat=saveat)
+        sol = diffrax.diffeqsolve(
+            term,
+            self._solver,
+            t0,
+            t1,
+            dt0=obs_stepsize,
+            y0=y0,
+            args=args,
+            saveat=saveat,
+        )
 
         deflection_t = sol.ys[0]
         velocity_t = sol.ys[1]
         obs_len = velocity_t.shape[0]
 
-        physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t)
+        physical_states = self.PhysicalState(
+            deflection=deflection_t, velocity=velocity_t
+        )
         ref = self.PhysicalState(
             deflection=jnp.full(obs_len, init_state.reference.deflection),
             velocity=jnp.full(obs_len, init_state.reference.velocity),
         )
-        additions = None
+        y0 = tuple([deflection_t[-1], velocity_t[-1]])
+        solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
+        additions = self.Additions(
+            solver_state=self.repeat_values(solver_state, obs_len)
+        )
         PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
-        return self.State(physical_state=physical_states, PRNGKey=PRNGKey, additions=additions, reference=ref)
+        return self.State(
+            physical_state=physical_states,
+            PRNGKey=PRNGKey,
+            additions=additions,
+            reference=ref,
+        )
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
@@ -241,9 +273,25 @@ class MassSpringDamper(CoreEnvironment):
                 velocity=state_norm[1],
             )
             key, subkey = jax.random.split(rng)
-        additions = None  # self.Optional(something=jnp.zeros(self.batch_size))
+
+        force = lambda t: jnp.array([0])
+
+        args = env_properties.static_params
+
+        vector_field = partial(self._ode, action=force)
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = self.tau
+        y0 = tuple([phys.deflection, phys.velocity])
+
+        solver_state = self._solver.init(term, t0, t1, y0, args)
+
+        additions = self.Additions(solver_state=solver_state)  # None
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(
+            physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref
+        )
         return self.denormalize_state(norm_state, env_properties)
 
     @partial(jax.jit, static_argnums=0)
@@ -252,7 +300,15 @@ class MassSpringDamper(CoreEnvironment):
         reward = 0
         norm_state = self.normalize_state(state, env_properties)
         for name in self.control_state:
-            reward += -(((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name))) ** 2)
+            reward += -(
+                (
+                    (
+                        getattr(norm_state.physical_state, name)
+                        - getattr(norm_state.reference, name)
+                    )
+                )
+                ** 2
+            )
         return jnp.array([reward])
 
     @partial(jax.jit, static_argnums=0)
@@ -286,24 +342,43 @@ class MassSpringDamper(CoreEnvironment):
             subkey = key
         else:
             subkey = jnp.nan
-        additions = None
+        force = lambda t: jnp.array([0])
+
+        args = env_properties.static_params
+
+        vector_field = partial(self._ode, action=force)
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = self.tau
+        y0 = tuple([phys.deflection, phys.velocity])
+
+        solver_state = self._solver.init(term, t0, t1, y0, args)
+
+        additions = self.Additions(solver_state=solver_state)  # None
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
                 setattr(new_ref, name, obs[2 + pos])
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        norm_state = self.State(
+            physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref
+        )
         return self.denormalize_state(norm_state, env_properties)
 
     def default_soft_constraints(self, state, action_norm, env_properties):
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
         constrained_states = ["deflection", "velocity"]
-        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
+        with jdc.copy_and_mutate(
+            physical_state_norm, validate=False
+        ) as phys_soft_const:
             # define soft constraints for physical state
             for field in fields(phys_soft_const):
                 name = field.name
                 if name in constrained_states:
-                    soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0)
+                    soft_constr = jax.nn.relu(
+                        jnp.abs(getattr(physical_state_norm, name)) - 1.0
+                    )
                     setattr(phys_soft_const, name, soft_constr)
                 else:
                     setattr(phys_soft_const, name, jnp.nan)
@@ -326,7 +401,10 @@ class MassSpringDamper(CoreEnvironment):
     @property
     def obs_description(self):
         return np.hstack(
-            [np.array(["deflection", "velocity"]), np.array([name + "_ref" for name in self.control_state])]
+            [
+                np.array(["deflection", "velocity"]),
+                np.array([name + "_ref" for name in self.control_state]),
+            ]
         )
 
     @property
