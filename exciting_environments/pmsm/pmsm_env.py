@@ -591,9 +591,7 @@ class PMSM(CoreEnvironment):
         t1 = self.tau
         y0 = tuple([i_d, i_q, eps])
         solver_state = state.additions.solver_state
-        # self._solver.init(
-        #     term, t0, t1, y0, args
-        # )
+
         y, _, _, solver_state_k1, _ = self._solver.step(
             term, t0, t1, y0, args, solver_state, made_jump=False
         )
@@ -673,12 +671,7 @@ class PMSM(CoreEnvironment):
         eps = init_state_phys.epsilon
 
         def force(t):
-            idx = jnp.clip(
-                jnp.floor(t / action_stepsize - 1e-6).astype(int),
-                0,
-                actions.shape[0] - 1,
-            )
-            return actions[idx]  # jnp.array(t / action_stepsize, int)
+            return actions[jnp.array(t / action_stepsize, int)]
 
         args = (properties.static_params, omega_el)
         if properties.saturated:
