@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exciting_environments"
-version = "0.2.1"
+version = "0.2.3"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
   { name="Hendrik Vater", email="vater@lea.uni-paderborn.de" },
@@ -43,3 +43,6 @@ pythonpath = [
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
 include = ["exciting_environments*"]  # package names should match these glob patterns (["*"] by default)
+
+[tool.setuptools.package-data]
+exciting_environments = ["exciting_environments/pmsm/*.mat"]
