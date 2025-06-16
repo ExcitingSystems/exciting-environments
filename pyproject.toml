@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exciting_environments"
-version = "0.2.3"
+version = "0.2.4"
 authors = [
   { name="Oliver Schweins", email="oliverjs@mail.uni-paderborn.de" },
   { name="Hendrik Vater", email="vater@lea.uni-paderborn.de" },
