@@ -163,10 +163,11 @@ class FluidTank(CoreEnvironment):
         args = static_params
 
         def inflow(t):
-            boundaries = jnp.arange(actions.shape[0]) * action_stepsize
-            idx = jnp.searchsorted(boundaries, t, side="left") - 1
-            idx = jnp.maximum(idx, 0)
-            return actions[idx]
+            # boundaries = jnp.arange(actions.shape[0]) * action_stepsize
+            # idx = jnp.searchsorted(boundaries, t, side="left") - 1
+            # idx = jnp.maximum(idx, 0)
+            # return actions[idx]
+            return actions[jnp.array(t / action_stepsize, int)]
 
         vector_field = partial(self._ode, action=inflow)
 

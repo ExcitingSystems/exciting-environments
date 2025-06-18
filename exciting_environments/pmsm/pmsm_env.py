@@ -613,10 +613,11 @@ class PMSM(CoreEnvironment):
         eps = init_state_phys.epsilon
 
         def voltage(t):
-            boundaries = jnp.arange(actions.shape[0]) * action_stepsize
-            idx = jnp.searchsorted(boundaries, t, side="left") - 1
-            idx = jnp.maximum(idx, 0)
-            return actions[idx]
+            # boundaries = jnp.arange(actions.shape[0]) * action_stepsize
+            # idx = jnp.searchsorted(boundaries, t, side="left") - 1
+            # idx = jnp.maximum(idx, 0)
+            # return actions[idx]
+            return actions[jnp.array(t / action_stepsize, int)]
 
         args = (properties.static_params, omega_el)
         if properties.saturated:
