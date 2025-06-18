@@ -290,6 +290,8 @@ class PMSM(CoreEnvironment):
     class Additions:
         """Dataclass containing additional information for simulation."""
 
+        solver_state: tuple
+
     @jdc.pytree_dataclass
     class Action:
         """Dataclass containing the action, that can be applied to the environment."""
@@ -344,7 +346,11 @@ class PMSM(CoreEnvironment):
         )
         LUT_interpolators = {
             q: jax.scipy.interpolate.RegularGridInterpolator(
-                (x, y), pmsm_lut[q][:, :].T, method="linear", bounds_error=False, fill_value=None
+                (x, y),
+                pmsm_lut[q][:, :].T,
+                method="linear",
+                bounds_error=False,
+                fill_value=None,
             )
             for q in saturated_quants
         }
@@ -443,7 +449,22 @@ class PMSM(CoreEnvironment):
                 )
                 + env_properties.physical_normalizations.omega_el.min,
             )
-        additions = None
+
+        voltage = lambda t: jnp.array([0, 0])
+
+        args = (env_properties.static_params, phys.omega_el)
+        if env_properties.saturated:
+            vector_field = partial(self.nonlinear_ode, action=voltage)
+        else:
+            vector_field = partial(self.linear_ode, action=voltage)
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = self.tau
+        y0 = tuple([phys.i_d, phys.i_q, phys.epsilon])
+
+        solver_state = self._solver.init(term, t0, t1, y0, args)
+        additions = self.Additions(solver_state=solver_state)  # None
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,
@@ -454,6 +475,44 @@ class PMSM(CoreEnvironment):
             omega_el=jnp.nan,
         )
         return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
+
+    def nonlinear_ode(self, t, y, args, action):
+        i_d, i_q, eps = y
+        static_params, omega_el = args
+        u_dq = action(t)
+        J_k = jnp.array([[0, -1], [1, 0]])
+        i_dq = jnp.array([i_d, i_q])
+        p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
+        L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
+        L_diff_inv = jnp.linalg.inv(L_diff)
+        psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]]).reshape(-1)
+        di_dq_1 = jnp.einsum(
+            "ij,j->i",
+            (-L_diff_inv * static_params.r_s),
+            i_dq,
+        )
+        di_dq_2 = jnp.einsum("ik,k->i", L_diff_inv, u_dq)
+        di_dq_3 = jnp.einsum("ij,jk,k->i", -L_diff_inv, J_k, psi_dq) * omega_el
+        i_dq_diff = di_dq_1 + di_dq_2 + di_dq_3
+        eps_diff = omega_el
+        d_y = i_dq_diff[0], i_dq_diff[1], eps_diff
+        return d_y
+
+    def linear_ode(self, t, y, args, action):
+        i_d, i_q, eps = y
+        params, omega_el = args
+        u_dq = action(t)
+        u_d = u_dq[0]
+        u_q = u_dq[1]
+        l_d = params.l_d
+        l_q = params.l_q
+        psi_p = params.psi_p
+        r_s = params.r_s
+        i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
+        i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
+        eps_diff = omega_el
+        d_y = i_d_diff, i_q_diff, eps_diff
+        return d_y
 
     @partial(jax.jit, static_argnums=[0, 3])
     def _ode_solver_step(self, state, u_dq, properties):
@@ -473,55 +532,25 @@ class PMSM(CoreEnvironment):
         i_q = system_state.i_q
         eps = system_state.epsilon
 
-        args = (u_dq, properties.static_params)
+        voltage = lambda t: u_dq
+
+        args = (properties.static_params, omega_el)
         if properties.saturated:
-
-            def vector_field(t, y, args):
-                i_d, i_q = y
-                u_dq, _ = args
-
-                J_k = jnp.array([[0, -1], [1, 0]])
-                i_dq = jnp.array([i_d, i_q])
-                p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
-                L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
-                L_diff_inv = jnp.linalg.inv(L_diff)
-                psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]]).reshape(-1)
-                di_dq_1 = jnp.einsum(
-                    "ij,j->i",
-                    (-L_diff_inv * properties.static_params.r_s),
-                    i_dq,
-                )
-                di_dq_2 = jnp.einsum("ik,k->i", L_diff_inv, u_dq)
-                di_dq_3 = jnp.einsum("ij,jk,k->i", -L_diff_inv, J_k, psi_dq) * omega_el
-                i_dq_diff = di_dq_1 + di_dq_2 + di_dq_3
-                d_y = i_dq_diff[0], i_dq_diff[1]
-                return d_y
-
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
-
-            def vector_field(t, y, args):
-                i_d, i_q = y
-                u_dq, params = args
-                u_d = u_dq[0]
-                u_q = u_dq[1]
-                l_d = params.l_d
-                l_q = params.l_q
-                psi_p = params.psi_p
-                r_s = params.r_s
-                i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
-                i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
-                d_y = i_d_diff, i_q_diff
-                return d_y
+            vector_field = partial(self.linear_ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([i_d, i_q])
-        env_state = self._solver.init(term, t0, t1, y0, args)
-        y, _, _, env_state, _ = self._solver.step(term, t0, t1, y0, args, env_state, made_jump=False)
+        y0 = tuple([i_d, i_q, eps])
+        solver_state = state.additions.solver_state
+
+        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, solver_state, made_jump=False)
 
         i_d_k1 = y[0]
         i_q_k1 = y[1]
+        eps_k1 = y[2]
 
         if properties.saturated:
             torque = jnp.array([self.currents_to_torque_saturated(i_d=i_d_k1, i_q=i_q_k1, env_properties=properties)])[
@@ -531,25 +560,28 @@ class PMSM(CoreEnvironment):
             torque = jnp.array([self.currents_to_torque(i_d_k1, i_q_k1, properties)])[0]
 
         with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
-            system_state_next.epsilon = step_eps(eps, omega_el, self.tau, 1.0)
+            system_state_next.epsilon = eps_k1
             system_state_next.i_d = i_d_k1
             system_state_next.i_q = i_q_k1
             system_state_next.torque = torque
 
         with jdc.copy_and_mutate(state, validate=True) as state_next:
             state_next.physical_state = system_state_next
-        return state_next
+
+        with jdc.copy_and_mutate(state_next, validate=False) as state_next_final:
+            state_next_final.additions.solver_state = solver_state_k1
+        return state_next_final
 
     def constraint_denormalization(self, u_dq_norm, system_state, env_properties):
         """Denormalizes the u_dq and clips it with respect to the hexagon."""
         u_dq = self.denormalize_action(u_dq_norm, env_properties)
-        u_dq_norm= u_dq* (1/(env_properties.static_params.u_dc/2)) # normalize to u_dc/2 for hexagon constraints
-        advanced_angle= step_eps(
-                system_state.physical_state.epsilon,
-                self.env_properties.static_params.deadtime + 0.5,
-                self.tau,
-                system_state.physical_state.omega_el,
-            )
+        u_dq_norm = u_dq * (1 / (env_properties.static_params.u_dc / 2))  # normalize to u_dc/2 for hexagon constraints
+        advanced_angle = step_eps(
+            system_state.physical_state.epsilon,
+            self.env_properties.static_params.deadtime + 0.5,
+            self.tau,
+            system_state.physical_state.omega_el,
+        )
         u_albet_norm = dq2albet(
             u_dq_norm,
             advanced_angle,
@@ -558,8 +590,8 @@ class PMSM(CoreEnvironment):
         u_dq_norm_clip = albet2dq(
             u_albet_norm_clip,
             advanced_angle,
-            )
-        u_dq = u_dq_norm_clip[0] *(env_properties.static_params.u_dc/2) # denormalize from u_dc/2 
+        )
+        u_dq = u_dq_norm_clip[0] * (env_properties.static_params.u_dc / 2)  # denormalize from u_dc/2
         return u_dq
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
@@ -580,60 +612,38 @@ class PMSM(CoreEnvironment):
         i_q = init_state_phys.i_q
         eps = init_state_phys.epsilon
 
-        args = (actions, properties.static_params)
-
-        def force(t, args):
-            actions = args
+        def voltage(t):
+            # boundaries = jnp.arange(actions.shape[0]) * action_stepsize
+            # idx = jnp.searchsorted(boundaries, t, side="left") - 1
+            # idx = jnp.maximum(idx, 0)
+            # return actions[idx]
             return actions[jnp.array(t / action_stepsize, int)]
 
+        args = (properties.static_params, omega_el)
         if properties.saturated:
-
-            def vector_field(t, y, args):
-                actions, params = args
-                i_d, i_q, eps = y
-                u_dq = force(t, actions)
-                J_k = jnp.array([[0, -1], [1, 0]])
-                i_dq = jnp.array([i_d, i_q])
-                p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
-                L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
-                L_diff_inv = jnp.linalg.inv(L_diff)
-                psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]]).reshape(-1)
-                di_dq_1 = jnp.einsum(
-                    "ij,j->i",
-                    (-L_diff_inv * properties.static_params.r_s),
-                    i_dq,
-                )
-                di_dq_2 = jnp.einsum("ik,k->i", L_diff_inv, u_dq)
-                di_dq_3 = jnp.einsum("ij,jk,k->i", -L_diff_inv, J_k, psi_dq) * omega_el
-                i_dq_diff = di_dq_1 + di_dq_2 + di_dq_3
-                eps_diff = omega_el
-                d_y = i_dq_diff[0], i_dq_diff[1], eps_diff
-                return d_y
-
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
-
-            def vector_field(t, y, args):
-                i_d, i_q, eps = y
-                actions, params = args
-                u_dq = force(t, actions)
-                u_d = u_dq[0]
-                u_q = u_dq[1]
-                l_d = params.l_d
-                l_q = params.l_q
-                psi_p = params.psi_p
-                r_s = params.r_s
-                i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
-                i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
-                eps_diff = omega_el
-                d_y = i_d_diff, i_q_diff, eps_diff
-                return d_y
+            vector_field = partial(self.linear_ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = action_stepsize * actions.shape[0]
         y0 = tuple([i_d, i_q, eps])
-        saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))  #
-        y = diffrax.diffeqsolve(term, self._solver, t0, t1, dt0=obs_stepsize, y0=y0, args=args, saveat=saveat)
+        saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))
+
+        controller = diffrax.ConstantStepSize()
+
+        y = diffrax.diffeqsolve(
+            term,
+            self._solver,
+            t0,
+            t1,
+            dt0=obs_stepsize,
+            y0=y0,
+            args=args,
+            saveat=saveat,
+            stepsize_controller=controller,
+        )
 
         i_d_t = y.ys[0]
         i_q_t = y.ys[1]
@@ -655,7 +665,10 @@ class PMSM(CoreEnvironment):
             torque=torque_t,
             omega_el=jnp.full(obs_len, init_state_phys.omega_el),
         )
-        additions = None
+
+        y0 = tuple([i_d_t[-1], i_q_t[-1], eps_t[-1]])
+        solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
+        additions = self.Additions(solver_state=self.repeat_values(solver_state, obs_len))
         ref = self.PhysicalState(
             u_d_buffer=jnp.full(obs_len, jnp.nan),
             u_q_buffer=jnp.full(obs_len, jnp.nan),
@@ -666,7 +679,10 @@ class PMSM(CoreEnvironment):
             omega_el=jnp.full(obs_len, jnp.nan),
         )
         return self.State(
-            physical_state=phys, PRNGKey=jnp.full(obs_len, init_state.PRNGKey), additions=additions, reference=ref
+            physical_state=phys,
+            PRNGKey=jnp.full(obs_len, init_state.PRNGKey),
+            additions=additions,
+            reference=ref,
         )
 
     def constraint_denormalization_ahead(self, actions, init_state, env_properties):
@@ -674,14 +690,33 @@ class PMSM(CoreEnvironment):
         with jdc.copy_and_mutate(init_state, validate=False) as states:
             for field in fields(states.physical_state):
                 name = field.name
-                setattr(states.physical_state, name, jnp.full(act_len, getattr(states.physical_state, name)))
+                setattr(
+                    states.physical_state,
+                    name,
+                    self.repeat_values(getattr(states.physical_state, name), act_len),
+                )
             states.physical_state.epsilon = (
                 states.physical_state.epsilon
                 + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el
             )
+
+            # extend state dimension to use vmapping across time
             for field in fields(states.reference):
                 name = field.name
-                setattr(states.reference, name, jnp.full(act_len, getattr(states.reference, name)))
+                setattr(
+                    states.reference,
+                    name,
+                    self.repeat_values(getattr(states.reference, name), act_len),
+                )
+
+            for field in fields(states.additions):
+                name = field.name
+                setattr(
+                    states.additions,
+                    name,
+                    self.repeat_values(getattr(states.additions, name), act_len),
+                )
+
             states.PRNGKey = jnp.full(act_len, init_state.PRNGKey)
 
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(actions, states, env_properties)
@@ -708,13 +743,17 @@ class PMSM(CoreEnvironment):
 
         deadtime = env_properties.static_params.deadtime
         acts_buf = jnp.repeat(
-            jnp.array([init_state.physical_state.u_d_buffer, init_state.physical_state.u_q_buffer])[None, :],
+            jnp.array(
+                [
+                    init_state.physical_state.u_d_buffer,
+                    init_state.physical_state.u_q_buffer,
+                ]
+            )[None, :],
             deadtime,
             axis=0,
         )
 
         actions_dead = jnp.vstack([acts_buf, actions[: (actions.shape[0] - deadtime), :]])
-
         single_state_struct = tree_structure(init_state)
 
         # compute states trajectory for given actions
@@ -758,7 +797,12 @@ class PMSM(CoreEnvironment):
 
         deadtime = env_properties.static_params.deadtime
         acts_buf = jnp.repeat(
-            jnp.array([states.physical_state.u_d_buffer[0], states.physical_state.u_q_buffer[0]])[None, :],
+            jnp.array(
+                [
+                    states.physical_state.u_d_buffer[0],
+                    states.physical_state.u_q_buffer[0],
+                ]
+            )[None, :],
             deadtime,
             axis=0,
         )
@@ -768,7 +812,11 @@ class PMSM(CoreEnvironment):
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
             states_without_init_state,
             jnp.expand_dims(
-                jnp.repeat(actions_dead, int((jnp.array(states_flatten).shape[1] - 1) / actions_dead.shape[0]), axis=0),
+                jnp.repeat(
+                    actions_dead,
+                    int((jnp.array(states_flatten).shape[1] - 1) / actions_dead.shape[0]),
+                    axis=0,
+                ),
                 1,
             ),
             env_properties,
@@ -819,7 +867,12 @@ class PMSM(CoreEnvironment):
 
     @property
     def obs_description(self):
-        return np.hstack([np.array(self._obs_description), np.array([name + "_ref" for name in self.control_state])])
+        return np.hstack(
+            [
+                np.array(self._obs_description),
+                np.array([name + "_ref" for name in self.control_state]),
+            ]
+        )
 
     def generate_observation(self, system_state, env_properties):
         """Returns observation for one batch."""
@@ -844,7 +897,7 @@ class PMSM(CoreEnvironment):
             obs = jnp.hstack((obs, getattr(norm_state.reference, name)))
         return obs
 
-    @partial(jax.jit, static_argnums=0)
+    @partial(jax.jit, static_argnums=[0, 2])
     def generate_state_from_observation(self, obs, env_properties, key=None):
         """Generates state from observation for one batch."""
         if key is not None:
@@ -860,7 +913,22 @@ class PMSM(CoreEnvironment):
             torque=obs[3],
             omega_el=obs[2],
         )
-        additions = None
+        voltage = lambda t: jnp.array([0, 0])
+
+        args = (env_properties.static_params, phys.omega_el)
+        if env_properties.saturated:
+            vector_field = partial(self.nonlinear_ode, action=voltage)
+        else:
+            vector_field = partial(self.linear_ode, action=voltage)
+
+        term = diffrax.ODETerm(vector_field)
+        t0 = 0
+        t1 = self.tau
+        y0 = tuple([phys.i_d, phys.i_q, phys.epsilon])
+
+        solver_state = self._solver.init(term, t0, t1, y0, args)
+
+        additions = self.Additions(solver_state=solver_state)
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,
@@ -926,13 +994,19 @@ class PMSM(CoreEnvironment):
         rew = jnp.zeros_like(torque_ref)
         rew = jnp.where(i_s > 1, -1 * jnp.abs(i_s), rew)
         rew = jnp.where((i_s < 1.0) & (i_s > i_n), 0.5 * (1 - (i_s - i_n) / (1 - i_n)) - 1, rew)
-        rew = jnp.where((i_s < i_n) & (i_d > i_d_plus), -0.5 * ((i_d - i_d_plus) / (i_n - i_d_plus)), rew)
+        rew = jnp.where(
+            (i_s < i_n) & (i_d > i_d_plus),
+            -0.5 * ((i_d - i_d_plus) / (i_n - i_d_plus)),
+            rew,
+        )
         rew = jnp.where(
             (i_s < i_n) & (i_d < i_d_plus) & (jnp.abs(torque - torque_ref) > torque_tol),
             0.5 * (1 - jnp.abs((torque_ref - torque) / 2)),
             rew,
         )
         rew = jnp.where(
-            (i_s < i_n) & (i_d < i_d_plus) & (jnp.abs(torque - torque_ref) < torque_tol), 1 - 0.5 * i_s, rew
+            (i_s < i_n) & (i_d < i_d_plus) & (jnp.abs(torque - torque_ref) < torque_tol),
+            1 - 0.5 * i_s,
+            rew,
         )
         return rew * (1 - gamma)

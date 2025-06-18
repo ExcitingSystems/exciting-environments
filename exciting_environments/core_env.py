@@ -123,7 +123,9 @@ class CoreEnvironment(ABC):
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
     @abstractmethod
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+    def _ode_solver_simulate_ahead(
+        self, init_state, actions, static_params, obs_stepsize, action_stepsize
+    ):
         """
         Simulates a trajectory by applying a sequence of actions.
 
@@ -262,7 +264,9 @@ class CoreEnvironment(ABC):
                         f'Passed env property "{name}" needs to be a jnp.array to have different setting per batch, but list is given.'
                     )
                 elif jdc.is_dataclass(value):
-                    setattr(dataclass_in_axes, name, self.create_in_axes_dataclass(value))
+                    setattr(
+                        dataclass_in_axes, name, self.create_in_axes_dataclass(value)
+                    )
                 elif jnp.isscalar(value):
                     setattr(dataclass_in_axes, name, None)
                 elif isinstance(value, jax.numpy.ndarray):
@@ -275,6 +279,21 @@ class CoreEnvironment(ABC):
                         f'Passed env property "{name}" needs to be a scalar, jnp.array or jdc.pytree_dataclass, but {type(value)} is given.'
                     )
         return dataclass_in_axes
+
+    def repeat_values(self, x, n_repeat):
+        """Repeats the values of x n_repeat times."""
+        if x == None:
+            return None
+        elif isinstance(x, tuple):
+            return tuple(self.repeat_values(i, n_repeat) for i in x)
+        elif isinstance(x, jax.numpy.ndarray):
+            return jnp.full(n_repeat, x)
+        elif isinstance(x, float):
+            return jnp.full(n_repeat, x)
+        else:
+            raise ValueError(
+                f"State needs to consist of jnp.array, tuple or float, but {type(x)} is given."
+            )
 
     @partial(jax.jit, static_argnums=0)
     def normalize_state(self, state, env_properties):
@@ -295,7 +314,9 @@ class CoreEnvironment(ABC):
                 norm_single_state = getattr(physical_normalizations, name).normalize(
                     getattr(state.physical_state, name)
                 )
-                norm_ref_single_state = getattr(physical_normalizations, name).normalize(getattr(state.reference, name))
+                norm_ref_single_state = getattr(
+                    physical_normalizations, name
+                ).normalize(getattr(state.reference, name))
                 setattr(norm_state.physical_state, name, norm_single_state)
                 setattr(norm_state.reference, name, norm_ref_single_state)
         return norm_state
@@ -346,7 +367,11 @@ class CoreEnvironment(ABC):
         return action_denorm
 
     def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
+        self,
+        env_properties,
+        rng: chex.PRNGKey = None,
+        initial_state: jdc.pytree_dataclass = None,
+        vmap_helper=None,
     ):
         """
         Resets environment to default, random or passed initial state.
@@ -408,7 +433,9 @@ class CoreEnvironment(ABC):
         return obs, state
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
-    def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):
+    def sim_ahead(
+        self, init_state, actions, env_properties, obs_stepsize, action_stepsize
+    ):
         """Computes multiple JAX-JIT compiled simulation steps for one batch.
 
         The length of the set of inputs together with the action_stepsize determine the
@@ -429,33 +456,47 @@ class CoreEnvironment(ABC):
             last_state: The last state of the simulations.
         """
 
-        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.ndim == 2
+        ), "The actions need to have two dimensions: (n_action_steps, action_dim)"
         assert (
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
 
-        init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
+        init_physical_state_shape = jnp.array(
+            tree_flatten(init_state.physical_state)[0]
+        ).T.shape
         assert init_physical_state_shape == (self.physical_state_dim,), (
             "The initial physical state needs to be of shape (env.physical_state_dim,) which is "
             + f"{(self.physical_state_dim,)}, but {init_physical_state_shape} is given"
         )
 
         # denormalize actions
-        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(actions, env_properties)
+        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(
+            actions, env_properties
+        )
 
         single_state_struct = tree_structure(init_state)
 
         # compute states trajectory for given actions
         states = self._ode_solver_simulate_ahead(
-            init_state, actions, env_properties.static_params, obs_stepsize, action_stepsize
+            init_state,
+            actions,
+            env_properties.static_params,
+            obs_stepsize,
+            action_stepsize,
         )
 
         # generate observations for all timesteps
-        observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
+        observations = jax.vmap(self.generate_observation, in_axes=(0, None))(
+            states, env_properties
+        )
 
         # get last state so that the simulation can be continued from the end point
         states_flatten, _ = tree_flatten(states)
-        last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
+        last_state = tree_unflatten(
+            single_state_struct, jnp.array(states_flatten)[:, -1]
+        )
 
         return observations, states, last_state
 
@@ -474,23 +515,37 @@ class CoreEnvironment(ABC):
             truncated: Truncated flags at each step.
             terminated : Terminated flag at each step.
         """
-        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert (
+            actions.ndim == 2
+        ), "The actions need to have two dimensions: (n_action_steps, action_dim)"
         assert (
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
 
-        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(actions, env_properties)
+        actions = jax.vmap(self.denormalize_action, in_axes=(0, None))(
+            actions, env_properties
+        )
 
         states_flatten, struct = tree_flatten(states)
 
-        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+        states_without_init_state = tree_unflatten(
+            struct, jnp.array(states_flatten)[:, 1:]
+        )
 
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
             states_without_init_state,
-            jnp.expand_dims(jnp.repeat(actions, int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0])), 1),
+            jnp.expand_dims(
+                jnp.repeat(
+                    actions,
+                    int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0]),
+                ),
+                1,
+            ),
             env_properties,
         )
-        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, env_properties)
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(
+            states, env_properties
+        )
         terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, None))(
             states_without_init_state, reward, env_properties
         )
@@ -557,7 +612,9 @@ class CoreEnvironment(ABC):
         assert (
             obs_stepsize <= action_stepsize
         ), "The action stepsize should be greater or equal to the observation stepsize."
-        assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
+        assert (
+            actions.ndim == 3
+        ), "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
             actions.shape[0] == self.batch_size
         ), f"The first dimension does not correspond to the batch size which is {self.batch_size}, but {actions.shape[0]} is given"
@@ -565,8 +622,13 @@ class CoreEnvironment(ABC):
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
 
-        init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
-        assert init_physical_state_shape == (self.batch_size, self.physical_state_dim), (
+        init_physical_state_shape = jnp.array(
+            tree_flatten(init_state.physical_state)[0]
+        ).T.shape
+        assert init_physical_state_shape == (
+            self.batch_size,
+            self.physical_state_dim,
+        ), (
             "The initial physical state needs to be of shape (batch_size, physical_state_dim,) which is "
             + f"{(self.batch_size, self.physical_state_dim)}, but {init_physical_state_shape} is given"
         )
@@ -595,7 +657,9 @@ class CoreEnvironment(ABC):
             terminated : Terminated flag at each step for every batch.
         """
 
-        assert actions.ndim == 3, "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
+        assert (
+            actions.ndim == 3
+        ), "The actions need to have three dimensions: (batch_size, n_action_steps, action_dim)"
         assert (
             actions.shape[0] == self.batch_size
         ), f"The first dimension does not correspond to the batch size which is {self.batch_size}, but {actions.shape[0]} is given"
@@ -603,7 +667,8 @@ class CoreEnvironment(ABC):
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
         reward, truncated, terminated = jax.vmap(
-            self.generate_rew_trunc_term_ahead, in_axes=(0, 0, self.in_axes_env_properties)
+            self.generate_rew_trunc_term_ahead,
+            in_axes=(0, 0, self.in_axes_env_properties),
         )(states, actions, self.env_properties)
 
         return reward, truncated, terminated
@@ -624,7 +689,9 @@ class CoreEnvironment(ABC):
         )
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
+    def vmap_reset(
+        self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None
+    ):
         """
         Resets environment (all batches) to default, random or passed initial state.
 
@@ -660,7 +727,8 @@ class CoreEnvironment(ABC):
         Returns:
             state: Computed state for each batch.
         """
-        state = jax.vmap(self.generate_state_from_observation, in_axes=(0, self.in_axes_env_properties, 0))(
-            obs, self.env_properties, key
-        )
+        state = jax.vmap(
+            self.generate_state_from_observation,
+            in_axes=(0, self.in_axes_env_properties, 0),
+        )(obs, self.env_properties, key)
         return state
