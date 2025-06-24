@@ -4,7 +4,7 @@ from types import MethodType
 import numpy as np
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure, tree_map
 import jax_dataclasses as jdc
 import chex
 import diffrax
@@ -291,6 +291,7 @@ class PMSM(CoreEnvironment):
         """Dataclass containing additional information for simulation."""
 
         solver_state: tuple
+        active_solver_state: bool
 
     @jdc.pytree_dataclass
     class Action:
@@ -464,7 +465,9 @@ class PMSM(CoreEnvironment):
         y0 = tuple([phys.i_d, phys.i_q, phys.epsilon])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
-        additions = self.Additions(solver_state=solver_state)  # None
+        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+
+        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,
@@ -544,9 +547,16 @@ class PMSM(CoreEnvironment):
         t0 = 0
         t1 = self.tau
         y0 = tuple([i_d, i_q, eps])
-        solver_state = state.additions.solver_state
 
-        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, solver_state, made_jump=False)
+        def true_fn(_):
+            return self.Additions(solver_state=self._solver.init(term, t0, t1, y0, args), active_solver_state=True)
+
+        def false_fn(_):
+            return state.additions
+
+        additions = jax.lax.cond(state.additions.active_solver_state, false_fn, true_fn, operand=None)
+
+        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, additions.solver_state, made_jump=False)
 
         i_d_k1 = y[0]
         i_q_k1 = y[1]
@@ -565,12 +575,13 @@ class PMSM(CoreEnvironment):
             system_state_next.i_q = i_q_k1
             system_state_next.torque = torque
 
-        with jdc.copy_and_mutate(state, validate=True) as state_next:
-            state_next.physical_state = system_state_next
+        with jdc.copy_and_mutate(state, validate=True) as new_state:
+            new_state.physical_state = system_state_next
 
-        with jdc.copy_and_mutate(state_next, validate=False) as state_next_final:
-            state_next_final.additions.solver_state = solver_state_k1
-        return state_next_final
+        new_state = jdc.replace(
+            new_state, additions=self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        )
+        return new_state
 
     def constraint_denormalization(self, u_dq_norm, system_state, env_properties):
         """Denormalizes the u_dq and clips it with respect to the hexagon."""
@@ -613,10 +624,6 @@ class PMSM(CoreEnvironment):
         eps = init_state_phys.epsilon
 
         def voltage(t):
-            # boundaries = jnp.arange(actions.shape[0]) * action_stepsize
-            # idx = jnp.searchsorted(boundaries, t, side="left") - 1
-            # idx = jnp.maximum(idx, 0)
-            # return actions[idx]
             return actions[jnp.array(t / action_stepsize, int)]
 
         args = (properties.static_params, omega_el)
@@ -668,7 +675,9 @@ class PMSM(CoreEnvironment):
 
         y0 = tuple([i_d_t[-1], i_q_t[-1], eps_t[-1]])
         solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
-        additions = self.Additions(solver_state=self.repeat_values(solver_state, obs_len))
+        additions = self.Additions(
+            solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
+        )
         ref = self.PhysicalState(
             u_d_buffer=jnp.full(obs_len, jnp.nan),
             u_q_buffer=jnp.full(obs_len, jnp.nan),
@@ -928,7 +937,9 @@ class PMSM(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        additions = self.Additions(solver_state=solver_state)
+        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+
+        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,

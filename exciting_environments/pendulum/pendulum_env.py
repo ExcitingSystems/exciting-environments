@@ -4,12 +4,14 @@ from typing import Callable
 import numpy as np
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_structure
+from jax.tree_util import tree_flatten, tree_structure, tree_map
 import jax_dataclasses as jdc
+from jax import lax
 import diffrax
 import chex
 from dataclasses import fields
 from exciting_environments.utils import MinMaxNormalization
+
 
 from exciting_environments import CoreEnvironment
 
@@ -123,6 +125,7 @@ class Pendulum(CoreEnvironment):
         """Dataclass containing additional information for simulation."""
 
         solver_state: tuple
+        active_solver_state: bool
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -170,15 +173,24 @@ class Pendulum(CoreEnvironment):
         t0 = 0
         t1 = self.tau
         y0 = tuple([physical_state.theta, physical_state.omega])
-        solver_state = state.additions.solver_state
-        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, solver_state, made_jump=False)
+
+        def true_fn(_):
+            return self.Additions(solver_state=self._solver.init(term, t0, t1, y0, args), active_solver_state=True)
+
+        def false_fn(_):
+            return state.additions
+
+        additions = jax.lax.cond(state.additions.active_solver_state, false_fn, true_fn, operand=None)
+        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, additions.solver_state, made_jump=False)
 
         theta_k1 = y[0]
         omega_k1 = y[1]
         theta_k1 = ((theta_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
         with jdc.copy_and_mutate(state, validate=True) as new_state:
             new_state.physical_state = self.PhysicalState(theta=theta_k1, omega=omega_k1)
-        new_state = jdc.replace(new_state, additions=self.Additions(solver_state=solver_state_k1))
+        new_state = jdc.replace(
+            new_state, additions=self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        )
         return new_state
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
@@ -201,10 +213,6 @@ class Pendulum(CoreEnvironment):
         args = static_params
 
         def torque(t):
-            # boundaries = jnp.arange(actions.shape[0]) * action_stepsize
-            # idx = jnp.searchsorted(boundaries, t, side="left") - 1
-            # idx = jnp.maximum(idx, 0)
-            # return actions[idx]
             return actions[jnp.array(t / action_stepsize, int)]
 
         vector_field = partial(self._ode, action=torque)
@@ -239,7 +247,9 @@ class Pendulum(CoreEnvironment):
         )
         y0 = tuple([theta_t[-1], omega_t[-1]])
         solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
-        additions = self.Additions(solver_state=self.repeat_values(solver_state, obs_len))
+        additions = self.Additions(
+            solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
+        )
         PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
         return self.State(
             physical_state=physical_states,
@@ -277,8 +287,9 @@ class Pendulum(CoreEnvironment):
         y0 = tuple([phys.theta, phys.omega])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
+        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
 
-        additions = self.Additions(solver_state=solver_state)
+        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
         return self.denormalize_state(norm_state, env_properties)
@@ -342,7 +353,9 @@ class Pendulum(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        additions = self.Additions(solver_state=solver_state)
+        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+
+        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)  # None
         ref = self.PhysicalState(theta=jnp.nan, omega=jnp.nan)
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
