@@ -432,6 +432,13 @@ class CoreEnvironment(ABC):
         overall length of the simulation -> overall_time = actions.shape[0] * action_stepsize
         The actions are interpolated with zero order hold inbetween their values.
 
+        Warning:
+            Depending on the underlying ODE solver (e.g., Tsit5 or other higher-order solvers),
+            intermediate evaluations during integration may internally access actions at future time steps.
+            Therefore it is not guaranteed to be numerically equivalent to repeated
+            calls of `step`.
+
+
         Args:
             init_state: The initial state of the simulation
             actions: A set of actions to be applied to the environment, the value changes every

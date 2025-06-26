@@ -17,7 +17,8 @@ from exciting_environments import CoreEnvironment
 from exciting_environments.pmsm import default_params
 
 
-t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])  # only for alpha/beta -> abc
+# only for alpha/beta -> abc
+t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])
 t23 = 2 / 3 * jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]]).T  # only for abc -> alpha/beta
 
 inverter_t_abc = jnp.array(
@@ -451,7 +452,8 @@ class PMSM(CoreEnvironment):
                 + env_properties.physical_normalizations.omega_el.min,
             )
 
-        voltage = lambda t: jnp.array([0, 0])
+        def voltage(t):
+            return jnp.array([0, 0])
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.saturated:
@@ -535,7 +537,8 @@ class PMSM(CoreEnvironment):
         i_q = system_state.i_q
         eps = system_state.epsilon
 
-        voltage = lambda t: u_dq
+        def voltage(t):
+            return u_dq
 
         args = (properties.static_params, omega_el)
         if properties.saturated:
@@ -562,6 +565,8 @@ class PMSM(CoreEnvironment):
         i_q_k1 = y[1]
         eps_k1 = y[2]
 
+        eps_k1 = ((eps_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
+
         if properties.saturated:
             torque = jnp.array([self.currents_to_torque_saturated(i_d=i_d_k1, i_q=i_q_k1, env_properties=properties)])[
                 0
@@ -586,7 +591,8 @@ class PMSM(CoreEnvironment):
     def constraint_denormalization(self, u_dq_norm, system_state, env_properties):
         """Denormalizes the u_dq and clips it with respect to the hexagon."""
         u_dq = self.denormalize_action(u_dq_norm, env_properties)
-        u_dq_norm = u_dq * (1 / (env_properties.static_params.u_dc / 2))  # normalize to u_dc/2 for hexagon constraints
+        # normalize to u_dc/2 for hexagon constraints
+        u_dq_norm = u_dq * (1 / (env_properties.static_params.u_dc / 2))
         advanced_angle = step_eps(
             system_state.physical_state.epsilon,
             self.env_properties.static_params.deadtime + 0.5,
@@ -602,7 +608,8 @@ class PMSM(CoreEnvironment):
             u_albet_norm_clip,
             advanced_angle,
         )
-        u_dq = u_dq_norm_clip[0] * (env_properties.static_params.u_dc / 2)  # denormalize from u_dc/2
+        # denormalize from u_dc/2
+        u_dq = u_dq_norm_clip[0] * (env_properties.static_params.u_dc / 2)
         return u_dq
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
@@ -655,6 +662,8 @@ class PMSM(CoreEnvironment):
         i_d_t = y.ys[0]
         i_q_t = y.ys[1]
         eps_t = y.ys[2]
+        # keep eps between -pi and pi
+        eps_t = ((eps_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
         obs_len = i_d_t.shape[0]
 
         if properties.saturated:
@@ -922,7 +931,9 @@ class PMSM(CoreEnvironment):
             torque=obs[3],
             omega_el=obs[2],
         )
-        voltage = lambda t: jnp.array([0, 0])
+
+        def voltage(t):
+            return jnp.array([0, 0])
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.saturated:
