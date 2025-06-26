@@ -17,12 +17,8 @@ from exciting_environments import CoreEnvironment
 from exciting_environments.sixphase_pmsm import default_params
 
 
-t32 = jnp.array(
-    [[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]]
-)  # only for alpha/beta -> abc
-t23 = (
-    2 / 3 * jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]]).T
-)  # only for abc -> alpha/beta
+t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])  # only for alpha/beta -> abc
+t23 = 2 / 3 * jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]]).T  # only for abc -> alpha/beta
 
 inverter_t_abc = jnp.array(
     [
@@ -121,10 +117,7 @@ def step_eps(eps, omega_el, tau, tau_scale=1.0):
 def apply_hex_constraint(u_albet):
     """Clip voltages in alpha/beta coordinates into the voltage hexagon."""
     u_albet_c = u_albet[0] + 1j * u_albet[1]
-    idx = (
-        jnp.sin(jnp.angle(u_albet_c)[..., jnp.newaxis] - 2 / 3 * jnp.pi * jnp.arange(3))
-        >= 0
-    ).astype(int)
+    idx = (jnp.sin(jnp.angle(u_albet_c)[..., jnp.newaxis] - 2 / 3 * jnp.pi * jnp.arange(3)) >= 0).astype(int)
     rot_vec = ROTATION_MAP[idx[0], idx[1], idx[2]]
     # rotate sectors upwards
     u_albet_c = jnp.multiply(u_albet_c, rot_vec)
@@ -195,25 +188,17 @@ class SixPhasePMSM(CoreEnvironment):
 
         if LUT_motor_name is not None:
             motor_params = deepcopy(default_params(LUT_motor_name))
-            default_physical_normalizations = (
-                motor_params.physical_normalizations.__dict__
-            )
+            default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
-            default_soft_constraints = MethodType(
-                motor_params.default_soft_constraints, self
-            )
+            default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
             pmsm_lut_predefined = motor_params.pmsm_lut
             if saturated:
-                raise NotImplementedError(
-                    "Saturated multiphase PMSM is not implemented yet."
-                )
+                raise NotImplementedError("Saturated multiphase PMSM is not implemented yet.")
                 default_static_params["l_d"] = jnp.nan
                 default_static_params["l_q"] = jnp.nan
                 default_static_params["psi_p"] = jnp.nan
-                self.LUT_interpolators, self.pmsm_lut = (
-                    self.generate_interpolators_and_lut(pmsm_lut_predefined)
-                )
+                self.LUT_interpolators, self.pmsm_lut = self.generate_interpolators_and_lut(pmsm_lut_predefined)
 
             else:
                 saturated_quants = [
@@ -224,9 +209,7 @@ class SixPhasePMSM(CoreEnvironment):
                     "Psi_d",
                     "Psi_q",
                 ]
-                self.LUT_interpolators = {
-                    q: lambda x: jnp.array([np.nan]) for q in saturated_quants
-                }
+                self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
 
         else:
             if saturated:
@@ -242,19 +225,13 @@ class SixPhasePMSM(CoreEnvironment):
             ]
 
             motor_params = deepcopy(default_params(LUT_motor_name))
-            default_physical_normalizations = (
-                motor_params.physical_normalizations.__dict__
-            )
+            default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
-            default_soft_constraints = MethodType(
-                motor_params.default_soft_constraints, self
-            )
+            default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
             pmsm_lut_predefined = motor_params.__dict__
             self.pmsm_lut = pmsm_lut_predefined
-            self.LUT_interpolators = {
-                q: lambda x: jnp.array([np.nan]) for q in saturated_quants
-            }
+            self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
 
         if not static_params:
             static_params = default_static_params
@@ -298,9 +275,7 @@ class SixPhasePMSM(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(
-            batch_size, env_properties=env_properties, tau=tau, solver=solver
-        )
+        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
 
         self._action_description = ["u_d", "u_q", "u_x", "u_y", "u_0p", "u_0m"]
         self._obs_description = [
@@ -415,9 +390,9 @@ class SixPhasePMSM(CoreEnvironment):
             pmsm_lut[q] = b
 
         n_grid_points_y, n_grid_points_x = pmsm_lut[saturated_quants[0]].shape
-        x, y = np.linspace(
-            i_d_min - i_d_stepsize, i_d_max + i_d_stepsize, n_grid_points_x
-        ), np.linspace(i_q_min - i_q_stepsize, i_q_max + i_q_stepsize, n_grid_points_y)
+        x, y = np.linspace(i_d_min - i_d_stepsize, i_d_max + i_d_stepsize, n_grid_points_x), np.linspace(
+            i_q_min - i_q_stepsize, i_q_max + i_q_stepsize, n_grid_points_y
+        )
         LUT_interpolators = {
             q: jax.scipy.interpolate.RegularGridInterpolator(
                 (x, y),
@@ -437,8 +412,7 @@ class SixPhasePMSM(CoreEnvironment):
             * env_properties.static_params.p
             * (
                 env_properties.static_params.psi_p
-                + (env_properties.static_params.l_d - env_properties.static_params.l_q)
-                * i_d
+                + (env_properties.static_params.l_d - env_properties.static_params.l_q) * i_d
             )
             * i_q
         )
@@ -461,13 +435,11 @@ class SixPhasePMSM(CoreEnvironment):
                 u_0p_buffer=0.0,
                 u_0m_buffer=0.0,
                 epsilon=0.0,
-                i_d=(
-                    env_properties.physical_normalizations.i_d.min
-                    + env_properties.physical_normalizations.i_d.max
-                )
+                i_d=(env_properties.physical_normalizations.i_d.min + env_properties.physical_normalizations.i_d.max)
                 / 2,
                 i_q=0.0,
-                i_x=0.0,
+                i_x=(env_properties.physical_normalizations.i_x.min + env_properties.physical_normalizations.i_x.max)
+                / 2,
                 i_y=0.0,
                 i_0p=0.0,
                 i_0m=0.0,
@@ -498,25 +470,36 @@ class SixPhasePMSM(CoreEnvironment):
             i_dq_rand = i_dq_norm * i_max
             i_d = (
                 i_dq_rand[0]
-                - 2
-                * jax.nn.relu(
-                    i_dq_rand[0] - env_properties.physical_normalizations.i_d.max
-                )
-                + 2
-                * jax.nn.relu(
-                    -i_dq_rand[0] + env_properties.physical_normalizations.i_d.min
-                )
+                - 2 * jax.nn.relu(i_dq_rand[0] - env_properties.physical_normalizations.i_d.max)
+                + 2 * jax.nn.relu(-i_dq_rand[0] + env_properties.physical_normalizations.i_d.min)
             )
             i_q = (
                 i_dq_rand[1]
-                - 2
-                * jax.nn.relu(
-                    i_dq_rand[1] - env_properties.physical_normalizations.i_q.max
+                - 2 * jax.nn.relu(i_dq_rand[1] - env_properties.physical_normalizations.i_q.max)
+                + 2 * jax.nn.relu(-i_dq_rand[1] + env_properties.physical_normalizations.i_q.min)
+            )
+            rng, subkey = jax.random.split(rng)
+            i_xy_norm = jax.random.ball(subkey, 2)
+            i_max = jnp.max(
+                jnp.array(
+                    [
+                        jnp.abs(env_properties.physical_normalizations.i_x.min),
+                        jnp.abs(env_properties.physical_normalizations.i_x.max),
+                        jnp.abs(env_properties.physical_normalizations.i_y.min),
+                        jnp.abs(env_properties.physical_normalizations.i_y.max),
+                    ]
                 )
-                + 2
-                * jax.nn.relu(
-                    -i_dq_rand[1] + env_properties.physical_normalizations.i_q.min
-                )
+            )
+            i_xy_rand = i_xy_norm * i_max
+            i_x = (
+                i_xy_rand[0]
+                - 2 * jax.nn.relu(i_xy_rand[0] - env_properties.physical_normalizations.i_x.max)
+                + 2 * jax.nn.relu(-i_xy_rand[0] + env_properties.physical_normalizations.i_x.min)
+            )
+            i_y = (
+                i_xy_rand[1]
+                - 2 * jax.nn.relu(i_xy_rand[1] - env_properties.physical_normalizations.i_y.max)
+                + 2 * jax.nn.relu(-i_xy_rand[1] + env_properties.physical_normalizations.i_y.min)
             )
             torque = jax.lax.cond(
                 env_properties.saturated,
@@ -542,8 +525,8 @@ class SixPhasePMSM(CoreEnvironment):
                 + env_properties.physical_normalizations.epsilon.min,
                 i_d=i_d,
                 i_q=i_q,
-                i_x=0.0,
-                i_y=0.0,
+                i_x=i_x,
+                i_y=i_y,
                 i_0p=0.0,
                 i_0m=0.0,
                 torque=torque,
@@ -556,9 +539,7 @@ class SixPhasePMSM(CoreEnvironment):
                 + env_properties.physical_normalizations.omega_el.min,
             )
 
-        force = lambda t: jnp.array(
-            [0, 0, 0, 0, 0, 0]
-        )  # u_d, u_q, u_x, u_y, u_0p, u_0m
+        force = lambda t: jnp.array([0, 0, 0, 0, 0, 0])  # u_d, u_q, u_x, u_y, u_0p, u_0m
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.saturated:
@@ -569,9 +550,7 @@ class SixPhasePMSM(CoreEnvironment):
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple(
-            [phys.i_d, phys.i_q, phys.i_x, phys.i_y, phys.i_0p, phys.i_0m, phys.epsilon]
-        )
+        y0 = tuple([phys.i_d, phys.i_q, phys.i_x, phys.i_y, phys.i_0p, phys.i_0m, phys.epsilon])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
         additions = self.Additions(solver_state=solver_state)  # None
@@ -592,9 +571,7 @@ class SixPhasePMSM(CoreEnvironment):
             torque=jnp.nan,
             omega_el=jnp.nan,
         )
-        return self.State(
-            physical_state=phys, PRNGKey=rng, additions=additions, reference=ref
-        )
+        return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
 
     def nonlinear_ode(self, t, y, args, action):
         raise NotImplementedError()
@@ -662,9 +639,7 @@ class SixPhasePMSM(CoreEnvironment):
         y0 = tuple([i_d, i_q, i_x, i_y, i_0p, i_0m, eps])
         solver_state = state.additions.solver_state
 
-        y, _, _, solver_state_k1, _ = self._solver.step(
-            term, t0, t1, y0, args, solver_state, made_jump=False
-        )
+        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, solver_state, made_jump=False)
 
         i_d_k1 = y[0]
         i_q_k1 = y[1]
@@ -675,13 +650,9 @@ class SixPhasePMSM(CoreEnvironment):
         eps_k1 = y[6]
 
         if properties.saturated:
-            torque = jnp.array(
-                [
-                    self.currents_to_torque_saturated(
-                        i_d=i_d_k1, i_q=i_q_k1, env_properties=properties
-                    )
-                ]
-            )[0]
+            torque = jnp.array([self.currents_to_torque_saturated(i_d=i_d_k1, i_q=i_q_k1, env_properties=properties)])[
+                0
+            ]
         else:
             torque = jnp.array([self.currents_to_torque(i_d_k1, i_q_k1, properties)])[0]
 
@@ -706,9 +677,7 @@ class SixPhasePMSM(CoreEnvironment):
         """Denormalizes the u_vec and clips it with respect to the hexagon."""
         u_vec = self.denormalize_action(u_vec_norm, env_properties)
         u_dq = u_vec[:2]  # u_d, u_q
-        u_dq_norm = u_dq * (
-            1 / (env_properties.static_params.u_dc / 2)
-        )  # normalize to u_dc/2 for hexagon constraints
+        u_dq_norm = u_dq * (1 / (env_properties.static_params.u_dc / 2))  # normalize to u_dc/2 for hexagon constraints
         advanced_angle = step_eps(
             system_state.physical_state.epsilon,
             self.env_properties.static_params.deadtime + 0.5,
@@ -724,15 +693,24 @@ class SixPhasePMSM(CoreEnvironment):
             u_albet_norm_clip,
             advanced_angle,
         )
-        u_dq = u_dq_norm_clip[0] * (
-            env_properties.static_params.u_dc / 2
-        )  # denormalize from u_dc/2
-        return jnp.hstack([u_dq, u_vec[2:]])
+        u_dq = u_dq_norm_clip[0] * (env_properties.static_params.u_dc / 2)  # denormalize from u_dc/2
+        u_xy = u_vec[2:4]  # u_x, u_y
+        u_xy_norm = u_xy * (1 / (env_properties.static_params.u_dc / 2))  # normalize to u_dc/2 for hexagon constraints
+        u_XY_norm = dq2albet(
+            u_xy_norm,
+            -advanced_angle,
+        )
+        u_XY_norm_clip = apply_hex_constraint(u_XY_norm)
+        u_xy_norm_clip = albet2dq(
+            u_XY_norm_clip,
+            -advanced_angle,
+        )
+        u_xy = u_xy_norm_clip[0] * (env_properties.static_params.u_dc / 2)  # denormalize from u_dc/2
+
+        return jnp.hstack([u_dq, u_xy, u_vec[4:]])
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
-    def _ode_solver_simulate_ahead(
-        self, init_state, actions, properties, obs_stepsize, action_stepsize
-    ):
+    def _ode_solver_simulate_ahead(self, init_state, actions, properties, obs_stepsize, action_stepsize):
         """Computes multiple simulation steps.
 
         Args:
@@ -798,14 +776,10 @@ class SixPhasePMSM(CoreEnvironment):
         obs_len = i_d_t.shape[0]
 
         if properties.saturated:
-            torque_t = jax.vmap(
-                self.currents_to_torque_saturated, in_axes=(0, 0, None)
-            )(i_d_t, i_q_t, properties)
+            torque_t = jax.vmap(self.currents_to_torque_saturated, in_axes=(0, 0, None))(i_d_t, i_q_t, properties)
 
         else:
-            torque_t = jax.vmap(self.currents_to_torque, in_axes=(0, 0, None))(
-                i_d_t, i_q_t, properties
-            )
+            torque_t = jax.vmap(self.currents_to_torque, in_axes=(0, 0, None))(i_d_t, i_q_t, properties)
 
         phys = self.PhysicalState(
             u_d_buffer=jnp.zeros(obs_len),
@@ -837,9 +811,7 @@ class SixPhasePMSM(CoreEnvironment):
             ]
         )
         solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
-        additions = self.Additions(
-            solver_state=self.repeat_values(solver_state, obs_len)
-        )
+        additions = self.Additions(solver_state=self.repeat_values(solver_state, obs_len))
         ref = self.PhysicalState(
             u_d_buffer=jnp.full(obs_len, jnp.nan),
             u_q_buffer=jnp.full(obs_len, jnp.nan),
@@ -876,8 +848,7 @@ class SixPhasePMSM(CoreEnvironment):
                 )
             states.physical_state.epsilon = (
                 states.physical_state.epsilon
-                + jnp.linspace(0, self.tau * (act_len - 1), act_len)
-                * init_state.physical_state.omega_el
+                + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el
             )
 
             # extend state dimension to use vmapping across time
@@ -899,15 +870,11 @@ class SixPhasePMSM(CoreEnvironment):
 
             states.PRNGKey = jnp.full(act_len, init_state.PRNGKey)
 
-        actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(
-            actions, states, env_properties
-        )
+        actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(actions, states, env_properties)
         return actions
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
-    def sim_ahead(
-        self, init_state, actions, env_properties, obs_stepsize, action_stepsize
-    ):
+    def sim_ahead(self, init_state, actions, env_properties, obs_stepsize, action_stepsize):
         """Computes multiple JAX-JIT compiled simulation steps for one batch.
 
         The length of the set of inputs together with the action_stepsize determine the
@@ -923,9 +890,7 @@ class SixPhasePMSM(CoreEnvironment):
             action_stepsize: The time between changes in the input/action.
         """
 
-        actions = self.constraint_denormalization_ahead(
-            actions, init_state, env_properties
-        )
+        actions = self.constraint_denormalization_ahead(actions, init_state, env_properties)
 
         deadtime = env_properties.static_params.deadtime
         acts_buf = jnp.repeat(
@@ -943,9 +908,7 @@ class SixPhasePMSM(CoreEnvironment):
             axis=0,
         )
 
-        actions_dead = jnp.vstack(
-            [acts_buf, actions[: (actions.shape[0] - deadtime), :]]
-        )
+        actions_dead = jnp.vstack([acts_buf, actions[: (actions.shape[0] - deadtime), :]])
         single_state_struct = tree_structure(init_state)
 
         # compute states trajectory for given actions
@@ -966,36 +929,26 @@ class SixPhasePMSM(CoreEnvironment):
             states.physical_state.u_0m_buffer = acts_m[:, 5]
 
         # generate observations for all timesteps
-        observations = jax.vmap(self.generate_observation, in_axes=(0, None))(
-            states, env_properties
-        )
+        observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
 
         states_flatten, _ = tree_flatten(states)
 
         # get last state so that the simulation can be continued from the end point
-        last_state = tree_unflatten(
-            single_state_struct, jnp.array(states_flatten)[:, -1]
-        )
+        last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
 
         return observations, states, last_state
 
     def generate_rew_trunc_term_ahead(self, states, actions, env_properties):
         """Computes reward, truncated and terminated for sim_ahead simulation for one batch."""
-        assert (
-            actions.ndim == 2
-        ), "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
         assert (
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
         deadtime = env_properties.static_params.deadtime
 
         states_flatten, struct = tree_flatten(states)
-        states_without_init_state = tree_unflatten(
-            struct, jnp.array(states_flatten)[:, 1:]
-        )
-        states_without_last_state = tree_unflatten(
-            struct, jnp.array(states_flatten)[:, :-1]
-        )
+        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+        states_without_last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, :-1])
 
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(
             actions, states_without_last_state, env_properties
@@ -1017,27 +970,21 @@ class SixPhasePMSM(CoreEnvironment):
             axis=0,
         )
 
-        actions_dead = jnp.vstack(
-            [acts_buf, actions[: (actions.shape[0] - deadtime), :]]
-        )
+        actions_dead = jnp.vstack([acts_buf, actions[: (actions.shape[0] - deadtime), :]])
 
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
             states_without_init_state,
             jnp.expand_dims(
                 jnp.repeat(
                     actions_dead,
-                    int(
-                        (jnp.array(states_flatten).shape[1] - 1) / actions_dead.shape[0]
-                    ),
+                    int((jnp.array(states_flatten).shape[1] - 1) / actions_dead.shape[0]),
                     axis=0,
                 ),
                 1,
             ),
             env_properties,
         )
-        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(
-            states, env_properties
-        )
+        truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, env_properties)
         terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, None))(
             states_without_init_state, reward, env_properties
         )
@@ -1071,9 +1018,7 @@ class SixPhasePMSM(CoreEnvironment):
 
         if env_properties.static_params.deadtime > 0:
 
-            updated_buffer = jnp.array(
-                [action[0], action[1], action[2], action[3], action[4], action[5]]
-            )
+            updated_buffer = jnp.array([action[0], action[1], action[2], action[3], action[4], action[5]])
             u_vec = action_buffer
         else:
             updated_buffer = action_buffer
@@ -1160,9 +1105,7 @@ class SixPhasePMSM(CoreEnvironment):
             torque=obs[7],
             omega_el=obs[6],
         )
-        force = lambda t: jnp.array(
-            [0, 0, 0, 0, 0, 0]
-        )  # u_d, u_q, u_x, u_y, u_0p, u_0m
+        force = lambda t: jnp.array([0, 0, 0, 0, 0, 0])  # u_d, u_q, u_x, u_y, u_0p, u_0m
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.saturated:
@@ -1173,9 +1116,7 @@ class SixPhasePMSM(CoreEnvironment):
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple(
-            [phys.i_d, phys.i_q, phys.i_x, phys.i_y, phys.i_0p, phys.i_0m, phys.epsilon]
-        )
+        y0 = tuple([phys.i_d, phys.i_q, phys.i_x, phys.i_y, phys.i_0p, phys.i_0m, phys.epsilon])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
@@ -1200,9 +1141,7 @@ class SixPhasePMSM(CoreEnvironment):
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
                 setattr(new_ref, name, obs[8 + pos])
-        norm_state = self.State(
-            physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref
-        )
+        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state, env_properties)
 
     def generate_truncated(self, system_state, env_properties):
@@ -1212,7 +1151,12 @@ class SixPhasePMSM(CoreEnvironment):
         i_d_norm = physical_state_norm.i_d
         i_q_norm = physical_state_norm.i_q
         i_s = jnp.sqrt(i_d_norm**2 + i_q_norm**2)
-        return i_s[None] > 1
+
+        i_x_norm = physical_state_norm.i_x
+        i_y_norm = physical_state_norm.i_y
+        i_s_xy = jnp.sqrt(i_x_norm**2 + i_y_norm**2)
+
+        return i_s[None] > 1 or i_s_xy[None] > 1
 
     def generate_terminated(self, system_state, reward, env_properties):
         """Returns terminated information for one batch."""
@@ -1230,6 +1174,14 @@ class SixPhasePMSM(CoreEnvironment):
                 state_norm.physical_state.i_q,
                 state_norm.reference.i_d,
                 state_norm.reference.i_q,
+                0.85,
+            )
+        if "i_x" in self.control_state and "i_y" in self.control_state:
+            reward += self.current_reward_func(
+                state_norm.physical_state.i_x,
+                state_norm.physical_state.i_y,
+                state_norm.reference.i_x,
+                state_norm.reference.i_y,
                 0.85,
             )
         if "torque" in self.control_state:
@@ -1254,25 +1206,19 @@ class SixPhasePMSM(CoreEnvironment):
         torque_tol = 0.01
         rew = jnp.zeros_like(torque_ref)
         rew = jnp.where(i_s > 1, -1 * jnp.abs(i_s), rew)
-        rew = jnp.where(
-            (i_s < 1.0) & (i_s > i_n), 0.5 * (1 - (i_s - i_n) / (1 - i_n)) - 1, rew
-        )
+        rew = jnp.where((i_s < 1.0) & (i_s > i_n), 0.5 * (1 - (i_s - i_n) / (1 - i_n)) - 1, rew)
         rew = jnp.where(
             (i_s < i_n) & (i_d > i_d_plus),
             -0.5 * ((i_d - i_d_plus) / (i_n - i_d_plus)),
             rew,
         )
         rew = jnp.where(
-            (i_s < i_n)
-            & (i_d < i_d_plus)
-            & (jnp.abs(torque - torque_ref) > torque_tol),
+            (i_s < i_n) & (i_d < i_d_plus) & (jnp.abs(torque - torque_ref) > torque_tol),
             0.5 * (1 - jnp.abs((torque_ref - torque) / 2)),
             rew,
         )
         rew = jnp.where(
-            (i_s < i_n)
-            & (i_d < i_d_plus)
-            & (jnp.abs(torque - torque_ref) < torque_tol),
+            (i_s < i_n) & (i_d < i_d_plus) & (jnp.abs(torque - torque_ref) < torque_tol),
             1 - 0.5 * i_s,
             rew,
         )
