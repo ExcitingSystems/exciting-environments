@@ -435,7 +435,7 @@ class CoreEnvironment(ABC):
         Warning:
             Depending on the underlying ODE solver (e.g., Tsit5 or other higher-order solvers),
             intermediate evaluations during integration may internally access actions at future time steps.
-            Therefore it is not guaranteed to be numerically equivalent to repeated
+            Therefore `sim_ahead` is not guaranteed to be numerically equivalent to repeated
             calls of `step`.
 
 
