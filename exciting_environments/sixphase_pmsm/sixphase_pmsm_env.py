@@ -305,9 +305,12 @@ class SixPhasePMSM(CoreEnvironment):
         r_s: jax.Array
         l_d: jax.Array
         l_q: jax.Array
-        l_xy: jax.Array
-        l_0: jax.Array
-        psi_p: jax.Array
+        l_x: jax.Array
+        l_y: jax.Array
+        l_d0: jax.Array
+        l_q0: jax.Array
+        psi_p_dq: jax.Array
+        psi_p_xy: jax.Array
         u_dc: jax.Array
         deadtime: jax.Array
 
@@ -581,9 +584,12 @@ class SixPhasePMSM(CoreEnvironment):
         r_s = params.r_s
         l_d = params.l_d
         l_q = params.l_q
-        l_xy = params.l_xy
-        l_0 = params.l_0
-        psi_p = params.psi_p
+        l_x = params.l_x
+        l_y = params.l_y
+        l_p0 = params.l_p0
+        l_m0 = params.l_m0
+        psi_p_dq = params.psi_p_dq
+        psi_p_xy = params.psi_p_xy
         u_vec = action(t)
         u_d = u_vec[0]
         u_q = u_vec[1]
@@ -594,11 +600,11 @@ class SixPhasePMSM(CoreEnvironment):
         i_d, i_q, i_x, i_y, i_0p, i_0m, eps = y
 
         i_d_diff = (u_d - r_s * i_d + omega_el * l_q * i_q) / l_d
-        i_q_diff = (u_q - r_s * i_q - omega_el * (l_q * i_d + psi_p)) / l_q
-        i_x_diff = (u_x - r_s * i_x + omega_el * l_xy * i_y) / l_xy
-        i_y_diff = (u_y - r_s * i_y - omega_el * l_xy * i_x) / l_xy
-        i0p_diff = (u_0p - r_s * i_0p) / l_0
-        i0m_diff = (u_0m - r_s * i_0m) / l_0
+        i_q_diff = (u_q - r_s * i_q - omega_el * (l_q * i_d + psi_p_dq)) / l_q
+        i_x_diff = (u_x - r_s * i_x + omega_el * l_y * i_y) / l_x
+        i_y_diff = (u_y - r_s * i_y - omega_el * (l_y * i_x + psi_p_xy)) / l_y
+        i0p_diff = (u_0p - r_s * i_0p) / l_p0
+        i0m_diff = (u_0m - r_s * i_0m) / l_m0
         diff_eps = omega_el
 
         return i_d_diff, i_q_diff, i_x_diff, i_y_diff, i0p_diff, i0m_diff, diff_eps
