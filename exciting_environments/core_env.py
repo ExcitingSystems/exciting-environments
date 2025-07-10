@@ -276,6 +276,19 @@ class CoreEnvironment(ABC):
                     )
         return dataclass_in_axes
 
+    def repeat_values(self, x, n_repeat):
+        """Repeats the values of x n_repeat times."""
+        if x == None:
+            return None
+        elif isinstance(x, tuple):
+            return tuple(self.repeat_values(i, n_repeat) for i in x)
+        elif isinstance(x, jax.numpy.ndarray):
+            return jnp.full(n_repeat, x)
+        elif isinstance(x, float) or isinstance(x, bool):
+            return jnp.full(n_repeat, x)
+        else:
+            raise ValueError(f"State needs to consist of jnp.array, tuple, float or bool, but {type(x)} is given.")
+
     @partial(jax.jit, static_argnums=0)
     def normalize_state(self, state, env_properties):
         """
@@ -346,7 +359,11 @@ class CoreEnvironment(ABC):
         return action_denorm
 
     def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None, vmap_helper=None
+        self,
+        env_properties,
+        rng: chex.PRNGKey = None,
+        initial_state: jdc.pytree_dataclass = None,
+        vmap_helper=None,
     ):
         """
         Resets environment to default, random or passed initial state.
@@ -415,6 +432,13 @@ class CoreEnvironment(ABC):
         overall length of the simulation -> overall_time = actions.shape[0] * action_stepsize
         The actions are interpolated with zero order hold inbetween their values.
 
+        Warning:
+            Depending on the underlying ODE solver (e.g., Tsit5 or other higher-order solvers),
+            intermediate evaluations during integration may internally access actions at future time steps.
+            Therefore `sim_ahead` is not guaranteed to be numerically equivalent to repeated
+            calls of `step`.
+
+
         Args:
             init_state: The initial state of the simulation
             actions: A set of actions to be applied to the environment, the value changes every
@@ -447,7 +471,11 @@ class CoreEnvironment(ABC):
 
         # compute states trajectory for given actions
         states = self._ode_solver_simulate_ahead(
-            init_state, actions, env_properties.static_params, obs_stepsize, action_stepsize
+            init_state,
+            actions,
+            env_properties.static_params,
+            obs_stepsize,
+            action_stepsize,
         )
 
         # generate observations for all timesteps
@@ -487,7 +515,13 @@ class CoreEnvironment(ABC):
 
         reward = jax.vmap(self.generate_reward, in_axes=(0, 0, None))(
             states_without_init_state,
-            jnp.expand_dims(jnp.repeat(actions, int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0])), 1),
+            jnp.expand_dims(
+                jnp.repeat(
+                    actions,
+                    int((jnp.array(states_flatten).shape[1] - 1) / actions.shape[0]),
+                ),
+                1,
+            ),
             env_properties,
         )
         truncated = jax.vmap(self.generate_truncated, in_axes=(0, None))(states, env_properties)
@@ -566,7 +600,10 @@ class CoreEnvironment(ABC):
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
 
         init_physical_state_shape = jnp.array(tree_flatten(init_state.physical_state)[0]).T.shape
-        assert init_physical_state_shape == (self.batch_size, self.physical_state_dim), (
+        assert init_physical_state_shape == (
+            self.batch_size,
+            self.physical_state_dim,
+        ), (
             "The initial physical state needs to be of shape (batch_size, physical_state_dim,) which is "
             + f"{(self.batch_size, self.physical_state_dim)}, but {init_physical_state_shape} is given"
         )
@@ -603,7 +640,8 @@ class CoreEnvironment(ABC):
             actions.shape[-1] == self.action_dim
         ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
         reward, truncated, terminated = jax.vmap(
-            self.generate_rew_trunc_term_ahead, in_axes=(0, 0, self.in_axes_env_properties)
+            self.generate_rew_trunc_term_ahead,
+            in_axes=(0, 0, self.in_axes_env_properties),
         )(states, actions, self.env_properties)
 
         return reward, truncated, terminated
@@ -660,7 +698,8 @@ class CoreEnvironment(ABC):
         Returns:
             state: Computed state for each batch.
         """
-        state = jax.vmap(self.generate_state_from_observation, in_axes=(0, self.in_axes_env_properties, 0))(
-            obs, self.env_properties, key
-        )
+        state = jax.vmap(
+            self.generate_state_from_observation,
+            in_axes=(0, self.in_axes_env_properties, 0),
+        )(obs, self.env_properties, key)
         return state
