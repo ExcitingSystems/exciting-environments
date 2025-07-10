@@ -174,10 +174,10 @@ class Pendulum(CoreEnvironment):
         t1 = self.tau
         y0 = tuple([physical_state.theta, physical_state.omega])
 
-        def true_fn(_):
+        def false_fn(_):
             return self.Additions(solver_state=self._solver.init(term, t0, t1, y0, args), active_solver_state=True)
 
-        def false_fn(_):
+        def true_fn(_):
             return state.additions
 
         additions = jax.lax.cond(state.additions.active_solver_state, false_fn, true_fn, operand=None)
