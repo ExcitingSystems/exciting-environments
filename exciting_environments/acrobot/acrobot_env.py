@@ -77,8 +77,8 @@ class Acrobot(CoreEnvironment):
                 m_2 (float): Mass of the second link. Default: 1
                 l_c1 (float): Distance from the base to the center of mass of the first link. Default: 1
                 l_c2 (float): Distance from the first joint to the center of mass of the second link. Default: 1
-                I_1 (float): Moment of inertia of the first link about its center of mass. Default: 5e-3
-                I_2 (float): Moment of inertia of the first link about its center of mass. Default: 5e-3
+                I_1 (float): Moment of inertia of the first link about its center of mass. Default: 1.3
+                I_2 (float): Moment of inertia of the first link about its center of mass. Default: 1.3
 
             control_state (list): Components of the physical state that are considered in reference tracking.
             solver (diffrax.solver): Solver used to compute state for next step.
