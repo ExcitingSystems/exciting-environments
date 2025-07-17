@@ -592,7 +592,6 @@ class PMSM(CoreEnvironment):
 
         with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
             system_state_next.epsilon = eps_k1
-            system_state_next.epsilon = eps_k1
             system_state_next.i_d = i_d_k1
             system_state_next.i_q = i_q_k1
             system_state_next.torque = torque
@@ -675,21 +674,6 @@ class PMSM(CoreEnvironment):
             saveat=saveat,
             stepsize_controller=controller,
         )
-        saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))
-
-        controller = diffrax.ConstantStepSize()
-
-        y = diffrax.diffeqsolve(
-            term,
-            self._solver,
-            t0,
-            t1,
-            dt0=obs_stepsize,
-            y0=y0,
-            args=args,
-            saveat=saveat,
-            stepsize_controller=controller,
-        )
 
         i_d_t = y.ys[0]
         i_q_t = y.ys[1]
@@ -733,10 +717,6 @@ class PMSM(CoreEnvironment):
             PRNGKey=jnp.full(obs_len, init_state.PRNGKey),
             additions=additions,
             reference=ref,
-            physical_state=phys,
-            PRNGKey=jnp.full(obs_len, init_state.PRNGKey),
-            additions=additions,
-            reference=ref,
         )
 
     def constraint_denormalization_ahead(self, actions, init_state, env_properties):
@@ -749,17 +729,10 @@ class PMSM(CoreEnvironment):
                     name,
                     self.repeat_values(getattr(states.physical_state, name), act_len),
                 )
-                setattr(
-                    states.physical_state,
-                    name,
-                    self.repeat_values(getattr(states.physical_state, name), act_len),
-                )
             states.physical_state.epsilon = (
                 states.physical_state.epsilon
                 + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el
             )
-
-            # extend state dimension to use vmapping across time
 
             # extend state dimension to use vmapping across time
             for field in fields(states.reference):
@@ -1058,12 +1031,6 @@ class PMSM(CoreEnvironment):
         torque_tol = 0.01
         rew = jnp.zeros_like(torque_ref)
         rew = jnp.where(i_s > 1, -1 * jnp.abs(i_s), rew)
-        rew = jnp.where((i_s < 1.0) & (i_s > i_n), 0.5 * (1 - (i_s - i_n) / (1 - i_n)) - 1, rew)
-        rew = jnp.where(
-            (i_s < i_n) & (i_d > i_d_plus),
-            -0.5 * ((i_d - i_d_plus) / (i_n - i_d_plus)),
-            rew,
-        )
         rew = jnp.where((i_s < 1.0) & (i_s > i_n), 0.5 * (1 - (i_s - i_n) / (1 - i_n)) - 1, rew)
         rew = jnp.where(
             (i_s < i_n) & (i_d > i_d_plus),
