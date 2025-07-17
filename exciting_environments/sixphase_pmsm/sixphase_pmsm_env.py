@@ -4,7 +4,7 @@ from types import MethodType
 import numpy as np
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure, tree_map
 import jax_dataclasses as jdc
 import chex
 import diffrax
@@ -543,13 +543,14 @@ class SixPhasePMSM(CoreEnvironment):
                 + env_properties.physical_normalizations.omega_el.min,
             )
 
-        force = lambda t: jnp.array([0, 0, 0, 0, 0, 0])  # u_d, u_q, u_x, u_y, u_0p, u_0m
+        def voltage(t):
+            return jnp.array([0, 0, 0, 0, 0, 0])
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.saturated:
-            vector_field = partial(self.nonlinear_ode, action=force)
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
-            vector_field = partial(self.linear_ode, action=force)
+            vector_field = partial(self.linear_ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
@@ -557,7 +558,8 @@ class SixPhasePMSM(CoreEnvironment):
         y0 = tuple([phys.i_d, phys.i_q, phys.i_x, phys.i_y, phys.i_0p, phys.i_0m, phys.epsilon])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
-        additions = self.Additions(solver_state=solver_state)  # None
+        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,
@@ -632,21 +634,29 @@ class SixPhasePMSM(CoreEnvironment):
         i_0m = system_state.i_0m
         eps = system_state.epsilon
 
-        force = lambda t: u_vec
+        def voltage(t):
+            return u_vec
 
         args = (properties.static_params, omega_el)
         if properties.saturated:
-            vector_field = partial(self.linear_ode, action=force)
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
-            vector_field = partial(self.linear_ode, action=force)
+            vector_field = partial(self.linear_ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
         y0 = tuple([i_d, i_q, i_x, i_y, i_0p, i_0m, eps])
-        solver_state = state.additions.solver_state
 
-        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, solver_state, made_jump=False)
+        def false_fn(_):
+            return self.Additions(solver_state=self._solver.init(term, t0, t1, y0, args), active_solver_state=True)
+
+        def true_fn(_):
+            return state.additions
+
+        additions = jax.lax.cond(state.additions.active_solver_state, false_fn, true_fn, operand=None)
+
+        y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, additions.solver_state, made_jump=False)
 
         i_d_k1 = y[0]
         i_q_k1 = y[1]
@@ -673,12 +683,13 @@ class SixPhasePMSM(CoreEnvironment):
             system_state_next.i_0m = i_0m_k1
             system_state_next.torque = torque
 
-        with jdc.copy_and_mutate(state, validate=True) as state_next:
-            state_next.physical_state = system_state_next
+        with jdc.copy_and_mutate(state, validate=True) as new_state:
+            new_state.physical_state = system_state_next
 
-        with jdc.copy_and_mutate(state_next, validate=False) as state_next_final:
-            state_next_final.additions.solver_state = solver_state_k1
-        return state_next_final
+        new_state = jdc.replace(
+            new_state, additions=self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        )
+        return new_state
 
     def constraint_denormalization(self, u_vec_norm, system_state, env_properties):
         """Denormalizes the u_vec and clips u_dq and u_xy with respect to the hexagon."""
@@ -701,6 +712,7 @@ class SixPhasePMSM(CoreEnvironment):
             advanced_angle,
         )
         u_dq = u_dq_norm_clip[0] * (env_properties.static_params.u_dc / 2)  # denormalize from u_dc/2
+
         u_xy = u_vec[2:4]  # u_x, u_y
         u_xy_norm = u_xy * (1 / (env_properties.static_params.u_dc / 2))  # normalize to u_dc/2 for hexagon constraints
         u_XY_norm = dq2albet(
@@ -739,19 +751,14 @@ class SixPhasePMSM(CoreEnvironment):
         i_0m = init_state_phys.i_0m
         eps = init_state_phys.epsilon
 
-        def force(t):
-            idx = jnp.clip(
-                jnp.floor(t / action_stepsize - 1e-6).astype(int),
-                0,
-                actions.shape[0] - 1,
-            )
-            return actions[idx]  # jnp.array(t / action_stepsize, int)
+        def voltage(t):
+            return actions[jnp.array(t / action_stepsize, int)]
 
         args = (properties.static_params, omega_el)
         if properties.saturated:
-            vector_field = partial(self.linear_ode, action=force)
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
-            vector_field = partial(self.linear_ode, action=force)
+            vector_field = partial(self.linear_ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
@@ -780,6 +787,8 @@ class SixPhasePMSM(CoreEnvironment):
         i_0p_t = y.ys[4]
         i_0m_t = y.ys[5]
         eps_t = y.ys[2]
+        # keep eps between -pi and pi
+        eps_t = ((eps_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
         obs_len = i_d_t.shape[0]
 
         if properties.saturated:
@@ -818,7 +827,9 @@ class SixPhasePMSM(CoreEnvironment):
             ]
         )
         solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
-        additions = self.Additions(solver_state=self.repeat_values(solver_state, obs_len))
+        additions = self.Additions(
+            solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
+        )
         ref = self.PhysicalState(
             u_d_buffer=jnp.full(obs_len, jnp.nan),
             u_q_buffer=jnp.full(obs_len, jnp.nan),
@@ -1112,13 +1123,15 @@ class SixPhasePMSM(CoreEnvironment):
             torque=obs[7],
             omega_el=obs[6],
         )
-        force = lambda t: jnp.array([0, 0, 0, 0, 0, 0])  # u_d, u_q, u_x, u_y, u_0p, u_0m
+
+        def voltage(t):
+            return jnp.array([0, 0, 0, 0, 0, 0])
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.saturated:
-            vector_field = partial(self.linear_ode, action=force)  # TODO
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
-            vector_field = partial(self.linear_ode, action=force)
+            vector_field = partial(self.linear_ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
@@ -1127,7 +1140,9 @@ class SixPhasePMSM(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        additions = self.Additions(solver_state=solver_state)
+        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+
+        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(
             u_d_buffer=jnp.nan,
             u_q_buffer=jnp.nan,
