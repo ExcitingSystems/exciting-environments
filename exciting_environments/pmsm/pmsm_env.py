@@ -132,16 +132,16 @@ class PMSM(CoreEnvironment):
             saturated (bool): Permanent magnet flux linkages and inductances are taken from LUT_motor_name specific LUTs. Default: False
             LUT_motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
             physical_normalizations (dict): min-max normalization values of the physical state of the environment.
-                u_d_buffer (float): Direct share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
-                u_q_buffer (float): Quadrature share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
-                epsilon (float): Electrical rotation angle. Default: min=-jnp.pi, max=jnp.pi
-                i_d (float): Direct share of the current in dq-coordinates. Default: min=-250, max=0
-                i_q (float): Quadrature share of the current in dq-coordinates. Default: min=-250, max=250
-                omega_el (float): Electrical angular velocity. Default: min=0, max=3 * 11000 * 2 * jnp.pi / 60
-                torque (float): Torque caused by the current. Default: min=-200, max=200
+                u_d_buffer (MinMaxNormalization): Direct share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+                u_q_buffer (MinMaxNormalization): Quadrature share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+                epsilon (MinMaxNormalization): Electrical rotation angle. Default: min=-jnp.pi, max=jnp.pi
+                i_d (MinMaxNormalization): Direct share of the current in dq-coordinates. Default: min=-250, max=0
+                i_q (MinMaxNormalization): Quadrature share of the current in dq-coordinates. Default: min=-250, max=250
+                omega_el (MinMaxNormalization): Electrical angular velocity. Default: min=0, max=3 * 11000 * 2 * jnp.pi / 60
+                torque (MinMaxNormalization): Torque caused by the current. Default: min=-200, max=200
             action_normalizations (dict): min-max normalization values of the input/action.
-                u_d (float): Direct share of the voltage in dq-coordinates. Default: min=-2 * 400 / 3, max=2 * 400 / 3
-                u_q (float): Quadrature share of the voltage in dq-coordinates. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+                u_d (MinMaxNormalization): Direct share of the voltage in dq-coordinates. Default: min=-2 * 400 / 3, max=2 * 400 / 3
+                u_q (MinMaxNormalization): Quadrature share of the voltage in dq-coordinates. Default: min=-2 * 400 / 3, max=2 * 400 / 3
             soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params (dict): Parameters of environment which do not change during simulation.
                 p (int): Pole pair number. Default: 3
@@ -154,7 +154,7 @@ class PMSM(CoreEnvironment):
             solver (diffrax.solver): Solver used to compute state for next step.
             tau (float): Duration of one control/simulation step in seconds. Default: 1e-4.
 
-        Note: Attributes of physical_normalizations, action_constraints and static_params can also be
+        Note: Attributes of MinMaxNormalization of physical_normalizations and action_normalizations as well as static_params can also be
             passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
         self.batch_size = batch_size

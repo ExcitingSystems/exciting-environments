@@ -7,3 +7,4 @@ from .fluid_tank import FluidTank
 from .registration import make
 from .gym_wrapper import GymWrapper
 from .mujoco_wrapper import MujucoWrapper
+from .acrobot import Acrobot
