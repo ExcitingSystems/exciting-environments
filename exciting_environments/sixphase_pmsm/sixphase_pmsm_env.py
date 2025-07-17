@@ -244,14 +244,15 @@ class SixPhasePMSM(CoreEnvironment):
             def_i_d_lims = default_physical_normalizations["i_d"]
             def_i_q_lims = default_physical_normalizations["i_q"]
 
-            if (i_d_lims.min < def_i_d_lims.min) or (i_d_lims.max > def_i_d_lims.max):
-                print(
-                    f"The defined permitted range of i_d ({i_d_lims}) exceeds the limits of the LUT ({def_i_d_lims}). Values outside this range are extrapolated."
-                )
-            if (i_q_lims.min < def_i_q_lims.min) or (i_q_lims.max > def_i_q_lims.max):
-                print(
-                    f"The defined permitted range of i_q ({i_q_lims}) exceeds the limits of the LUT ({def_i_q_lims}). Values outside this range are extrapolated."
-                )
+            ## only necessary for saturated
+            # if (i_d_lims.min < def_i_d_lims.min) or (i_d_lims.max > def_i_d_lims.max):
+            #     print(
+            #         f"The defined permitted range of i_d ({i_d_lims}) exceeds the limits of the LUT ({def_i_d_lims}). Values outside this range are extrapolated."
+            #     )
+            # if (i_q_lims.min < def_i_q_lims.min) or (i_q_lims.max > def_i_q_lims.max):
+            #     print(
+            #         f"The defined permitted range of i_q ({i_q_lims}) exceeds the limits of the LUT ({def_i_q_lims}). Values outside this range are extrapolated."
+            #     )
 
         if not action_normalizations:
             action_normalizations = default_action_normalizations
@@ -601,8 +602,8 @@ class SixPhasePMSM(CoreEnvironment):
 
         i_d_diff = (u_d - r_s * i_d + omega_el * l_q * i_q) / l_d
         i_q_diff = (u_q - r_s * i_q - omega_el * (l_q * i_d + psi_p_dq)) / l_q
-        i_x_diff = (u_x - r_s * i_x + omega_el * l_y * i_y) / l_x
-        i_y_diff = (u_y - r_s * i_y - omega_el * (l_y * i_x + psi_p_xy)) / l_y
+        i_x_diff = (u_x - r_s * i_x - omega_el * l_y * i_y) / l_x
+        i_y_diff = (u_y - r_s * i_y + omega_el * (l_y * i_x + psi_p_xy)) / l_y
         i0p_diff = (u_0p - r_s * i_0p) / l_p0
         i0m_diff = (u_0m - r_s * i_0m) / l_m0
         diff_eps = omega_el
@@ -680,7 +681,7 @@ class SixPhasePMSM(CoreEnvironment):
         return state_next_final
 
     def constraint_denormalization(self, u_vec_norm, system_state, env_properties):
-        """Denormalizes the u_vec and clips it with respect to the hexagon."""
+        """Denormalizes the u_vec and clips u_dq and u_xy with respect to the hexagon."""
         u_vec = self.denormalize_action(u_vec_norm, env_properties)
         u_dq = u_vec[:2]  # u_d, u_q
         u_dq_norm = u_dq * (1 / (env_properties.static_params.u_dc / 2))  # normalize to u_dc/2 for hexagon constraints
@@ -704,7 +705,7 @@ class SixPhasePMSM(CoreEnvironment):
         u_xy_norm = u_xy * (1 / (env_properties.static_params.u_dc / 2))  # normalize to u_dc/2 for hexagon constraints
         u_XY_norm = dq2albet(
             u_xy_norm,
-            -advanced_angle,
+            -advanced_angle,  # negative angle
         )
         u_XY_norm_clip = apply_hex_constraint(u_XY_norm)
         u_xy_norm_clip = albet2dq(
