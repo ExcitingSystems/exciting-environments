@@ -519,6 +519,22 @@ class PMSM(CoreEnvironment):
         d_y = i_d_diff, i_q_diff, eps_diff
         return d_y
 
+    def linear_ode(self, t, y, args, action):
+        i_d, i_q, eps = y
+        params, omega_el = args
+        u_dq = action(t)
+        u_d = u_dq[0]
+        u_q = u_dq[1]
+        l_d = params.l_d
+        l_q = params.l_q
+        psi_p = params.psi_p
+        r_s = params.r_s
+        i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
+        i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
+        eps_diff = omega_el
+        d_y = i_d_diff, i_q_diff, eps_diff
+        return d_y
+
     @partial(jax.jit, static_argnums=[0, 3])
     def _ode_solver_step(self, state, u_dq, properties):
         """Computes state by simulating one step.
@@ -575,6 +591,7 @@ class PMSM(CoreEnvironment):
             torque = jnp.array([self.currents_to_torque(i_d_k1, i_q_k1, properties)])[0]
 
         with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
+            system_state_next.epsilon = eps_k1
             system_state_next.epsilon = eps_k1
             system_state_next.i_d = i_d_k1
             system_state_next.i_q = i_q_k1
@@ -658,6 +675,21 @@ class PMSM(CoreEnvironment):
             saveat=saveat,
             stepsize_controller=controller,
         )
+        saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))
+
+        controller = diffrax.ConstantStepSize()
+
+        y = diffrax.diffeqsolve(
+            term,
+            self._solver,
+            t0,
+            t1,
+            dt0=obs_stepsize,
+            y0=y0,
+            args=args,
+            saveat=saveat,
+            stepsize_controller=controller,
+        )
 
         i_d_t = y.ys[0]
         i_q_t = y.ys[1]
@@ -701,6 +733,10 @@ class PMSM(CoreEnvironment):
             PRNGKey=jnp.full(obs_len, init_state.PRNGKey),
             additions=additions,
             reference=ref,
+            physical_state=phys,
+            PRNGKey=jnp.full(obs_len, init_state.PRNGKey),
+            additions=additions,
+            reference=ref,
         )
 
     def constraint_denormalization_ahead(self, actions, init_state, env_properties):
@@ -713,10 +749,17 @@ class PMSM(CoreEnvironment):
                     name,
                     self.repeat_values(getattr(states.physical_state, name), act_len),
                 )
+                setattr(
+                    states.physical_state,
+                    name,
+                    self.repeat_values(getattr(states.physical_state, name), act_len),
+                )
             states.physical_state.epsilon = (
                 states.physical_state.epsilon
                 + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el
             )
+
+            # extend state dimension to use vmapping across time
 
             # extend state dimension to use vmapping across time
             for field in fields(states.reference):
@@ -1015,6 +1058,12 @@ class PMSM(CoreEnvironment):
         torque_tol = 0.01
         rew = jnp.zeros_like(torque_ref)
         rew = jnp.where(i_s > 1, -1 * jnp.abs(i_s), rew)
+        rew = jnp.where((i_s < 1.0) & (i_s > i_n), 0.5 * (1 - (i_s - i_n) / (1 - i_n)) - 1, rew)
+        rew = jnp.where(
+            (i_s < i_n) & (i_d > i_d_plus),
+            -0.5 * ((i_d - i_d_plus) / (i_n - i_d_plus)),
+            rew,
+        )
         rew = jnp.where((i_s < 1.0) & (i_s > i_n), 0.5 * (1 - (i_s - i_n) / (1 - i_n)) - 1, rew)
         rew = jnp.where(
             (i_s < i_n) & (i_d > i_d_plus),
