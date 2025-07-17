@@ -519,22 +519,6 @@ class PMSM(CoreEnvironment):
         d_y = i_d_diff, i_q_diff, eps_diff
         return d_y
 
-    def linear_ode(self, t, y, args, action):
-        i_d, i_q, eps = y
-        params, omega_el = args
-        u_dq = action(t)
-        u_d = u_dq[0]
-        u_q = u_dq[1]
-        l_d = params.l_d
-        l_q = params.l_q
-        psi_p = params.psi_p
-        r_s = params.r_s
-        i_d_diff = (u_d + omega_el * l_q * i_q - r_s * i_d) / l_d
-        i_q_diff = (u_q - omega_el * (l_d * i_d + psi_p) - r_s * i_q) / l_q
-        eps_diff = omega_el
-        d_y = i_d_diff, i_q_diff, eps_diff
-        return d_y
-
     @partial(jax.jit, static_argnums=[0, 3])
     def _ode_solver_step(self, state, u_dq, properties):
         """Computes state by simulating one step.
