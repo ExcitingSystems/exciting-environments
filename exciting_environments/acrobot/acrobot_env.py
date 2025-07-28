@@ -56,7 +56,7 @@ class Acrobot(CoreEnvironment):
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
-        tau: float = 1e-4,
+        tau: float = 1e-3,
     ):
         """
         Args:
@@ -82,7 +82,7 @@ class Acrobot(CoreEnvironment):
 
             control_state (list): Components of the physical state that are considered in reference tracking.
             solver (diffrax.solver): Solver used to compute state for next step.
-            tau (float): Duration of one control step in seconds. Default: 1e-4.
+            tau (float): Duration of one control step in seconds. Default: 1e-3.
 
         Note: Attributes of MinMaxNormalization of physical_normalizations and action_normalizations as well as static_params can also be
             passed as jnp.Array with the length of the batch_size to set different values per batch.
