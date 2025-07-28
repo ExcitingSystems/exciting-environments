@@ -102,7 +102,6 @@ def test_step(env_id):
 
 @pytest.mark.parametrize("env_id", env_ids)
 def test_simulate_ahead(env_id):
-    # if env_id != "FluidTank-v0":
     sim_steps = 10
     batch_size = 4
     env = excenvs.make(env_id, batch_size=batch_size)
@@ -134,7 +133,6 @@ def test_simulate_ahead(env_id):
 
 @pytest.mark.parametrize("env_id", env_ids)
 def test_similarity_step_sim_ahead_results(env_id):
-    # if env_id != "FluidTank-v0":
     sim_steps = 10
     batch_size = 4
     env = excenvs.make(env_id, batch_size=batch_size, solver=diffrax.Euler())
