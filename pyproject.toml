@@ -49,3 +49,6 @@ include = ["exciting_environments*"]  # package names should match these glob pa
 
 [tool.setuptools.package-data]
 exciting_environments = ["exciting_environments/pmsm/*.mat"]
+
+[tool.black]
+line-length = 120

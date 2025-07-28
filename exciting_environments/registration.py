@@ -1,4 +1,11 @@
-from exciting_environments import CartPole, MassSpringDamper, Pendulum, FluidTank, PMSM
+from exciting_environments import (
+    CartPole,
+    MassSpringDamper,
+    Pendulum,
+    FluidTank,
+    PMSM,
+    Acrobot,
+)
 
 
 def make(env_id: str, **env_kwargs):
@@ -16,6 +23,9 @@ def make(env_id: str, **env_kwargs):
 
     elif env_id == "PMSM-v0":
         env = PMSM(**env_kwargs)
+
+    elif env_id == "Acrobot-v0":
+        env = Acrobot(**env_kwargs)
 
     else:
         print(f"No existing environments got env_id ={env_id}")

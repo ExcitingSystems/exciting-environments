@@ -62,10 +62,10 @@ class MassSpringDamper(CoreEnvironment):
         Args:
             batch_size(int): Number of training examples utilized in one iteration. Default: 8
             physical_normalizations(dict): min-max normalization values of the physical state of the environment.
-                deflection(float): Deflection of the mass. Default: min=-10, max=10
-                velocity(float): Velocity of the mass. Default: min=-10, max=10
+                deflection(MinMaxNormalization): Deflection of the mass. Default: min=-10, max=10
+                velocity(MinMaxNormalization): Velocity of the mass. Default: min=-10, max=10
             action_normalizations(dict): min-max normalization values of the input/action.
-                force(float): Maximum force that can be applied to the system as action. Default: min=-20, max=20
+                force(MinMaxNormalization): Maximum force that can be applied to the system as action. Default: min=-20, max=20
             soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
             static_params(dict): Parameters of environment which do not change during simulation.
                 d(float): Damping constant. Default: 1
@@ -75,7 +75,8 @@ class MassSpringDamper(CoreEnvironment):
             solver(diffrax.solver): Solver used to compute state for next step.
             tau(float): Duration of one control step in seconds. Default: 1e-4.
 
-        Note: Attributes of physical_normalizations, action_normalizations and static_params can also be passed as jnp.Array with the length of the batch_size to set different values per batch.
+        Note: Attributes of MinMaxNormalization of physical_normalizations and action_normalizations as well as static_params can also be
+            passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
 
         if not physical_normalizations:
