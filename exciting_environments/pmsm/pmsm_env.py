@@ -14,7 +14,7 @@ from dataclasses import fields
 from copy import deepcopy
 
 from exciting_environments import CoreEnvironment
-from exciting_environments.pmsm import default_params
+from exciting_environments.pmsm import MotorVariant
 
 
 # only for alpha/beta -> abc
@@ -117,7 +117,7 @@ class PMSM(CoreEnvironment):
         self,
         batch_size: int = 8,
         saturated=False,
-        LUT_motor_name: str = None,
+        motor_variant: MotorVariant = MotorVariant.DEFAULT,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
         soft_constraints: Callable = None,
@@ -161,8 +161,9 @@ class PMSM(CoreEnvironment):
         self.tau = tau
         self._solver = solver
 
-        if LUT_motor_name is not None:
-            motor_params = deepcopy(default_params(LUT_motor_name))
+        if motor_variant != MotorVariant.DEFAULT:
+            # motor_params = deepcopy(default_params(LUT_motor_name))
+            motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
@@ -187,7 +188,10 @@ class PMSM(CoreEnvironment):
 
         else:
             if saturated:
-                raise Exception("LUT_motor_name is needed to load LUTs.")
+                raise ValueError(
+                    f"MotorVariant '{motor_variant.value}' is not allowed for saturated LUTs. "
+                    "Use a specific motor variant. DEFAULT is only valid for saturated=False."
+                )
 
             saturated_quants = [
                 "L_dd",
@@ -198,7 +202,8 @@ class PMSM(CoreEnvironment):
                 "Psi_q",
             ]
 
-            motor_params = deepcopy(default_params(LUT_motor_name))
+            # motor_params = deepcopy(default_params(LUT_motor_name))
+            motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__

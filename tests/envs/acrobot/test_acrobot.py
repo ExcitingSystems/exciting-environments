@@ -4,10 +4,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
+from exciting_environments import EnvironmentType
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
 import os
+
 
 jax.config.update("jax_enable_x64", True)
 
@@ -33,7 +35,7 @@ def test_default_initialization():
         "omega_1": MinMaxNormalization(min=-10, max=10),
         "omega_2": MinMaxNormalization(min=-10, max=10),
     }
-    env = excenvs.make("Acrobot-v0", batch_size=batch_size)
+    env = EnvironmentType.ACROBOT.make(batch_size=batch_size)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -101,8 +103,7 @@ def test_custom_initialization():
         "omega_1": MinMaxNormalization(min=-55, max=10),
         "omega_2": MinMaxNormalization(min=-10, max=30),
     }
-    env = excenvs.make(
-        "Acrobot-v0",
+    env = EnvironmentType.ACROBOT.make(
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -159,8 +160,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = excenvs.make(
-        "Acrobot-v0",
+    env = EnvironmentType.ACROBOT.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

@@ -4,7 +4,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
-from exciting_environments.utils import MinMaxNormalization,load_sim_properties_from_json
+from exciting_environments import EnvironmentType
+from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
 import os
@@ -18,7 +19,7 @@ def test_default_initialization():
     params = {"base_area": jnp.pi, "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
     action_normalizations = {"inflow": MinMaxNormalization(min=0, max=0.2)}
     physical_normalizations = {"height": MinMaxNormalization(min=0, max=3)}
-    env = excenvs.make("FluidTank-v0", batch_size=batch_size)
+    env = EnvironmentType.FLUID_TANK.make(batch_size=batch_size)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -71,8 +72,7 @@ def test_custom_initialization():
     params = {"base_area": jnp.repeat(jnp.pi, batch_size), "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
     action_normalizations = {"inflow": MinMaxNormalization(min=jnp.repeat(0.02, batch_size), max=0.3)}
     physical_normalizations = {"height": MinMaxNormalization(min=1, max=5)}
-    env = excenvs.make(
-        "FluidTank-v0",
+    env = EnvironmentType.FLUID_TANK.make(
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -127,9 +127,10 @@ def test_custom_initialization():
 def test_step_results():
     data_dir = os.path.join(Path(__file__).parent, "data")
     file_path = os.path.join(data_dir, "sim_properties.json")
-    loaded_params,loaded_action_normalizations,loaded_physical_normalizations,loaded_tau=load_sim_properties_from_json(file_path)
-    env = excenvs.make(
-        "FluidTank-v0",
+    loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
+        load_sim_properties_from_json(file_path)
+    )
+    env = EnvironmentType.FLUID_TANK.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,
