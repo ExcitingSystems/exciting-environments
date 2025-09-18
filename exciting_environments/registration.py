@@ -18,7 +18,6 @@ class EnvironmentType(Enum):
     ACROBOT = "Acrobot-v0"
 
     def make(self, **env_kwargs):
-        """Factory method to create environment instance."""
         env_map = {
             EnvironmentType.CART_POLE: CartPole,
             EnvironmentType.MASS_SPRING_DAMPER: MassSpringDamper,
