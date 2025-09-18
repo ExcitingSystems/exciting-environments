@@ -130,7 +130,7 @@ class PMSM(CoreEnvironment):
         Args:
             batch_size (int): Number of parallel environment simulations. Default: 8
             saturated (bool): Permanent magnet flux linkages and inductances are taken from LUT_motor_name specific LUTs. Default: False
-            LUT_motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
+            #TODO LUT_motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
             physical_normalizations (dict): min-max normalization values of the physical state of the environment.
                 u_d_buffer (MinMaxNormalization): Direct share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
                 u_q_buffer (MinMaxNormalization): Quadrature share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
