@@ -9,3 +9,4 @@ pytest-cov==5.0.0
 diffrax==0.5.1
 jax-dataclasses==1.6.0
 mujoco-mjx==3.3.0
+mujoco==3.3.0
