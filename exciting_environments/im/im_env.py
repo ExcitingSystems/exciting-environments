@@ -254,10 +254,12 @@ class IM(CoreEnvironment):
         self._obs_description = [
             "i_s_alpha",
             "i_s_beta",
-            "cos_eps",
-            "sin_eps",
+            "psi_r_alpha",
+            "psi_r_beta",
             "omega_el",
             "torque",
+            "cos_eps",
+            "sin_eps",
             "u_alpha_buffer",
             "u_beta_buffer",
         ]
