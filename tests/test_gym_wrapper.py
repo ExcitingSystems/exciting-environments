@@ -11,9 +11,9 @@ from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 jax.config.update("jax_platform_name", "cpu")
 jax.config.update("jax_enable_x64", True)
 
-from exciting_environments import EnvironmentType
+from exciting_environments import EnvironmentRegistry
 
-envs_to_test = list(EnvironmentType)
+envs_to_test = list(EnvironmentRegistry)
 
 
 @pytest.mark.parametrize("env_type", envs_to_test)
