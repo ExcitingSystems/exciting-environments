@@ -95,10 +95,10 @@
 <p>A basic routine is as simple as:</p>
 <div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">exciting_environments</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">excenvs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">exciting_environments</span><span class="w"> </span><span class="kn">import</span> <span class="n">EnvironmentType</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">exciting_environments.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">MinMaxNormalization</span>
 
-<span class="n">env</span> <span class="o">=</span> <span class="n">excenvs</span><span class="o">.</span><span class="n">make</span><span class="p">(</span>
-    <span class="s2">&quot;Pendulum-v0&quot;</span><span class="p">,</span>
+<span class="n">env</span> <span class="o">=</span> <span class="n">EnvironmentType</span><span class="o">.</span><span class="n">PENDULUM</span><span class="o">.</span><span class="n">make</span><span class="p">(</span>
     <span class="n">batch_size</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
     <span class="n">action_normalizations</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;torque&quot;</span><span class="p">:</span> <span class="n">MinMaxNormalization</span><span class="p">(</span><span class="nb">min</span><span class="o">=-</span><span class="mi">15</span><span class="p">,</span><span class="nb">max</span><span class="o">=</span><span class="mi">15</span><span class="p">)},</span>
     <span class="n">tau</span><span class="o">=</span><span class="mf">2e-2</span>
@@ -127,11 +127,11 @@
 <p>alternatively, simulate full trajectories:</p>
 <div class="highlight-py notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">exciting_environments</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">excenvs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">exciting_environments</span><span class="w"> </span><span class="kn">import</span> <span class="n">EnvironmentType</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">exciting_environments.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">MinMaxNormalization</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">diffrax</span>
 
-<span class="n">env</span> <span class="o">=</span> <span class="n">excenvs</span><span class="o">.</span><span class="n">make</span><span class="p">(</span>
-    <span class="s2">&quot;Pendulum-v0&quot;</span><span class="p">,</span>
+<span class="n">env</span> <span class="o">=</span> <span class="n">EnvironmentType</span><span class="o">.</span><span class="n">PENDULUM</span><span class="o">.</span><span class="n">make</span><span class="p">(</span>
     <span class="n">solver</span><span class="o">=</span><span class="n">diffrax</span><span class="o">.</span><span class="n">Tsit5</span><span class="p">(),</span>
     <span class="n">batch_size</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
     <span class="n">action_normalizations</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;torque&quot;</span><span class="p">:</span> <span class="n">MinMaxNormalization</span><span class="p">(</span><span class="nb">min</span><span class="o">=-</span><span class="mi">15</span><span class="p">,</span><span class="nb">max</span><span class="o">=</span><span class="mi">15</span><span class="p">)},</span>
