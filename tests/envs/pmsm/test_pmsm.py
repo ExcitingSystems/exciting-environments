@@ -7,7 +7,7 @@ import diffrax
 from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
-from motor_parameters import MotorVariant
+from .motor_parameters import MotorVariant
 import pickle
 import os
 
