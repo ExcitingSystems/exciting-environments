@@ -6,7 +6,7 @@ from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 from functools import partial
 import chex
 from abc import ABC
-from exciting_environments import spaces, EnvironmentType
+from exciting_environments import spaces, EnvironmentRegistry
 
 # from exciting_environments.registration import make
 
@@ -59,8 +59,8 @@ class GymWrapper(ABC):
             self.generate_terminated = self.env.generate_terminated
 
     @classmethod
-    def from_env(cls, env_type: EnvironmentType, **env_kwargs):
-        """Creates GymWrapper with environment based on passed EnvironmentType."""
+    def from_env(cls, env_type: EnvironmentRegistry, **env_kwargs):
+        """Creates GymWrapper with environment from EnvironmentRegistry."""
         env = env_type.make(**env_kwargs)
         return cls(env)
 

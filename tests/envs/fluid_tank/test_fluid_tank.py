@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
-from exciting_environments import EnvironmentType
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
@@ -19,7 +19,7 @@ def test_default_initialization():
     params = {"base_area": jnp.pi, "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
     action_normalizations = {"inflow": MinMaxNormalization(min=0, max=0.2)}
     physical_normalizations = {"height": MinMaxNormalization(min=0, max=3)}
-    env = EnvironmentType.FLUID_TANK.make(batch_size=batch_size)
+    env = EnvironmentRegistry.FLUID_TANK.make(batch_size=batch_size)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -72,7 +72,7 @@ def test_custom_initialization():
     params = {"base_area": jnp.repeat(jnp.pi, batch_size), "orifice_area": jnp.pi * 0.1**2, "c_d": 0.6, "g": 9.81}
     action_normalizations = {"inflow": MinMaxNormalization(min=jnp.repeat(0.02, batch_size), max=0.3)}
     physical_normalizations = {"height": MinMaxNormalization(min=1, max=5)}
-    env = EnvironmentType.FLUID_TANK.make(
+    env = EnvironmentRegistry.FLUID_TANK.make(
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -130,7 +130,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = EnvironmentType.FLUID_TANK.make(
+    env = EnvironmentRegistry.FLUID_TANK.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

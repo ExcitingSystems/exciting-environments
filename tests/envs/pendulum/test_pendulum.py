@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
-from exciting_environments import EnvironmentType
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
@@ -22,7 +22,7 @@ def test_default_initialization():
         "theta": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
         "omega": MinMaxNormalization(min=-10, max=10),
     }
-    env = EnvironmentType.PENDULUM.make(batch_size=batch_size)
+    env = EnvironmentRegistry.PENDULUM.make(batch_size=batch_size)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -78,7 +78,7 @@ def test_custom_initialization():
     }
     action_normalizations = {"torque": MinMaxNormalization(min=-10, max=10)}
     params = {"l": jnp.repeat(1, batch_size), "g": 9.81, "m": 1}
-    env = EnvironmentType.PENDULUM.make(
+    env = EnvironmentRegistry.PENDULUM.make(
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -135,7 +135,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = EnvironmentType.PENDULUM.make(
+    env = EnvironmentRegistry.PENDULUM.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

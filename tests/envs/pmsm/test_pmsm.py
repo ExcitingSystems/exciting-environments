@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
-from exciting_environments import EnvironmentType
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 from motor_parameters import MotorVariant
@@ -24,7 +24,7 @@ def test_default_initialization(motor_variant):
     physical_normalizations = motor_params.physical_normalizations.__dict__
     action_normalizations = motor_params.action_normalizations.__dict__
     params = motor_params.static_params.__dict__
-    env = EnvironmentType.PMSM.make(motor_variant=motor_variant)
+    env = EnvironmentRegistry.PMSM.make(motor_variant=motor_variant)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -96,7 +96,7 @@ def test_custom_initialization():
         "u_dc": 400,
         "deadtime": 1,
     }
-    env = EnvironmentType.PMSM.make(
+    env = EnvironmentRegistry.PMSM.make(
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -153,7 +153,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = EnvironmentType.PMSM.make(
+    env = EnvironmentRegistry.PMSM.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

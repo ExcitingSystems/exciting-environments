@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
-from exciting_environments import EnvironmentType
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
@@ -32,7 +32,7 @@ def test_default_initialization():
         "theta": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
         "omega": MinMaxNormalization(min=-8, max=8),
     }
-    env = EnvironmentType.CART_POLE.make(batch_size=batch_size)
+    env = EnvironmentRegistry.CART_POLE.make(batch_size=batch_size)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         if isinstance(value, jnp.ndarray) or isinstance(env_value, jnp.ndarray):
@@ -97,7 +97,7 @@ def test_static_parameters_initialization():
         "m_c": jnp.repeat(1, batch_size),
         "g": 35.81,
     }
-    env = EnvironmentType.CART_POLE.make(
+    env = EnvironmentRegistry.CART_POLE.make(
         batch_size=batch_size,
         static_params=params,
         physical_normalizations=physical_normalizations,
@@ -155,7 +155,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = EnvironmentType.CART_POLE.make(
+    env = EnvironmentRegistry.CART_POLE.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

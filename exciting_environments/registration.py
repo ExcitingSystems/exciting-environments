@@ -9,7 +9,7 @@ from exciting_environments import (
 from enum import Enum
 
 
-class EnvironmentType(Enum):
+class EnvironmentRegistry(Enum):
     CART_POLE = "CartPole-v0"
     MASS_SPRING_DAMPER = "MassSpringDamper-v0"
     PENDULUM = "Pendulum-v0"
@@ -19,12 +19,12 @@ class EnvironmentType(Enum):
 
     def make(self, **env_kwargs):
         env_map = {
-            EnvironmentType.CART_POLE: CartPole,
-            EnvironmentType.MASS_SPRING_DAMPER: MassSpringDamper,
-            EnvironmentType.PENDULUM: Pendulum,
-            EnvironmentType.FLUID_TANK: FluidTank,
-            EnvironmentType.PMSM: PMSM,
-            EnvironmentType.ACROBOT: Acrobot,
+            EnvironmentRegistry.CART_POLE: CartPole,
+            EnvironmentRegistry.MASS_SPRING_DAMPER: MassSpringDamper,
+            EnvironmentRegistry.PENDULUM: Pendulum,
+            EnvironmentRegistry.FLUID_TANK: FluidTank,
+            EnvironmentRegistry.PMSM: PMSM,
+            EnvironmentRegistry.ACROBOT: Acrobot,
         }
         cls = env_map.get(self)
         if cls is None:
