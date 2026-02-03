@@ -1,11 +1,4 @@
-from exciting_environments import (
-    CartPole,
-    MassSpringDamper,
-    Pendulum,
-    FluidTank,
-    PMSM,
-    Acrobot,
-)
+from exciting_environments import CartPole, MassSpringDamper, Pendulum, FluidTank, PMSM, Acrobot, IM
 from enum import Enum
 
 
@@ -15,6 +8,7 @@ class EnvironmentRegistry(Enum):
     PENDULUM = "Pendulum-v0"
     FLUID_TANK = "FluidTank-v0"
     PMSM = "PMSM-v0"
+    IM = "IM-v0"
     ACROBOT = "Acrobot-v0"
 
     def make(self, **env_kwargs):
@@ -24,6 +18,7 @@ class EnvironmentRegistry(Enum):
             EnvironmentRegistry.PENDULUM: Pendulum,
             EnvironmentRegistry.FLUID_TANK: FluidTank,
             EnvironmentRegistry.PMSM: PMSM,
+            EnvironmentRegistry.IM: IM,
             EnvironmentRegistry.ACROBOT: Acrobot,
         }
         cls = env_map.get(self)

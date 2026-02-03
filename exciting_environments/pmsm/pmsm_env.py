@@ -206,7 +206,7 @@ class PMSM(CoreEnvironment):
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
             default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
-            pmsm_lut_predefined = motor_params.__dict__
+            pmsm_lut_predefined = motor_params.pmsm_lut
             self.pmsm_lut = pmsm_lut_predefined
             self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
 

@@ -10,6 +10,8 @@ import jax_dataclasses as jdc
 from exciting_environments.utils import MinMaxNormalization
 from copy import deepcopy
 
+from enum import Enum
+
 
 @jdc.pytree_dataclass
 class PhysicalNormalizations:
@@ -32,14 +34,14 @@ class ActionNormalizations:
 
 @jdc.pytree_dataclass
 class StaticParams:
-    p: int
-    r_s: float
-    r_r: float
-    l_m: float
-    l_sigs: float
-    l_sigr: float
-    u_dc: float
-    deadtime: int
+    p: int  # Number of pole pairs
+    r_s: float  # Stator resistance
+    r_r: float  # Rotor resistance
+    l_m: float  # Main inductance
+    l_sigs: float  # Stator-side stray inductance
+    l_sigr: float  # Rotor-side stray inductance
+    u_dc: float  # DC link voltage
+    deadtime: int  # Deadtime compensation
 
 
 @jdc.pytree_dataclass
@@ -68,64 +70,6 @@ def default_soft_constraints(self, state, action_norm, env_properties):
     return phys_soft_const, None
 
 
-# BRUSA = MotorParams(
-#     physical_normalizations=PhysicalNormalizations(
-#         u_d_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-#         u_q_buffer=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-#         epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
-#         i_d=MinMaxNormalization(min=(-250), max=(0)),
-#         i_q=MinMaxNormalization(min=(-250), max=(250)),
-#         omega_el=MinMaxNormalization(min=0, max=(3 * 11000 * 2 * jnp.pi / 60)),
-#         torque=MinMaxNormalization(min=(-200), max=(200)),
-#     ),
-#     action_normalizations=ActionNormalizations(
-#         u_d=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-#         u_q=MinMaxNormalization(min=(-2 * 400 / 3), max=(2 * 400 / 3)),
-#     ),
-#     static_params=StaticParams(
-#         p=3,
-#         r_s=17.932e-3,
-#         l_d=0.37e-3,
-#         l_q=1.2e-3,
-#         psi_p=65.65e-3,
-#         u_dc=400,
-#         deadtime=1,
-#     ),
-#     default_soft_constraints=default_soft_constraints,
-#     pmsm_lut=None,
-# )
-
-# SEW = MotorParams(
-#     physical_normalizations=PhysicalNormalizations(
-#         u_d_buffer=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
-#         u_q_buffer=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
-#         epsilon=MinMaxNormalization(min=(-jnp.pi), max=(jnp.pi)),
-#         i_d=MinMaxNormalization(min=(-16), max=(0)),
-#         i_q=MinMaxNormalization(min=(-16), max=(16)),
-#         omega_el=MinMaxNormalization(min=0, max=(4 * 2000 / 60 * 2 * jnp.pi)),
-#         torque=MinMaxNormalization(min=(-15), max=(15)),
-#     ),
-#     action_normalizations=ActionNormalizations(
-#         u_d=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
-#         u_q=MinMaxNormalization(min=(-2 * 550 / 3), max=(2 * 550 / 3)),
-#     ),
-#     static_params=StaticParams(
-#         p=4,
-#         r_s=208e-3,
-#         l_d=1.44e-3,
-#         l_q=1.44e-3,
-#         psi_p=122e-3,
-#         u_dc=550,
-#         deadtime=1,
-#     ),
-#     default_soft_constraints=default_soft_constraints,
-#     pmsm_lut=None,
-# )
-
-# Parameters from  DOI: 10.1109/EPEPEMC.2018.8522008
-#           and DOI: 10.1109/TPEL.2021.3080129
-
-
 def torque_limit(p, l_m, l_sigr, i_s_max):
     return 1.5 * p * l_m / (l_m + l_sigr) * l_m * i_s_max * i_s_max / 2
 
@@ -138,7 +82,7 @@ DEFAULT = MotorParams(
         i_s_alpha=MinMaxNormalization(min=(-5.5), max=(5.5)),
         i_s_beta=MinMaxNormalization(min=(-5.5), max=(5.5)),
         psi_r_alpha=MinMaxNormalization(min=(-0.8), max=(0.8)),  # i_s_max * l_m = 5.5 * 143.75e-3 = 0,790625
-        psi_r_beta=MinMaxNormalization(min=(-0.8), max=(0.8)),  # TODO
+        psi_r_beta=MinMaxNormalization(min=(-0.8), max=(0.8)),
         omega_el=MinMaxNormalization(min=0, max=(2 * 4000 * 2 * jnp.pi / 60)),
         torque=MinMaxNormalization(
             min=(-torque_limit(2, 143.75e-3, 5.87e-3, 5.5)), max=(torque_limit(2, 143.75e-3, 5.87e-3, 5.5))
@@ -155,7 +99,7 @@ DEFAULT = MotorParams(
         l_m=143.75e-3,
         l_sigs=5.87e-3,
         l_sigr=5.87e-3,
-        u_dc=560,  # estimation
+        u_dc=560,
         deadtime=0,
     ),
     default_soft_constraints=default_soft_constraints,
@@ -163,21 +107,8 @@ DEFAULT = MotorParams(
 )
 
 
-def default_params(name):
-    """
-    Returns default parameters for specified motor configurations.
+class MotorVariant(Enum):
+    DEFAULT = "DEFAULT"
 
-    Args:
-        name (str): Name of the motor.
-
-    Returns:
-        MotorConfig: Configuration containing physical constraints, action constraints, static parameters, and LUT data.
-    """
-    if name is None:
+    def get_params(self):
         return deepcopy(DEFAULT)
-    # elif name == "BRUSA":
-    #     return deepcopy(BRUSA)
-    # elif name == "SEW":
-    #     return deepcopy(SEW)
-    else:
-        raise ValueError(f"Motor name {name} is not known.")

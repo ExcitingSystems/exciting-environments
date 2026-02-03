@@ -15,10 +15,9 @@ from dataclasses import fields
 from copy import deepcopy
 
 from exciting_environments import CoreEnvironment
-from exciting_environments.im import default_params
+from exciting_environments.im import MotorVariant
 
 import numpy as np
-from scipy.linalg import expm
 
 # only for alpha/beta -> abc
 t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])
@@ -120,21 +119,20 @@ class IM(CoreEnvironment):
         self,
         batch_size: int = 8,
         saturated=False,
-        motor_name: str = None,
+        motor_variant: MotorVariant = MotorVariant.DEFAULT,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
         soft_constraints: Callable = None,
         static_params: dict = None,
         control_state: list = None,
-        exact_discretization: bool = False,  # problems with GPU
         solver=diffrax.Heun(),
         tau: float = 1e-4,
     ):
         """
         Args:
             batch_size (int): Number of parallel environment simulations. Default: 8
-            saturated (bool): Inductances are taken from motor_name specific LUTs. Default: False #TODO
-            motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
+            saturated (bool): No saturated case implemented yet. Default: False
+            motor_variant (MotorVariant): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor variant and stores associated LUTs for the possible saturated case. Needed if saturated==True. Default: MotorVariant.DEFAULT
             physical_normalizations (dict): min-max normalization values of the physical state of the environment.
                 u_alpha_buffer (MinMaxNormalization): Voltage in alpha axis of the delayed action due to system deadtime. Default: min=-2 * 560 / 3, max=2 * 560 / 3
                 u_beta_buffer (MinMaxNormalization): Voltage in beta axis of the delayed action due to system deadtime. Default: min=-2 * 560 / 3, max=2 * 560 / 3
@@ -166,10 +164,9 @@ class IM(CoreEnvironment):
         self.batch_size = batch_size
         self.tau = tau
         self._solver = solver
-        self.exact_discretization = exact_discretization
 
-        if motor_name is not None:
-            motor_params = deepcopy(default_params(motor_name))
+        if motor_variant != MotorVariant.DEFAULT:
+            motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
@@ -189,7 +186,6 @@ class IM(CoreEnvironment):
         else:
             if saturated:
                 raise NotImplementedError("Saturation case not implemented")
-                # raise Exception("motor_name is needed to load LUTs.")
 
             saturated_quants = [
                 "l_m",
@@ -197,12 +193,12 @@ class IM(CoreEnvironment):
                 "l_sigr",
             ]
 
-            motor_params = deepcopy(default_params(motor_name))
+            motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
             default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
-            LUT_predefined = motor_params.__dict__
+            LUT_predefined = motor_params.lut
             self.LUT = LUT_predefined
             self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
 
@@ -219,11 +215,11 @@ class IM(CoreEnvironment):
 
             if (i_s_alpha_lims.min < def_i_s_alpha_lims.min) or (i_s_alpha_lims.max > def_i_s_alpha_lims.max):
                 print(
-                    f"The defined permitted range of i_s_alpha ({i_s_alpha_lims}) exceeds the limits set in the motor parameters corresponding to motor_name."
+                    f"The defined permitted range of i_s_alpha ({i_s_alpha_lims}) exceeds the limits set in the motor parameters corresponding to motor_variant."
                 )
             if (i_s_beta_lims.min < def_i_s_beta_lims.min) or (i_s_beta_lims.max > def_i_s_beta_lims.max):
                 print(
-                    f"The defined permitted range of i_s_beta ({i_s_beta_lims}) exceeds the limits set in the motor parameters corresponding to motor_name."
+                    f"The defined permitted range of i_s_beta ({i_s_beta_lims}) exceeds the limits set in the motor parameters corresponding to motor_variant."
                 )
 
         if not action_normalizations:
@@ -263,11 +259,6 @@ class IM(CoreEnvironment):
             "u_alpha_buffer",
             "u_beta_buffer",
         ]
-
-        if exact_discretization:
-            A_d, B_d = self.get_discrete_matrices(env_properties)
-            self.A_d = jnp.array(A_d)
-            self.B_d = jnp.array(B_d)
 
     @jdc.pytree_dataclass
     class StaticParams:
@@ -350,7 +341,6 @@ class IM(CoreEnvironment):
 
             rng = jnp.nan
         else:
-            # raise NotImplementedError("Need reasonable interval for psi_r values")
             rng, subkey = jax.random.split(rng)
             state_norm = jax.random.uniform(subkey, minval=-1, maxval=1, shape=(2,))
             rng, subkey = jax.random.split(rng)
@@ -401,7 +391,6 @@ class IM(CoreEnvironment):
         y0 = tuple([phys.i_s_alpha, phys.i_s_beta, phys.psi_r_alpha, phys.psi_r_beta, phys.epsilon])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
-        # dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
         dummy_solver_state = tree_map(lambda x: jnp.zeros_like(x, dtype=x.dtype), solver_state)
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
@@ -456,213 +445,6 @@ class IM(CoreEnvironment):
         eps_diff = omega_el
         d_y = i_s_alpha_diff, i_s_beta_diff, psi_r_alpha_diff, psi_r_beta_diff, eps_diff
         return d_y
-
-    def get_discrete_matrices(self, env_properties):
-        # not applicable this way because psi_ralpha*omega_el, psi_rbeta*omega_el are invalid states for linear system
-        params = env_properties.static_params
-        l_s = params.l_m + params.l_sigs
-        l_r = params.l_m + params.l_sigr
-        sigma = (l_s * l_r - params.l_m**2) / (l_s * l_r)
-        tau_r = l_r / params.r_r
-        tau_sig = sigma * l_s / (params.r_s + params.r_r * (params.l_m**2) / (l_r**2))
-
-        # i_alpha, i_beta, psi_ralpha, psi_rbeta, omega_el, psi_ralpha*omega_el, psi_rbeta*omega_el
-        A_mat = jnp.array(
-            [
-                [
-                    -1 / tau_sig,
-                    0,
-                    params.l_m * params.r_r / (sigma * l_s * l_r**2),
-                    0,  # params.l_m * omega_el / (sigma * l_r * l_s)
-                    0,
-                    0,
-                    params.l_m / (sigma * l_r * l_s),
-                ],  # i_ralpha_dot
-                [
-                    0,
-                    -1 / tau_sig,
-                    0,  # -params.l_m * omega_el / (sigma * l_r * l_s),
-                    params.l_m * params.r_r / (sigma * l_s * l_r**2),
-                    0,
-                    -params.l_m / (sigma * l_r * l_s),
-                    0,
-                ],
-                # i_rbeta_dot
-                [
-                    params.l_m / tau_r,
-                    0,
-                    -1 / tau_r,
-                    0,  # -omega_el,
-                    0,
-                    0,
-                    -1,
-                ],  # psi_ralpha_dot
-                [
-                    0,
-                    params.l_m / tau_r,
-                    0,  # omega_el,
-                    -1 / tau_r,
-                    0,
-                    1,
-                    0,
-                ],  # psi_rbeta_dot
-                [
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
-                [
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
-                [
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                ],
-            ]
-        )
-
-        B_mat = jnp.array(
-            [
-                [
-                    1 / (sigma * l_s),
-                    0,
-                ],  # i_ralpha_dot
-                [
-                    0,
-                    1 / (sigma * l_s),
-                ],
-                # i_rbeta_dot
-                [
-                    0,
-                    0,
-                ],  # psi_ralpha_dot
-                [
-                    0,
-                    0,
-                ],
-                # psi_rbeta_dot
-                [
-                    0,
-                    0,
-                ],
-                [
-                    0,
-                    0,
-                ],
-                [
-                    0,
-                    0,
-                ],
-            ]
-        )
-        # n = A_mat.shape[0]
-        # m = B_mat.shape[1]
-
-        # # Augmented matrix
-        # M = jnp.block([[A_mat, B_mat], [jnp.zeros((m, n + m))]])
-        # Md = expm(M * self.tau)
-        # Ad = Md[:n, :n]
-        # Bd = Md[:n, n:]
-
-        # n = A_mat.shape[0]
-        # I = jnp.eye(n)
-
-        # Ad = expm(A_mat * self.tau)
-        # # Solve (Ad - I) B = A Bd  -> Bd = A^-1 (Ad - I) B
-        # Bd = jnp.linalg.solve(A_mat, (Ad - I) @ B_mat)
-
-        # A = A_mat
-        # B = B_mat
-        # n, m = A.shape[0], B.shape[1]
-        # steps = 100
-        # h = self.tau / steps
-        # Ad = jnp.eye(n)
-        # Bd = jnp.zeros((n, m))
-
-        # for _ in range(steps):
-        #     k1 = A @ Ad
-        #     k2 = A @ (Ad + 0.5 * h * k1)
-        #     k3 = A @ (Ad + 0.5 * h * k2)
-        #     k4 = A @ (Ad + h * k3)
-        #     Ad = Ad + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-
-        #     k1B = A @ Bd + B
-        #     k2B = A @ (Bd + 0.5 * h * k1B) + B
-        #     k3B = A @ (Bd + 0.5 * h * k2B) + B
-        #     k4B = A @ (Bd + h * k3B) + B
-        #     Bd = Bd + (h / 6.0) * (k1B + 2 * k2B + 2 * k3B + k4B)
-
-        n, m = A_mat.shape[0], B_mat.shape[1]
-        M = np.block([[A_mat, B_mat], [np.zeros((m, n + m))]])
-        Md = expm(M * self.tau)
-        Ad = Md[:n, :n]
-        Bd = Md[:n, n:]
-        return Ad, Bd
-
-    @partial(jax.jit, static_argnums=[0, 3])
-    def exact_discr_step(self, state, u_alpha_beta, properties):
-        """Computes state by simulating one step with exact discretization.
-
-        Args:
-            state: The state from which to calculate the next step.
-            u_alpha_beta: The input action (voltages) to apply.
-            properties: Parameters and settings of the system (constant).
-
-        Returns:
-            new_state: The state after one simulation step.
-        """
-
-        system_state = state.physical_state
-        omega_el = system_state.omega_el
-        x_k = jnp.array(
-            [
-                system_state.i_s_alpha,
-                system_state.i_s_beta,
-                system_state.psi_r_alpha,
-                system_state.psi_r_beta,
-                system_state.omega_el,
-                system_state.psi_r_alpha * system_state.omega_el,
-                system_state.psi_r_beta * system_state.omega_el,
-            ]
-        )
-
-        y = self.A_d @ x_k + self.B_d @ u_alpha_beta
-
-        i_s_alpha_k1, i_s_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, _, _, _ = y
-        eps_k1 = step_eps(system_state.epsilon, omega_el, self.tau)
-
-        if properties.saturated:
-            raise NotImplementedError("Saturated case not implemented yet.")
-        else:
-            torque = self.currents_to_torque(i_s_alpha_k1, i_s_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)
-
-        with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
-            system_state_next.i_s_alpha = i_s_alpha_k1
-            system_state_next.i_s_beta = i_s_beta_k1
-            system_state_next.psi_r_alpha = psi_r_alpha_k1
-            system_state_next.psi_r_beta = psi_r_beta_k1
-            system_state_next.epsilon = eps_k1
-            system_state_next.torque = torque
-
-        with jdc.copy_and_mutate(state, validate=True) as new_state:
-            new_state.physical_state = system_state_next
-
-        return new_state
 
     @partial(jax.jit, static_argnums=[0, 3])
     def _ode_solver_step(self, state, u_alpha_beta, properties):
@@ -752,22 +534,7 @@ class IM(CoreEnvironment):
         u_alpha_beta = self.denormalize_action(u_alpha_beta_norm, env_properties)
         # normalize to u_dc/2 for hexagon constraints
         u_alpha_beta_norm = u_alpha_beta * (1 / (env_properties.static_params.u_dc / 2))
-        # advanced_angle = step_eps(
-        #     system_state.physical_state.epsilon,
-        #     self.env_properties.static_params.deadtime + 0.5,
-        #     self.tau,
-        #     system_state.physical_state.omega_el,
-        # )
-        # u_albet_norm = dq2albet(
-        #     u_alpha_beta_norm,
-        #     advanced_angle,
-        # )
         u_albet_norm_clip = apply_hex_constraint(u_alpha_beta_norm)
-        # u_dq_norm_clip = albet2dq(
-        #     u_albet_norm_clip,
-        #     advanced_angle,
-        # )
-        # denormalize from u_dc/2
         u_alpha_beta = u_albet_norm_clip[0] * (env_properties.static_params.u_dc / 2)
         return u_alpha_beta
 
@@ -1043,10 +810,8 @@ class IM(CoreEnvironment):
             updated_buffer = action_buffer
 
             u_alpha_beta = action
-        if self.exact_discretization:
-            next_state = self.exact_discr_step(state, u_alpha_beta, env_properties)
-        else:
-            next_state = self._ode_solver_step(state, u_alpha_beta, env_properties)
+
+        next_state = self._ode_solver_step(state, u_alpha_beta, env_properties)
 
         with jdc.copy_and_mutate(next_state, validate=True) as next_state_update:
             next_state_update.physical_state.u_alpha_buffer = updated_buffer[0]
@@ -1129,7 +894,6 @@ class IM(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        # dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
         dummy_solver_state = tree_map(lambda x: jnp.zeros_like(x, dtype=x.dtype), solver_state)
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
@@ -1166,7 +930,6 @@ class IM(CoreEnvironment):
     @partial(jax.jit, static_argnums=0)
     def generate_reward(self, state, action, env_properties):
         """Returns reward for one batch."""
-        raise NotImplementedError("Reward not updated for IM yet. Currently PMSM rewards.")
         state_norm = self.normalize_state(state, env_properties)
         reward = 0
         if "i_s_alpha" in self.control_state and "i_s_beta" in self.control_state:
