@@ -6,26 +6,26 @@ import numpy as np
 import diffrax
 
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
-
+from exciting_environments import EnvironmentRegistry
 
 jax.config.update("jax_platform_name", "cpu")
 jax.config.update("jax_enable_x64", True)
 
-env_ids = ["Pendulum-v0", "MassSpringDamper-v0", "CartPole-v0", "FluidTank-v0", "PMSM-v0", "Acrobot-v0"]
-fully_observable_env_ids = env_ids
+envs_to_test = list(EnvironmentRegistry)
+fully_observable_envs = envs_to_test
 
 
-@pytest.mark.parametrize("env_id", env_ids)
+@pytest.mark.parametrize("env_type", envs_to_test)
 @pytest.mark.parametrize("tau", [1e-4, 1e-5])
-def test_tau(env_id, tau):
-    env = excenvs.make(env_id, tau=tau)
+def test_tau(env_type, tau):
+    env = env_type.make(tau=tau)
     assert env.tau == tau
 
 
-@pytest.mark.parametrize("env_id", env_ids)
-def test_reset(env_id):
+@pytest.mark.parametrize("env_type", envs_to_test)
+def test_reset(env_type):
     batch_size = 4
-    env = excenvs.make(env_id, batch_size=batch_size)
+    env = env_type.make(batch_size=batch_size)
     key = jax.random.PRNGKey(seed=1234)
     keys = jax.random.split(key, num=batch_size)
 
@@ -52,10 +52,10 @@ def test_reset(env_id):
     assert type(state) == env.State, f"Default vmap_reset returns different state type."
 
 
-@pytest.mark.parametrize("env_id", fully_observable_env_ids)
-def test_gen_observation_gen_state(env_id):
+@pytest.mark.parametrize("env_type", fully_observable_envs)
+def test_gen_observation_gen_state(env_type):
     batch_size = 4
-    env = excenvs.make(env_id, batch_size=batch_size)
+    env = env_type.make(batch_size=batch_size)
 
     # single
     obs, state = env.reset(env.env_properties)
@@ -77,10 +77,10 @@ def test_gen_observation_gen_state(env_id):
     )
 
 
-@pytest.mark.parametrize("env_id", env_ids)
-def test_step(env_id):
+@pytest.mark.parametrize("env_type", envs_to_test)
+def test_step(env_type):
     batch_size = 4
-    env = excenvs.make(env_id, batch_size=batch_size)
+    env = env_type.make(batch_size=batch_size)
     # single
     init_obs, state = env.reset(env.env_properties)
     init_state_struct = tree_structure(state)
@@ -100,11 +100,11 @@ def test_step(env_id):
     assert init_state_struct == tree_structure(state), "State changes structure during vmapped simulation steps."
 
 
-@pytest.mark.parametrize("env_id", env_ids)
-def test_simulate_ahead(env_id):
+@pytest.mark.parametrize("env_type", envs_to_test)
+def test_simulate_ahead(env_type):
     sim_steps = 10
     batch_size = 4
-    env = excenvs.make(env_id, batch_size=batch_size)
+    env = env_type.make(batch_size=batch_size)
     # single
     obs, init_state = env.reset(env.env_properties)
     acts = jnp.ones((sim_steps, env.action_dim))
@@ -131,11 +131,11 @@ def test_simulate_ahead(env_id):
     ), "State changes structure during vmapped simulate ahead."
 
 
-@pytest.mark.parametrize("env_id", env_ids)
-def test_similarity_step_sim_ahead_results(env_id):
+@pytest.mark.parametrize("env_type", envs_to_test)
+def test_similarity_step_sim_ahead_results(env_type):
     sim_steps = 10
     batch_size = 4
-    env = excenvs.make(env_id, batch_size=batch_size, solver=diffrax.Euler())
+    env = env_type.make(batch_size=batch_size, solver=diffrax.Euler())
 
     # single
     obs, state = env.reset(env.env_properties)

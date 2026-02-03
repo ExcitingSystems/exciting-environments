@@ -1,2 +1,2 @@
-from .motor_parameters import default_params
+from .motor_parameters import MotorVariant
 from .pmsm_env import PMSM  # , PMSM_Physical

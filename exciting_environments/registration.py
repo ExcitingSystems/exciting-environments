@@ -6,29 +6,27 @@ from exciting_environments import (
     PMSM,
     Acrobot,
 )
+from enum import Enum
 
 
-def make(env_id: str, **env_kwargs):
-    if env_id == "CartPole-v0":
-        env = CartPole(**env_kwargs)
+class EnvironmentRegistry(Enum):
+    CART_POLE = "CartPole-v0"
+    MASS_SPRING_DAMPER = "MassSpringDamper-v0"
+    PENDULUM = "Pendulum-v0"
+    FLUID_TANK = "FluidTank-v0"
+    PMSM = "PMSM-v0"
+    ACROBOT = "Acrobot-v0"
 
-    elif env_id == "MassSpringDamper-v0":
-        env = MassSpringDamper(**env_kwargs)
-
-    elif env_id == "Pendulum-v0":
-        env = Pendulum(**env_kwargs)
-
-    elif env_id == "FluidTank-v0":
-        env = FluidTank(**env_kwargs)
-
-    elif env_id == "PMSM-v0":
-        env = PMSM(**env_kwargs)
-
-    elif env_id == "Acrobot-v0":
-        env = Acrobot(**env_kwargs)
-
-    else:
-        print(f"No existing environments got env_id ={env_id}")
-        env = None
-
-    return env
+    def make(self, **env_kwargs):
+        env_map = {
+            EnvironmentRegistry.CART_POLE: CartPole,
+            EnvironmentRegistry.MASS_SPRING_DAMPER: MassSpringDamper,
+            EnvironmentRegistry.PENDULUM: Pendulum,
+            EnvironmentRegistry.FLUID_TANK: FluidTank,
+            EnvironmentRegistry.PMSM: PMSM,
+            EnvironmentRegistry.ACROBOT: Acrobot,
+        }
+        cls = env_map.get(self)
+        if cls is None:
+            raise ValueError(f"Unknown environment: {self}")
+        return cls(**env_kwargs)
