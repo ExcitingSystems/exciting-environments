@@ -4,7 +4,8 @@ from functools import partial
 from dataclasses import fields
 from typing import Callable, Any, Dict, Type
 import jax.numpy as jnp
-import jax_dataclasses as jdc
+import equinox as eqx
+
 from exciting_environments.utils import MinMaxNormalization
 import jax
 import mujoco
@@ -15,10 +16,10 @@ from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
 
 def dict_to_jdc_pytree(class_name: str, data: Dict[str, Any]):
-    """Erstellt eine jdc.pytree_dataclass direkt aus einem Dictionary."""
+    """Erstellt eine eqx.Module direkt aus einem Dictionary."""
     fields = {key: type(value) for key, value in data.items()}
     namespace = {"__annotations__": fields}
-    DynamicClass = jdc.pytree_dataclass(type(class_name, (object,), namespace))
+    DynamicClass = eqx.Module(type(class_name, (object,), namespace))
     return DynamicClass(**data), DynamicClass
 
 
@@ -180,18 +181,16 @@ class MujucoWrapper(ABC):
         action_normalization, _ = dict_to_jdc_pytree("Action", action_normalization_data)
         return action_normalization
 
-    @jdc.pytree_dataclass
-    class PhysicalNormalizations:
-        qpos: jdc.pytree_dataclass
-        qvel: jdc.pytree_dataclass
+    class PhysicalNormalizations(eqx.Module):
+        qpos: eqx.Module
+        qvel: eqx.Module
 
-    @jdc.pytree_dataclass
-    class EnvProperties:
+    class EnvProperties(eqx.Module):
         """The properties of the environment that stay constant during simulation."""
 
-        physical_normalizations: jdc.pytree_dataclass
-        action_normalizations: jdc.pytree_dataclass
-        static_params: jdc.pytree_dataclass
+        physical_normalizations: eqx.Module
+        action_normalizations: eqx.Module
+        static_params: eqx.Module
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
@@ -254,9 +253,7 @@ class MujucoWrapper(ABC):
             action_denorm = action_denorm.at[i].set(norms.denormalize(action_norm[i]))
         return action_denorm
 
-    def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_qpos_qvel: jdc.pytree_dataclass = None, vmap_helper=None
-    ):
+    def reset(self, env_properties, rng: chex.PRNGKey = None, initial_qpos_qvel: eqx.Module = None, vmap_helper=None):
         """
         Resets environment to default, random or passed initial state.
 
@@ -340,7 +337,7 @@ class MujucoWrapper(ABC):
         )
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_reset(self, rng: chex.PRNGKey = None, initial_qpos_qvel: jdc.pytree_dataclass = None):
+    def vmap_reset(self, rng: chex.PRNGKey = None, initial_qpos_qvel: eqx.Module = None):
         """
         Resets environment (all batches) to default, random or passed initial state.
 

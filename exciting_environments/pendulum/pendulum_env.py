@@ -5,9 +5,10 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_structure, tree_map
-import jax_dataclasses as jdc
+
 from jax import lax
 import diffrax
+import equinox as eqx
 import chex
 from dataclasses import fields
 from exciting_environments.utils import MinMaxNormalization
@@ -113,30 +114,26 @@ class Pendulum(CoreEnvironment):
         )
         super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
 
-    @jdc.pytree_dataclass
-    class PhysicalState:
+    class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
 
         theta: jax.Array
         omega: jax.Array
 
-    @jdc.pytree_dataclass
-    class Additions:
+    class Additions(eqx.Module):
         """Dataclass containing additional information for simulation."""
 
         solver_state: tuple
         active_solver_state: bool
 
-    @jdc.pytree_dataclass
-    class StaticParams:
+    class StaticParams(eqx.Module):
         """Dataclass containing the static parameters of the environment."""
 
         g: jax.Array
         l: jax.Array
         m: jax.Array
 
-    @jdc.pytree_dataclass
-    class Action:
+    class Action(eqx.Module):
         """Dataclass containing the action, that can be applied to the environment."""
 
         torque: jax.Array

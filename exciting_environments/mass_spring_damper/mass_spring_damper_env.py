@@ -5,9 +5,10 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_structure, tree_map
-import jax_dataclasses as jdc
+
 import chex
 import diffrax
+import equinox as eqx
 from dataclasses import fields
 
 from exciting_environments import CoreEnvironment
@@ -111,30 +112,26 @@ class MassSpringDamper(CoreEnvironment):
         )
         super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
 
-    @jdc.pytree_dataclass
-    class PhysicalState:
+    class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
 
         deflection: jax.Array
         velocity: jax.Array
 
-    @jdc.pytree_dataclass
-    class Additions:
+    class Additions(eqx.Module):
         """Dataclass containing additional information for simulation."""
 
         solver_state: tuple
         active_solver_state: bool
 
-    @jdc.pytree_dataclass
-    class StaticParams:
+    class StaticParams(eqx.Module):
         """Dataclass containing the static parameters of the environment."""
 
         d: jax.Array
         k: jax.Array
         m: jax.Array
 
-    @jdc.pytree_dataclass
-    class Action:
+    class Action(eqx.Module):
         """Dataclass containing the action, that can be applied to the environment."""
 
         force: jax.Array

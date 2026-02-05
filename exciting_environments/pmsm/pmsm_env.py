@@ -5,7 +5,8 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure, tree_map
-import jax_dataclasses as jdc
+
+import equinox as eqx
 import chex
 import diffrax
 from scipy.interpolate import griddata
@@ -263,8 +264,7 @@ class PMSM(CoreEnvironment):
             "u_q_buffer",
         ]
 
-    @jdc.pytree_dataclass
-    class StaticParams:
+    class StaticParams(eqx.Module):
         """Dataclass containing the physical parameters of the environment."""
 
         p: jax.Array
@@ -275,8 +275,7 @@ class PMSM(CoreEnvironment):
         u_dc: jax.Array
         deadtime: jax.Array
 
-    @jdc.pytree_dataclass
-    class PhysicalState:
+    class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
 
         u_d_buffer: jax.Array
@@ -287,28 +286,25 @@ class PMSM(CoreEnvironment):
         torque: jax.Array
         omega_el: jax.Array
 
-    @jdc.pytree_dataclass
-    class Additions:
+    class Additions(eqx.Module):
         """Dataclass containing additional information for simulation."""
 
         solver_state: tuple
         active_solver_state: bool
 
-    @jdc.pytree_dataclass
-    class Action:
+    class Action(eqx.Module):
         """Dataclass containing the action, that can be applied to the environment."""
 
         u_d: jax.Array
         u_q: jax.Array
 
-    @jdc.pytree_dataclass
-    class EnvProperties:
+    class EnvProperties(eqx.Module):
         """Dataclass used for simulation which contains environment specific dataclasses."""
 
         saturated: jax.Array
-        physical_normalizations: jdc.pytree_dataclass
-        action_normalizations: jdc.pytree_dataclass
-        static_params: jdc.pytree_dataclass
+        physical_normalizations: eqx.Module
+        action_normalizations: eqx.Module
+        static_params: eqx.Module
 
     def generate_interpolators_and_lut(self, pmsm_lut):
         saturated_quants = [

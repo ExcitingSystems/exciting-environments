@@ -1,10 +1,11 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-import jax_dataclasses as jdc
+
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 from functools import partial
 import chex
+import equinox as eqx
 from abc import ABC
 from exciting_environments import spaces
 from exciting_environments.registration import make
@@ -128,9 +129,7 @@ class GymWrapper(ABC):
 
         return obs, reward, terminated, truncated, state, reference_hold_steps
 
-    def reset(
-        self, rng_env: chex.PRNGKey = None, rng_ref: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None
-    ):
+    def reset(self, rng_env: chex.PRNGKey = None, rng_ref: chex.PRNGKey = None, initial_state: eqx.Module = None):
         """Resets environment to random or passed initial state and can reset reference generator."""
 
         if initial_state is not None:

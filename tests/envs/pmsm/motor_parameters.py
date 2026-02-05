@@ -6,12 +6,12 @@ from dataclasses import fields
 from scipy.io import loadmat
 from pathlib import Path
 import os
-import jax_dataclasses as jdc
+
 from exciting_environments.utils import MinMaxNormalization
 from copy import deepcopy
 
-@jdc.pytree_dataclass
-class PhysicalNormalizations:
+
+class PhysicalNormalizations(eqx.Module):
     u_d_buffer: float
     u_q_buffer: float
     epsilon: float
@@ -21,14 +21,12 @@ class PhysicalNormalizations:
     torque: float
 
 
-@jdc.pytree_dataclass
-class ActionNormalizations:
+class ActionNormalizations(eqx.Module):
     u_d: float
     u_q: float
 
 
-@jdc.pytree_dataclass
-class StaticParams:
+class StaticParams(eqx.Module):
     p: int  # Number of pole pairs
     r_s: float  # Stator resistance
     l_d: float  # D-axis inductance
@@ -38,8 +36,7 @@ class StaticParams:
     deadtime: int  # Deadtime compensation
 
 
-@jdc.pytree_dataclass
-class MotorParams:
+class MotorParams(eqx.Module):
     physical_normalizations: PhysicalNormalizations
     action_normalizations: ActionNormalizations
     static_params: StaticParams
@@ -111,7 +108,7 @@ SEW = MotorParams(
         deadtime=1,
     ),
     default_soft_constraints=default_soft_constraints,
-    pmsm_lut=None,  
+    pmsm_lut=None,
 )
 
 DEFAULT = MotorParams(

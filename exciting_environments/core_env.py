@@ -1,5 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
+from copy import deepcopy
 from functools import partial
 from dataclasses import fields
 from typing import Callable
@@ -7,7 +8,7 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
-import jax_dataclasses as jdc
+import equinox as eqx
 import diffrax
 import chex
 
@@ -36,7 +37,7 @@ class CoreEnvironment(ABC):
     def __init__(
         self,
         batch_size: int,
-        env_properties: jdc.pytree_dataclass,
+        env_properties: eqx.Module,
         tau: float = 1e-4,
         solver=diffrax.Euler(),
     ):
@@ -44,7 +45,7 @@ class CoreEnvironment(ABC):
 
         Args:
             batch_size (int): Number of parallel environment simulations.
-            env_properties(jdc.pytree_dataclass): All parameters and properties of the environment.
+            env_properties(eqx.Module): All parameters and properties of the environment.
             tau (float): Duration of one control step in seconds. Default: 1e-4.
             solver (diffrax.solver): ODE solver used to approximate the ODE solution.
         """
@@ -57,8 +58,7 @@ class CoreEnvironment(ABC):
         self.physical_state_dim = len(fields(self.PhysicalState))
 
     @abstractmethod
-    @jdc.pytree_dataclass
-    class PhysicalState:
+    class PhysicalState(eqx.Module):
         """The physical state x(t) of the underlying system and whose derivative
         w.r.t. time is described in the underlying ODE.
 
@@ -69,8 +69,7 @@ class CoreEnvironment(ABC):
         pass
 
     @abstractmethod
-    @jdc.pytree_dataclass
-    class Additions:
+    class Additions(eqx.Module):
         """
         Stores additional environment state variables that may change over time.
 
@@ -81,8 +80,7 @@ class CoreEnvironment(ABC):
         pass
 
     @abstractmethod
-    @jdc.pytree_dataclass
-    class StaticParams:
+    class StaticParams(eqx.Module):
         """
         Holds static parameters of the environment that remain constant during simulation.
 
@@ -95,8 +93,7 @@ class CoreEnvironment(ABC):
         pass
 
     @abstractmethod
-    @jdc.pytree_dataclass
-    class Action:
+    class Action(eqx.Module):
         """
         Represents the input/action applied to the environment.
 
@@ -233,47 +230,41 @@ class CoreEnvironment(ABC):
         """
         return
 
-    @jdc.pytree_dataclass
-    class State:
+    class State(eqx.Module):
         """The state of the environment."""
 
-        physical_state: jdc.pytree_dataclass
+        physical_state: eqx.Module
         PRNGKey: jax.Array
-        additions: jdc.pytree_dataclass
-        reference: jdc.pytree_dataclass
+        additions: eqx.Module
+        reference: eqx.Module
 
-    @jdc.pytree_dataclass
-    class EnvProperties:
+    class EnvProperties(eqx.Module):
         """The properties of the environment that stay constant during simulation."""
 
-        physical_normalizations: jdc.pytree_dataclass
-        action_normalizations: jdc.pytree_dataclass
-        static_params: jdc.pytree_dataclass
+        physical_normalizations: eqx.Module
+        action_normalizations: eqx.Module
+        static_params: eqx.Module
 
     def create_in_axes_dataclass(self, dataclass):
-        with jdc.copy_and_mutate(dataclass, validate=False) as dataclass_in_axes:
-            for field in fields(dataclass_in_axes):
-                name = field.name
-                value = getattr(dataclass_in_axes, name)
-                if value == None:
-                    setattr(dataclass_in_axes, name, None)
-                elif isinstance(value, list):
-                    raise ValueError(
-                        f'Passed env property "{name}" needs to be a jnp.array to have different setting per batch, but list is given.'
-                    )
-                elif jdc.is_dataclass(value):
-                    setattr(dataclass_in_axes, name, self.create_in_axes_dataclass(value))
-                elif jnp.isscalar(value):
-                    setattr(dataclass_in_axes, name, None)
-                elif isinstance(value, jax.numpy.ndarray):
-                    if value.shape[0] == self.batch_size:
-                        setattr(dataclass_in_axes, name, 0)
-                    else:
-                        setattr(dataclass_in_axes, name, None)
+
+        def filter_function(value):
+            if value is None:
+                return None
+            elif isinstance(value, list):
+                raise ValueError(
+                    f"Leaf needs to be a jnp.array to have different setting per batch, but list is given."
+                )
+            elif jnp.isscalar(value):
+                return None
+            elif isinstance(value, jax.Array):
+                if value.shape[0] == self.batch_size:
+                    return 0
                 else:
-                    raise ValueError(
-                        f'Passed env property "{name}" needs to be a scalar, jnp.array or jdc.pytree_dataclass, but {type(value)} is given.'
-                    )
+                    return None
+            else:
+                raise ValueError(f"Leaf needs to be a scalar, jnp.array, but {type(value)} is given.")
+
+        dataclass_in_axes = jax.tree.map(filter_function, dataclass)
         return dataclass_in_axes
 
     def repeat_values(self, x, n_repeat):
@@ -302,6 +293,7 @@ class CoreEnvironment(ABC):
             norm_state: Normalized state.
         """
         physical_normalizations = env_properties.physical_normalizations
+
         with jdc.copy_and_mutate(state, validate=True) as norm_state:
             for field in fields(norm_state.physical_state):
                 name = field.name
@@ -362,7 +354,7 @@ class CoreEnvironment(ABC):
         self,
         env_properties,
         rng: chex.PRNGKey = None,
-        initial_state: jdc.pytree_dataclass = None,
+        initial_state: eqx.Module = None,
         vmap_helper=None,
     ):
         """
@@ -662,7 +654,7 @@ class CoreEnvironment(ABC):
         )
 
     @partial(jax.jit, static_argnums=0)
-    def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None):
+    def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: eqx.Module = None):
         """
         Resets environment (all batches) to default, random or passed initial state.
 
