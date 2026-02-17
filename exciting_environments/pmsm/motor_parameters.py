@@ -51,14 +51,7 @@ class MotorParams(eqx.Module):
 def default_soft_constraints(self, state, action_norm, env_properties):
     state_norm = self.normalize_state(state, env_properties)
     physical_state_norm = state_norm.physical_state
-    with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
-        for field in fields(phys_soft_const):
-            name = field.name
-            setattr(
-                phys_soft_const,
-                name,
-                jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0),
-            )
+    phys_soft_const = jax.tree.map(lambda x: jax.nn.relu(jnp.abs(x) - 1.0), physical_state_norm)
     return phys_soft_const, None
 
 

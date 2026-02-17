@@ -15,11 +15,10 @@ import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
 
-def dict_to_jdc_pytree(class_name: str, data: Dict[str, Any]):
-    """Erstellt eine eqx.Module direkt aus einem Dictionary."""
+def dict_to_pytree(class_name: str, data: Dict[str, Any]):
     fields = {key: type(value) for key, value in data.items()}
     namespace = {"__annotations__": fields}
-    DynamicClass = eqx.Module(type(class_name, (object,), namespace))
+    DynamicClass = type(class_name, (eqx.Module,), namespace)
     return DynamicClass(**data), DynamicClass
 
 
@@ -158,12 +157,12 @@ class MujucoWrapper(ABC):
             )
 
             q_vel.update({name: MinMaxNormalization(min=jnp.nan, max=jnp.nan) for i, name in enumerate(qvel_names)})
-        q_pos_jdc, _ = dict_to_jdc_pytree("qpos", q_pos)
-        q_vel_jdc, _ = dict_to_jdc_pytree("qvel", q_vel)
+        q_pos_pytree, _ = dict_to_pytree("qpos", q_pos)
+        q_vel_pytree, _ = dict_to_pytree("qvel", q_vel)
 
         self.qpos_is_angle = is_angle
 
-        return self.PhysicalNormalizations(qpos=q_pos_jdc, qvel=q_vel_jdc)
+        return self.PhysicalNormalizations(qpos=q_pos_pytree, qvel=q_vel_pytree)
 
     def generate_action_normalization_dataclasses(self, model):
         action_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range(model.nu)]
@@ -178,7 +177,7 @@ class MujucoWrapper(ABC):
             )
             for i, name in enumerate(action_names)
         }
-        action_normalization, _ = dict_to_jdc_pytree("Action", action_normalization_data)
+        action_normalization, _ = dict_to_pytree("Action", action_normalization_data)
         return action_normalization
 
     class PhysicalNormalizations(eqx.Module):

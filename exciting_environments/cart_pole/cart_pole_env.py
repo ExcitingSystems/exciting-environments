@@ -225,17 +225,14 @@ class CartPole(CoreEnvironment):
         omega_k1 = y[3]
         theta_k1 = ((theta_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
-        with jdc.copy_and_mutate(state, validate=True) as new_state:
-            new_state.physical_state = self.PhysicalState(
-                deflection=deflection_k1,
-                velocity=velocity_k1,
-                theta=theta_k1,
-                omega=omega_k1,
-            )
-
-        new_state = jdc.replace(
-            new_state, additions=self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        new_physical_state = self.PhysicalState(
+            deflection=deflection_k1,
+            velocity=velocity_k1,
+            theta=theta_k1,
+            omega=omega_k1,
         )
+        new_additions = self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
@@ -415,9 +412,9 @@ class CartPole(CoreEnvironment):
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
-        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
-            for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[4 + pos])
+        new_ref = ref
+        for i, name in enumerate(self.control_state):
+            new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[4 + i])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state, env_properties)
 
@@ -425,16 +422,13 @@ class CartPole(CoreEnvironment):
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
         constrained_states = ["deflection", "velocity", "omega"]
-        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
-            for field in fields(phys_soft_const):
-                name = field.name
-                if name in constrained_states:
-                    soft_constr = jax.nn.relu(jnp.abs(getattr(physical_state_norm, name)) - 1.0)
-                    setattr(phys_soft_const, name, soft_constr)
-                else:
-                    setattr(phys_soft_const, name, jnp.nan)
+        names = [f.name for f in fields(type(physical_state_norm))]
+        values = [
+            jax.nn.relu(jnp.abs(getattr(physical_state_norm, n)) - 1.0) if n in constrained_states else jnp.nan
+            for n in names
+        ]
 
-        # define soft constraints for action
+        phys_soft_const = eqx.tree_unflatten(eqx.tree_structure(physical_state_norm), values)
         act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
         return phys_soft_const, act_soft_constr
 

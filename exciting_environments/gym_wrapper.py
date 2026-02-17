@@ -148,8 +148,7 @@ class GymWrapper(ABC):
                 key = rng_ref
                 assert rng_ref.shape[0] == self.env.batch_size
 
-            with jdc.copy_and_mutate(state, validate=False) as state:
-                state.PRNGKey = key
+            state = eqx.tree_at(lambda s: s.PRNGKey, state, key)
 
             self.ref_gen = True
             state, self.reference_hold_steps = jax.vmap(
@@ -166,27 +165,30 @@ class GymWrapper(ABC):
         return obs, {}
 
     def update_ref(self, state, env_properties, hold_steps):
-        state, hold_steps = jax.lax.cond(
-            hold_steps[0] == 0, self.generate_new_ref, lambda a, b, c: (a, c), state, env_properties, hold_steps
-        )
-        hold_steps += -1
+        def true_fun(s, e, h):
+            new_state, new_hold = self.generate_new_ref(s, e, h)
+            new_hold = new_hold.astype(h.dtype)
+            return new_state, new_hold
+
+        def false_fun(s, e, h):
+            return s, h
+
+        state, hold_steps = jax.lax.cond(hold_steps[0] == 0, true_fun, false_fun, state, env_properties, hold_steps)
+
+        hold_steps = hold_steps - 1
         return state, hold_steps
 
-    def generate_new_ref(self, state, env_properties, hold_steps):
-        with jdc.copy_and_mutate(state, validate=False) as new_state:
-            init = self.env.init_state(env_properties, state.PRNGKey)
-            for name in self.control_state:
-                setattr(new_state.reference, name, getattr(init.physical_state, name))
+    def generate_new_ref(self, state, env_properties, hold_steps):  # TODO
+        init = self.env.init_state(env_properties, state.PRNGKey)
+        new_reference = state.reference
+        for name in self.control_state:
+            new_reference = eqx.tree_at(lambda r: getattr(r, name), new_reference, getattr(init.physical_state, name))
 
-            key, subkey = jax.random.split(init.PRNGKey)
-
-            hold_steps = jax.random.randint(
-                subkey,
-                minval=self.ref_params["hold_steps_min"],
-                maxval=self.ref_params["hold_steps_max"],
-                shape=(1,),
-            )
-            new_state.PRNGKey = key
+        key, subkey = jax.random.split(init.PRNGKey)
+        hold_steps = jax.random.randint(
+            subkey, minval=self.ref_params["hold_steps_min"], maxval=self.ref_params["hold_steps_max"], shape=(1,)
+        )
+        new_state = eqx.tree_at(lambda s: (s.reference, s.PRNGKey), state, (new_reference, key))
         return new_state, hold_steps
 
     def render(self, *_, **__):

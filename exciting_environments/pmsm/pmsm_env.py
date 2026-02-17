@@ -570,18 +570,11 @@ class PMSM(CoreEnvironment):
         else:
             torque = jnp.array([self.currents_to_torque(i_d_k1, i_q_k1, properties)])[0]
 
-        with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
-            system_state_next.epsilon = eps_k1
-            system_state_next.i_d = i_d_k1
-            system_state_next.i_q = i_q_k1
-            system_state_next.torque = torque
-
-        with jdc.copy_and_mutate(state, validate=True) as new_state:
-            new_state.physical_state = system_state_next
-
-        new_state = jdc.replace(
-            new_state, additions=self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        new_physical_state = eqx.tree_at(
+            lambda s: (s.epsilon, s.i_d, s.i_q, s.torque), system_state, (eps_k1, i_d_k1, i_q_k1, torque)
         )
+        new_additions = self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
     def constraint_denormalization(self, u_dq_norm, system_state, env_properties):
@@ -701,39 +694,20 @@ class PMSM(CoreEnvironment):
 
     def constraint_denormalization_ahead(self, actions, init_state, env_properties):
         act_len = actions.shape[0]
-        with jdc.copy_and_mutate(init_state, validate=False) as states:
-            for field in fields(states.physical_state):
-                name = field.name
-                setattr(
-                    states.physical_state,
-                    name,
-                    self.repeat_values(getattr(states.physical_state, name), act_len),
-                )
-            states.physical_state.epsilon = (
-                states.physical_state.epsilon
-                + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el
-            )
 
-            # extend state dimension to use vmapping across time
-            for field in fields(states.reference):
-                name = field.name
-                setattr(
-                    states.reference,
-                    name,
-                    self.repeat_values(getattr(states.reference, name), act_len),
-                )
+        def repeat_tree(tree, n):
+            return jax.tree.map(lambda x: self.repeat_values(x, n), tree)
 
-            for field in fields(states.additions):
-                name = field.name
-                setattr(
-                    states.additions,
-                    name,
-                    self.repeat_values(getattr(states.additions, name), act_len),
-                )
-
-            states.PRNGKey = jnp.full(act_len, init_state.PRNGKey)
-
-        actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(actions, states, env_properties)
+        state = eqx.tree_at(lambda s: s.physical_state, init_state, repeat_tree(init_state.physical_state, act_len))
+        epsilon_update = (
+            state.physical_state.epsilon
+            + jnp.linspace(0, self.tau * (act_len - 1), act_len) * init_state.physical_state.omega_el
+        )
+        state = eqx.tree_at(lambda s: s.physical_state.epsilon, state, epsilon_update)
+        state = eqx.tree_at(lambda s: s.reference, state, repeat_tree(state.reference, act_len))
+        state = eqx.tree_at(lambda s: s.additions, state, repeat_tree(state.additions, act_len))
+        state = eqx.tree_at(lambda s: s.PRNGKey, state, jnp.full(act_len, init_state.PRNGKey))
+        actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0, None))(actions, state, env_properties)
         return actions
 
     @partial(jax.jit, static_argnums=[0, 3, 4, 5])
@@ -775,14 +749,13 @@ class PMSM(CoreEnvironment):
             init_state, actions_dead, env_properties, obs_stepsize, action_stepsize
         )
 
-        with jdc.copy_and_mutate(states, validate=False) as states:
-            acts_m = jnp.vstack([acts_buf, actions])
-            acts_m = acts_m.repeat(int(obs_stepsize / action_stepsize), axis=0)
-            if deadtime == 0:
-                acts_m = jnp.zeros(((actions.shape[0] + 1), 2))
-            states.physical_state.u_d_buffer = acts_m[:, 0]
-            states.physical_state.u_q_buffer = acts_m[:, 1]
-
+        acts_m = jnp.vstack([acts_buf, actions])
+        acts_m = acts_m.repeat(int(obs_stepsize / action_stepsize), axis=0)
+        if deadtime == 0:
+            acts_m = jnp.zeros(((actions.shape[0] + 1), 2))
+        states = eqx.tree_at(
+            lambda s: (s.physical_state.u_d_buffer, s.physical_state.u_q_buffer), states, (acts_m[:, 0], acts_m[:, 1])
+        )
         # generate observations for all timesteps
         observations = jax.vmap(self.generate_observation, in_axes=(0, None))(states, env_properties)
 
@@ -868,10 +841,11 @@ class PMSM(CoreEnvironment):
             u_dq = action
 
         next_state = self._ode_solver_step(state, u_dq, env_properties)
-        with jdc.copy_and_mutate(next_state, validate=True) as next_state_update:
-            next_state_update.physical_state.u_d_buffer = updated_buffer[0]
-            next_state_update.physical_state.u_q_buffer = updated_buffer[1]
-
+        next_state_update = eqx.tree_at(
+            lambda r: (r.physical_state.u_d_buffer, r.physical_state.u_q_buffer),
+            next_state,
+            (updated_buffer[0], updated_buffer[1]),
+        )
         observation = self.generate_observation(next_state_update, env_properties)
         return observation, next_state_update
 
@@ -956,9 +930,9 @@ class PMSM(CoreEnvironment):
             torque=jnp.nan,
             omega_el=jnp.nan,
         )
-        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
-            for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[8 + pos])
+        new_ref = ref
+        for i, name in enumerate(self.control_state):
+            new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[8 + i])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state, env_properties)
 

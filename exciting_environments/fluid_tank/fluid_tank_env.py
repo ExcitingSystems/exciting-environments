@@ -142,12 +142,9 @@ class FluidTank(CoreEnvironment):
         # necessary because of ODE solver approximation
         h_k1 = jnp.clip(h_k1, 0)
 
-        with jdc.copy_and_mutate(state, validate=True) as new_state:
-            new_state.physical_state = self.PhysicalState(height=h_k1)
-
-        new_state = jdc.replace(
-            new_state, additions=self.Additions(solver_state=solver_state_k1, active_solver_state=True)
-        )
+        new_physical_state = self.PhysicalState(height=h_k1)
+        new_additions = self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
     @partial(jax.jit, static_argnums=[0, 4, 5])
@@ -298,20 +295,16 @@ class FluidTank(CoreEnvironment):
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
 
         ref = self.PhysicalState(height=jnp.nan)
-        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
-            for name, pos in zip(self.control_state, range(len(self.control_state))):
-                value = obs[1 + pos]
-                setattr(new_ref, name, value)
+        new_ref = ref
+        for i, name in enumerate(self.control_state):
+            new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[1 + i])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state, env_properties)
 
     def default_soft_constraints(self, state, action_norm, env_properties):
         state_norm = self.normalize_state(state, env_properties)
         physical_state_norm = state_norm.physical_state
-        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
-            for field in fields(phys_soft_const):
-                name = field.name
-                setattr(phys_soft_const, name, jnp.nan)
+        phys_soft_const = jax.tree.map(lambda _: jnp.nan, physical_state_norm)
 
         # define soft constraints for action
         act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)

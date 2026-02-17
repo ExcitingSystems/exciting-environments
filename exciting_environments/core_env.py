@@ -7,7 +7,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
+from jax.tree_util import tree_flatten, tree_unflatten, tree_structure, tree_leaves
 import equinox as eqx
 import diffrax
 import chex
@@ -294,16 +294,23 @@ class CoreEnvironment(ABC):
         """
         physical_normalizations = env_properties.physical_normalizations
 
-        with jdc.copy_and_mutate(state, validate=True) as norm_state:
-            for field in fields(norm_state.physical_state):
-                name = field.name
-                norm_single_state = getattr(physical_normalizations, name).normalize(
-                    getattr(state.physical_state, name)
-                )
-                norm_ref_single_state = getattr(physical_normalizations, name).normalize(getattr(state.reference, name))
-                setattr(norm_state.physical_state, name, norm_single_state)
-                setattr(norm_state.reference, name, norm_ref_single_state)
-        return norm_state
+        new_physical_state = jax.tree.map(
+            lambda value, norm: norm.normalize(value),
+            state.physical_state,
+            physical_normalizations,
+        )
+        new_reference = jax.tree.map(
+            lambda value, norm: norm.normalize(value),
+            state.reference,
+            physical_normalizations,
+        )
+        new_state = eqx.tree_at(
+            lambda s: (s.physical_state, s.reference),
+            state,
+            (new_physical_state, new_reference),
+        )
+
+        return new_state
 
     @partial(jax.jit, static_argnums=0)
     def denormalize_state(self, norm_state, env_properties):
@@ -318,18 +325,24 @@ class CoreEnvironment(ABC):
             state: The denormalized state.
         """
         physical_normalizations = env_properties.physical_normalizations
-        with jdc.copy_and_mutate(norm_state, validate=True) as state:
-            for field in fields(state.physical_state):
-                name = field.name
-                single_state = getattr(physical_normalizations, name).denormalize(
-                    getattr(norm_state.physical_state, name)
-                )
-                ref_single_state = getattr(physical_normalizations, name).denormalize(
-                    getattr(norm_state.reference, name)
-                )
-                setattr(state.physical_state, name, single_state)
-                setattr(state.reference, name, ref_single_state)
-        return state
+
+        new_physical_state = jax.tree.map(
+            lambda value, norm: norm.denormalize(value),
+            norm_state.physical_state,
+            physical_normalizations,
+        )
+        new_reference = jax.tree.map(
+            lambda value, norm: norm.denormalize(value),
+            norm_state.reference,
+            physical_normalizations,
+        )
+        new_state = eqx.tree_at(
+            lambda s: (s.physical_state, s.reference),
+            norm_state,
+            (new_physical_state, new_reference),
+        )
+
+        return new_state
 
     @partial(jax.jit, static_argnums=0)
     def denormalize_action(self, action_norm, env_properties):
@@ -344,11 +357,11 @@ class CoreEnvironment(ABC):
             action: The denormalized action.
         """
         normalizations = env_properties.action_normalizations
-        action_denorm = jnp.zeros_like(action_norm)
-        for i, field in enumerate(fields(normalizations)):
-            norms = getattr(normalizations, field.name)
-            action_denorm = action_denorm.at[i].set(norms.denormalize(action_norm[i]))
-        return action_denorm
+        norm_objects = [getattr(normalizations, name) for name in normalizations.__annotations__]
+
+        denorm_values = jnp.array([norm.denormalize(val) for norm, val in zip(norm_objects, action_norm)])
+
+        return denorm_values
 
     def reset(
         self,
