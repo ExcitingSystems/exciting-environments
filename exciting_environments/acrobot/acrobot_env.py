@@ -15,7 +15,19 @@ from exciting_environments.utils import MinMaxNormalization
 from exciting_environments import CoreEnvironment
 
 
+def acrobot_soft_constraints(instance, state, action_norm):
+    state_norm = instance.normalize(state)
+    phys = state_norm.physical_state
+    phys_soft_const = jax.tree.map(lambda _: jnp.nan, phys)
+    phys_soft_const = eqx.tree_at(lambda s: s.omega, phys_soft_const, jax.nn.relu(jnp.abs(phys.omega) - 1.0))
+    act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+
+    return phys_soft_const, act_soft_constr
+
+
 class Acrobot(CoreEnvironment):
+    control_state: list = eqx.field(static=True)
+    soft_constraints_logic: Callable = eqx.field(static=True)
     """
     State Variables:
         ``['theta_1', 'theta_2', 'omega_1', 'omega_2']``
@@ -50,7 +62,6 @@ class Acrobot(CoreEnvironment):
 
     def __init__(
         self,
-        batch_size: int = 8,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
         soft_constraints: Callable = None,
@@ -61,7 +72,6 @@ class Acrobot(CoreEnvironment):
     ):
         """
         Args:
-            batch_size (int): Number of parallel environment simulations. Default: 8
             physical_normalizations (dict): Min and max values of the physical state of the environment for normalization.
                 theta1 (MinMaxNormalization): Rotation angle of the first/inner joint. Default: min=-jnp.pi, max=jnp.pi
                 theta2 (MinMaxNormalization): Rotation angle relative to theta1 of second/outer joint. Default: min=-jnp.pi, max=jnp.pi
@@ -91,36 +101,34 @@ class Acrobot(CoreEnvironment):
 
         if not physical_normalizations:
             physical_normalizations = {
-                "theta_1": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
-                "theta_2": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
-                "omega_1": MinMaxNormalization(min=-10, max=10),
-                "omega_2": MinMaxNormalization(min=-10, max=10),
+                "theta_1": MinMaxNormalization(min=jnp.array(-jnp.pi), max=jnp.array(jnp.pi)),
+                "theta_2": MinMaxNormalization(min=jnp.array(-jnp.pi), max=jnp.array(jnp.pi)),
+                "omega_1": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
+                "omega_2": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
             }
 
         if not action_normalizations:
-            action_normalizations = {"torque": MinMaxNormalization(min=-20, max=20)}
-
-        if not soft_constraints:
-            soft_constraints = self.default_soft_constraints
+            action_normalizations = {"torque": MinMaxNormalization(min=jnp.array(-20), max=jnp.array(20))}
 
         if not static_params:
             static_params = {
-                "g": 9.81,
-                "l_1": 2,
-                "l_2": 2,
-                "m_1": 1,
-                "m_2": 1,
-                "l_c1": 1,
-                "l_c2": 1,
-                "I_1": 1.3,
-                "I_2": 1.3,
+                "g": jnp.array(9.81),
+                "l_1": jnp.array(2),
+                "l_2": jnp.array(2),
+                "m_1": jnp.array(1),
+                "m_2": jnp.array(1),
+                "l_c1": jnp.array(1),
+                "l_c2": jnp.array(1),
+                "I_1": jnp.array(1.3),
+                "I_2": jnp.array(1.3),
             }
 
         if not control_state:
             control_state = []
 
+        logic = soft_constraints if soft_constraints else acrobot_soft_constraints
+        self.soft_constraints_logic = logic
         self.control_state = control_state
-        self.soft_constraints = soft_constraints
 
         physical_normalizations = self.PhysicalState(**physical_normalizations)
         action_normalizations = self.Action(**action_normalizations)
@@ -131,7 +139,7 @@ class Acrobot(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(env_properties=env_properties, tau=tau, solver=solver)
 
     class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
@@ -193,19 +201,18 @@ class Acrobot(CoreEnvironment):
 
         return d_y
 
-    @partial(jax.jit, static_argnums=0)
-    def _ode_solver_step(self, state, action, static_params):
+    @eqx.filter_jit
+    def _ode_solver_step(self, state, action):
         """Computes the next state by simulating one step.
 
         Args:
             state: The state from which to calculate state for the next step.
             action: The action to apply to the environment.
-            static_params: Parameter of the environment, that do not change over time.
 
         Returns:
             next_state: The computed next state after the one step simulation.
         """
-
+        static_params = self.env_properties.static_params
         physical_state = state.physical_state
         args = static_params
 
@@ -255,22 +262,21 @@ class Acrobot(CoreEnvironment):
         new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
-    @partial(jax.jit, static_argnums=[0, 4, 5])
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+    @eqx.filter_jit
+    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
         """Computes multiple simulation steps for one batch.
 
         Args:
             init_state: The initial state of the simulation.
             actions: A set of actions to be applied to the environment, the value changes every.
             action_stepsize (shape=(n_action_steps, action_dim)).
-            static_params: The constant properties of the simulation.
             obs_stepsize: The sampling time for the observations.
             action_stepsize: The time between changes in the input/action.
 
         Returns:
             next_states: The computed states during the multiple step simulation.
         """
-
+        static_params = self.env_properties.static_params
         init_physical_state = init_state.physical_state
         args = static_params
 
@@ -327,15 +333,16 @@ class Acrobot(CoreEnvironment):
             reference=ref,
         )
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+    @eqx.filter_jit
+    def init_state(self, rng: chex.PRNGKey = None):
         """Returns default or random initial state for one batch."""
+        env_properties = self.env_properties
         if rng is None:
             phys = self.PhysicalState(
-                theta_1=1.0,
-                theta_2=0.0,
-                omega_1=0.0,
-                omega_2=0.0,
+                theta_1=jnp.array(1.0),
+                theta_2=jnp.array(0.0),
+                omega_1=jnp.array(0.0),
+                omega_2=jnp.array(0.0),
             )
             subkey = jnp.nan
         else:
@@ -360,18 +367,20 @@ class Acrobot(CoreEnvironment):
         y0 = tuple([phys.theta_1, phys.theta_2, phys.omega_1, phys.omega_2])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(theta_1=jnp.nan, theta_2=jnp.nan, omega_1=jnp.nan, omega_2=jnp.nan)
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
-        return self.denormalize_state(norm_state, env_properties)
+        return self.denormalize_state(norm_state)
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_reward(self, state, action, env_properties):
+    @eqx.filter_jit
+    def generate_reward(self, state, action):
         """Returns reward for one batch."""
         reward = 0
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         for name in self.control_state:
             if name == "theta_1" or name == "theta_2":
                 # For theta, we use the sine and cosine to avoid discontinuities at pi
@@ -382,10 +391,10 @@ class Acrobot(CoreEnvironment):
                 reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
         return jnp.array([reward])
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_observation(self, state):
         """Returns observation for one batch."""
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         norm_state_phys = norm_state.physical_state
         obs = jnp.hstack(
             (
@@ -404,9 +413,10 @@ class Acrobot(CoreEnvironment):
             )
         return obs
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_state_from_observation(self, obs, env_properties, key=None):
+    @eqx.filter_jit
+    def generate_state_from_observation(self, obs, key=None):
         """Generates state from observation for one batch."""
+        env_properties = self.env_properties
         phys = self.PhysicalState(
             theta_1=obs[0],
             theta_2=obs[1],
@@ -432,7 +442,9 @@ class Acrobot(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)  # None
         ref = self.PhysicalState(theta_1=jnp.nan, theta_2=jnp.nan, omega_1=jnp.nan, omega_2=jnp.nan)
@@ -440,25 +452,16 @@ class Acrobot(CoreEnvironment):
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[4 + i])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
-        return self.denormalize_state(norm_state, env_properties)
+        return self.denormalize_state(norm_state)
 
-    def default_soft_constraints(self, state, action_norm, env_properties):
-        state_norm = self.normalize_state(state, env_properties)
-        phys = state_norm.physical_state
-        phys_soft_const = jax.tree.map(lambda _: jnp.nan, phys)
-        phys_soft_const = eqx.tree_at(lambda s: s.omega, phys_soft_const, jax.nn.relu(jnp.abs(phys.omega) - 1.0))
-        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-
-        return phys_soft_const, act_soft_constr
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_truncated(self, state):
         """Returns truncated information for one batch."""
-        obs = self.generate_observation(state, env_properties)
+        obs = self.generate_observation(state)
         return jnp.abs(obs) > 1
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, state, reward, env_properties):
+    @eqx.filter_jit
+    def generate_terminated(self, state, reward):
         """Returns terminated information for one batch."""
         return reward == 0
 

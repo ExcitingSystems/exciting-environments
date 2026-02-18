@@ -15,7 +15,24 @@ from exciting_environments import CoreEnvironment
 from exciting_environments.utils import MinMaxNormalization
 
 
+def cartpole_soft_constraints(instance, state, action_norm):
+    state_norm = instance.normalize(state)
+    physical_state_norm = state_norm.physical_state
+    constrained_states = ["deflection", "velocity", "omega"]
+    names = [f.name for f in fields(type(physical_state_norm))]
+    values = [
+        jax.nn.relu(jnp.abs(getattr(physical_state_norm, n)) - 1.0) if n in constrained_states else jnp.nan
+        for n in names
+    ]
+
+    phys_soft_const = eqx.tree_unflatten(eqx.tree_structure(physical_state_norm), values)
+    act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+    return phys_soft_const, act_soft_constr
+
+
 class CartPole(CoreEnvironment):
+    control_state: list = eqx.field(static=True)
+    soft_constraints_logic: Callable = eqx.field(static=True)
     """
     State Variables
         ``['deflection', 'velocity', 'theta', 'omega']``
@@ -49,7 +66,6 @@ class CartPole(CoreEnvironment):
 
     def __init__(
         self,
-        batch_size: int = 8,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
         soft_constraints: Callable = None,
@@ -60,7 +76,6 @@ class CartPole(CoreEnvironment):
     ):
         """
         Args:
-            batch_size(int): Number of training examples utilized in one iteration. Default: 8
             physical_normalizations(dict): min-max normalization values of the physical state of the environment.
                 deflection(MinMaxNormalization): Deflection of the cart. Default: min=-10, max=10
                 velocity(MinMaxNormalization): Velocity of the cart. Default: min=-10, max=10
@@ -86,32 +101,30 @@ class CartPole(CoreEnvironment):
 
         if not physical_normalizations:
             physical_normalizations = {
-                "deflection": MinMaxNormalization(min=-2.4, max=2.4),
-                "velocity": MinMaxNormalization(min=-8, max=8),
-                "theta": MinMaxNormalization(min=-jnp.pi, max=jnp.pi),
-                "omega": MinMaxNormalization(min=-8, max=8),
+                "deflection": MinMaxNormalization(min=jnp.array(-2.4), max=jnp.array(2.4)),
+                "velocity": MinMaxNormalization(min=jnp.array(-8), max=jnp.array(8)),
+                "theta": MinMaxNormalization(min=jnp.array(-jnp.pi), max=jnp.array(jnp.pi)),
+                "omega": MinMaxNormalization(min=jnp.array(-8), max=jnp.array(8)),
             }
         if not action_normalizations:
-            action_normalizations = {"force": MinMaxNormalization(min=-20, max=20)}
-
-        if not soft_constraints:
-            soft_constraints = self.default_soft_constraints
+            action_normalizations = {"force": MinMaxNormalization(min=jnp.array(-20), max=jnp.array(20))}
 
         if not static_params:
             static_params = {  # typical values from Source with DOI: 10.1109/TSMC.1983.6313077
-                "mu_p": 0.000002,
-                "mu_c": 0.0005,
-                "l": 0.5,
-                "m_p": 0.1,
-                "m_c": 1,
-                "g": 9.81,
+                "mu_p": jnp.array(0.000002),
+                "mu_c": jnp.array(0.0005),
+                "l": jnp.array(0.5),
+                "m_p": jnp.array(0.1),
+                "m_c": jnp.array(1),
+                "g": jnp.array(9.81),
             }
 
         if not control_state:
             control_state = []
 
+        logic = soft_constraints if soft_constraints else cartpole_soft_constraints
+        self.soft_constraints_logic = logic
         self.control_state = control_state
-        self.soft_constraints = soft_constraints
 
         physical_normalizations = self.PhysicalState(**physical_normalizations)
         action_normalizations = self.Action(**action_normalizations)
@@ -122,7 +135,7 @@ class CartPole(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(env_properties=env_properties, tau=tau, solver=solver)
 
     class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
@@ -176,8 +189,8 @@ class CartPole(CoreEnvironment):
         d_y = d_deflection, d_velocity, d_theta, d_omega
         return d_y
 
-    @partial(jax.jit, static_argnums=0)
-    def _ode_solver_step(self, state, action, static_params):
+    @eqx.filter_jit
+    def _ode_solver_step(self, state, action):
         """Computes state by simulating one step.
 
         Source DOI: 10.1109/TSMC.1983.6313077
@@ -185,12 +198,11 @@ class CartPole(CoreEnvironment):
         Args:
             state: The state from which to calculate state for the next step.
             action: The action to apply to the environment.
-            static_params: Parameter of the environment, that do not change over time.
 
         Returns:
             state: The computed state after the one step simulation.
         """
-
+        static_params = self.env_properties.static_params
         physical_state = state.physical_state
         args = static_params
 
@@ -235,22 +247,21 @@ class CartPole(CoreEnvironment):
         new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
-    @partial(jax.jit, static_argnums=[0, 4, 5])
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+    @eqx.filter_jit
+    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
         """Computes multiple simulation steps for one batch.
 
         Args:
             init_state: The initial state of the simulation.
             actions: A set of actions to be applied to the environment, the value changes every.
             action_stepsize (shape=(n_action_steps, action_dim)).
-            static_params: The constant properties of the simulation.
             obs_stepsize: The sampling time for the observations.
             action_stepsize: The time between changes in the input/action.
 
         Returns:
             next_states: The computed states during the multiple step simulation.
         """
-
+        static_params = self.env_properties.static_params
         init_physical_state = init_state.physical_state
         args = static_params
 
@@ -305,15 +316,16 @@ class CartPole(CoreEnvironment):
             reference=ref,
         )
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+    @eqx.filter_jit
+    def init_state(self, rng: chex.PRNGKey = None):
         """Returns default or random initial state for one batch."""
+        env_properties = self.env_properties
         if rng is None:
             phys = self.PhysicalState(
-                deflection=0.0,
-                velocity=0.0,
-                theta=1.0,
-                omega=0.0,
+                deflection=jnp.array(0.0),
+                velocity=jnp.array(0.0),
+                theta=jnp.array(1.0),
+                omega=jnp.array(0.0),
             )
             subkey = jnp.nan
         else:
@@ -338,18 +350,20 @@ class CartPole(CoreEnvironment):
         y0 = tuple([phys.deflection, phys.velocity, phys.theta, phys.omega])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
-        return self.denormalize_state(norm_state, env_properties)
+        return self.denormalize_state(norm_state)
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_reward(self, state, action, env_properties):
+    @eqx.filter_jit
+    def generate_reward(self, state, action):
         """Returns reward for one batch."""
         reward = 0
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         for name in self.control_state:
             if name == "theta":
                 theta = getattr(state.physical_state, name)
@@ -359,10 +373,10 @@ class CartPole(CoreEnvironment):
                 reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
         return jnp.array([reward])
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_observation(self, state):
         """Returns observation for one batch."""
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         norm_state_phys = norm_state.physical_state
         obs = jnp.hstack(
             (
@@ -381,9 +395,10 @@ class CartPole(CoreEnvironment):
             )
         return obs
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_state_from_observation(self, obs, env_properties, key=None):
+    @eqx.filter_jit
+    def generate_state_from_observation(self, obs, key=None):
         """Generates state from observation for one batch."""
+        env_properties = self.env_properties
         phys = self.PhysicalState(
             deflection=obs[0],
             velocity=obs[1],
@@ -408,7 +423,9 @@ class CartPole(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
@@ -416,30 +433,16 @@ class CartPole(CoreEnvironment):
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[4 + i])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
-        return self.denormalize_state(norm_state, env_properties)
+        return self.denormalize_state(norm_state)
 
-    def default_soft_constraints(self, state, action_norm, env_properties):
-        state_norm = self.normalize_state(state, env_properties)
-        physical_state_norm = state_norm.physical_state
-        constrained_states = ["deflection", "velocity", "omega"]
-        names = [f.name for f in fields(type(physical_state_norm))]
-        values = [
-            jax.nn.relu(jnp.abs(getattr(physical_state_norm, n)) - 1.0) if n in constrained_states else jnp.nan
-            for n in names
-        ]
-
-        phys_soft_const = eqx.tree_unflatten(eqx.tree_structure(physical_state_norm), values)
-        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        return phys_soft_const, act_soft_constr
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_truncated(self, state):
         """Returns truncated information for one batch."""
-        obs = self.generate_observation(state, env_properties)
+        obs = self.generate_observation(state)
         return jnp.abs(obs) > 1
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, state, reward, env_properties):
+    @eqx.filter_jit
+    def generate_terminated(self, state, reward):
         """Returns terminated information for one batch."""
         return reward == 0
 

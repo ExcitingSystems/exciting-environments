@@ -15,7 +15,25 @@ from exciting_environments import CoreEnvironment
 from exciting_environments.utils import MinMaxNormalization
 
 
+def massspringdamper_soft_constraints(instance, state, action_norm):
+    state_norm = instance.normalize_state(state)
+    physical_state_norm = state_norm.physical_state
+    constrained_states = ["deflection", "velocity"]
+    names = [f.name for f in fields(type(physical_state_norm))]
+    values = [
+        jax.nn.relu(jnp.abs(getattr(physical_state_norm, n)) - 1.0) if n in constrained_states else jnp.nan
+        for n in names
+    ]
+
+    phys_soft_const = eqx.tree_unflatten(eqx.tree_structure(physical_state_norm), values)
+
+    act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+    return phys_soft_const, act_soft_constr
+
+
 class MassSpringDamper(CoreEnvironment):
+    control_state: list = eqx.field(static=True)
+    soft_constraints_logic: Callable = eqx.field(static=True)
     """
 
     State Variables:
@@ -50,7 +68,6 @@ class MassSpringDamper(CoreEnvironment):
 
     def __init__(
         self,
-        batch_size: int = 8,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
         soft_constraints: Callable = None,
@@ -61,7 +78,6 @@ class MassSpringDamper(CoreEnvironment):
     ):
         """
         Args:
-            batch_size(int): Number of training examples utilized in one iteration. Default: 8
             physical_normalizations(dict): min-max normalization values of the physical state of the environment.
                 deflection(MinMaxNormalization): Deflection of the mass. Default: min=-10, max=10
                 velocity(MinMaxNormalization): Velocity of the mass. Default: min=-10, max=10
@@ -82,24 +98,22 @@ class MassSpringDamper(CoreEnvironment):
 
         if not physical_normalizations:
             physical_normalizations = {
-                "deflection": MinMaxNormalization(min=-10, max=10),
-                "velocity": MinMaxNormalization(min=-10, max=10),
+                "deflection": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
+                "velocity": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
             }
 
         if not action_normalizations:
-            action_normalizations = {"force": MinMaxNormalization(min=-20, max=20)}
-
-        if not soft_constraints:
-            soft_constraints = self.default_soft_constraints
+            action_normalizations = {"force": MinMaxNormalization(min=jnp.array(-20), max=jnp.array(20))}
 
         if not static_params:
-            static_params = {"k": 100, "d": 1, "m": 1}
+            static_params = {"k": jnp.array(100), "d": jnp.array(1), "m": jnp.array(1)}
 
         if not control_state:
             control_state = []
 
+        logic = soft_constraints if soft_constraints else massspringdamper_soft_constraints
+        self.soft_constraints_logic = logic
         self.control_state = control_state
-        self.soft_constraints = soft_constraints
 
         physical_normalizations = self.PhysicalState(**physical_normalizations)
         action_normalizations = self.Action(**action_normalizations)
@@ -110,7 +124,7 @@ class MassSpringDamper(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(env_properties=env_properties, tau=tau, solver=solver)
 
     class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
@@ -144,19 +158,18 @@ class MassSpringDamper(CoreEnvironment):
         d_y = d_deflection, d_velocity  # [0]
         return d_y
 
-    @partial(jax.jit, static_argnums=0)
-    def _ode_solver_step(self, state, action, static_params):
+    @eqx.filter_jit
+    def _ode_solver_step(self, state, action):
         """Computes state by simulating one step.
 
         Args:
             state: The state from which to calculate state for the next step.
             action: The action to apply to the environment.
-            static_params: Parameter of the environment, that do not change over time.
 
         Returns:
             state: The computed state after the one step simulation.
         """
-
+        static_params = self.env_properties.static_params
         physical_state = state.physical_state
         args = static_params
 
@@ -187,22 +200,21 @@ class MassSpringDamper(CoreEnvironment):
         new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
-    @partial(jax.jit, static_argnums=[0, 4, 5])
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+    @eqx.filter_jit
+    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
         """Computes multiple simulation steps for one batch.
 
         Args:
             init_state: The initial state of the simulation.
             actions: A set of actions to be applied to the environment, the value changes every.
             action_stepsize (shape=(n_action_steps, action_dim)).
-            static_params: The constant properties of the simulation.
             obs_stepsize: The sampling time for the observations.
             action_stepsize: The time between changes in the input/action.
 
         Returns:
             next_states: The computed states during the multiple step simulation.
         """
-
+        static_params = self.env_properties.static_params
         init_physical_state = init_state.physical_state
         args = static_params
 
@@ -250,13 +262,14 @@ class MassSpringDamper(CoreEnvironment):
             reference=ref,
         )
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+    @eqx.filter_jit
+    def init_state(self, rng: chex.PRNGKey = None):
         """Returns default or random initial state for one batch."""
+        env_properties = self.env_properties
         if rng is None:
             phys = self.PhysicalState(
-                deflection=0.0,
-                velocity=0.0,
+                deflection=jnp.array(0.0),
+                velocity=jnp.array(0.0),
             )
             subkey = jnp.nan
         else:
@@ -280,26 +293,28 @@ class MassSpringDamper(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
-        return self.denormalize_state(norm_state, env_properties)
+        return self.denormalize_state(norm_state)
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_reward(self, state, action, env_properties):
+    @eqx.filter_jit
+    def generate_reward(self, state, action):
         """Returns reward for one batch."""
         reward = 0
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         for name in self.control_state:
             reward += -(((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name))) ** 2)
         return jnp.array([reward])
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_observation(self, state):
         """Returns observation for one batch."""
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         norm_state_phys = norm_state.physical_state
         obs = jnp.hstack(
             (
@@ -316,9 +331,10 @@ class MassSpringDamper(CoreEnvironment):
             )
         return obs
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def generate_state_from_observation(self, obs, env_properties, key=None):
         """Generates state from observation for one batch."""
+        env_properties = self.env_properties
         phys = self.PhysicalState(
             deflection=obs[0],
             velocity=obs[1],
@@ -340,7 +356,9 @@ class MassSpringDamper(CoreEnvironment):
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
@@ -348,31 +366,16 @@ class MassSpringDamper(CoreEnvironment):
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[2 + i])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
-        return self.denormalize_state(norm_state, env_properties)
+        return self.denormalize_state(norm_state)
 
-    def default_soft_constraints(self, state, action_norm, env_properties):
-        state_norm = self.normalize_state(state, env_properties)
-        physical_state_norm = state_norm.physical_state
-        constrained_states = ["deflection", "velocity"]
-        names = [f.name for f in fields(type(physical_state_norm))]
-        values = [
-            jax.nn.relu(jnp.abs(getattr(physical_state_norm, n)) - 1.0) if n in constrained_states else jnp.nan
-            for n in names
-        ]
-
-        phys_soft_const = eqx.tree_unflatten(eqx.tree_structure(physical_state_norm), values)
-
-        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        return phys_soft_const, act_soft_constr
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_truncated(self, state):
         """Returns truncated information for one batch."""
-        obs = self.generate_observation(state, env_properties)
+        obs = self.generate_observation(state)
         return jnp.abs(obs) > 1
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, state, reward, env_properties):
+    @eqx.filter_jit
+    def generate_terminated(self, state, reward):
         """Returns terminated information for one batch."""
         return reward == 0
 
