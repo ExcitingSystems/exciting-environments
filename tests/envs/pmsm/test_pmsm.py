@@ -71,7 +71,7 @@ def test_custom_initialization():
         "l_q": jnp.array(1.2e-3),
         "psi_p": jnp.array(65.6e-3),
         "u_dc": jnp.array(400),
-        "deadtime": jnp.array(1),
+        "deadtime": 1,
     }
     env = EnvironmentRegistry.PMSM.make(
         static_params=params,
