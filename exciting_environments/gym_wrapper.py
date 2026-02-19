@@ -7,8 +7,9 @@ from functools import partial
 import chex
 import equinox as eqx
 from abc import ABC
-from exciting_environments import spaces
-from exciting_environments.registration import make
+from exciting_environments import spaces, EnvironmentRegistry
+
+# from exciting_environments.registration import make
 
 
 class GymWrapper(ABC):
@@ -59,9 +60,9 @@ class GymWrapper(ABC):
             self.generate_terminated = jax.vmap(lambda e, s, r: e.generate_terminated(s, r))
 
     @classmethod
-    def from_name(cls, env_id: str, batch_size: int = 1, **env_kwargs):
+    def from_name(cls, env_type: EnvironmentRegistry, batch_size: int = 1, **env_kwargs):
         """Creates GymWrapper with environment based on passed env_id."""
-        env = make(env_id, batch_size=batch_size, **env_kwargs)
+        env = env_type.make(batch_size=batch_size, **env_kwargs)
         return cls(env)
 
     def step(self, action):

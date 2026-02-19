@@ -6,24 +6,25 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 import numpy as np
 import diffrax
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
-from motor_parameters import default_params
+from motor_parameters import MotorVariant
 import pickle
 import os
 from pytest import approx
 
-motor_names = ["BRUSA", "SEW", None]
+motor_variants = list(MotorVariant)
 
 
-@pytest.mark.parametrize("motor_name", motor_names)
-def test_default_initialization(motor_name):
+@pytest.mark.parametrize("motor_variant", motor_variants)
+def test_default_initialization(motor_variant):
     """Ensure default static parameters and normalizations are not changed by accident."""
-    motor_params = default_params(motor_name)
+    motor_params = motor_variant.get_params()
     physical_normalizations = motor_params.physical_normalizations.__dict__
     action_normalizations = motor_params.action_normalizations.__dict__
     params = motor_params.static_params.__dict__
-    env = excenvs.make("PMSM-v0", LUT_motor_name=motor_name)
+    env = EnvironmentRegistry.PMSM.make(motor_variant=motor_variant)
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         assert env_value == approx(float(value)), f"Default parameter {key} is different: {env_value} != {value}"
@@ -72,8 +73,7 @@ def test_custom_initialization():
         "u_dc": jnp.array(400),
         "deadtime": jnp.array(1),
     }
-    env = excenvs.make(
-        "PMSM-v0",
+    env = EnvironmentRegistry.PMSM.make(
         static_params=params,
         physical_normalizations=physical_normalizations,
         action_normalizations=action_normalizations,
@@ -99,8 +99,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = excenvs.make(
-        "PMSM-v0",
+    env = EnvironmentRegistry.PMSM.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

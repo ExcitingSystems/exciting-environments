@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
@@ -22,7 +23,7 @@ def test_default_initialization():
     }
     action_normalizations = {"inflow": MinMaxNormalization(min=jnp.array(0), max=jnp.array(0.2))}
     physical_normalizations = {"height": MinMaxNormalization(min=jnp.array(0), max=jnp.array(3))}
-    env = excenvs.make("FluidTank-v0")
+    env = EnvironmentRegistry.FLUID_TANK.make()
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         assert env_value == value, f"Default parameter {key} is different: {env_value} != {value}"
@@ -57,8 +58,7 @@ def test_custom_initialization():
     }
     action_normalizations = {"inflow": MinMaxNormalization(min=jnp.array(0.02), max=jnp.array(0.3))}
     physical_normalizations = {"height": MinMaxNormalization(min=jnp.array(1), max=jnp.array(5))}
-    env = excenvs.make(
-        "FluidTank-v0",
+    env = EnvironmentRegistry.FLUID_TANK.make(
         static_params=params,
         physical_normalizations=physical_normalizations,
         action_normalizations=action_normalizations,
@@ -84,8 +84,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = excenvs.make(
-        "FluidTank-v0",
+    env = EnvironmentRegistry.FLUID_TANK.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

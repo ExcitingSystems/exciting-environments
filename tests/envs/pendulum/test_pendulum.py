@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
@@ -20,7 +21,7 @@ def test_default_initialization():
         "theta": MinMaxNormalization(min=jnp.array(-jnp.pi), max=jnp.array(jnp.pi)),
         "omega": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
     }
-    env = excenvs.make("Pendulum-v0")
+    env = EnvironmentRegistry.PENDULUM.make()
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         assert env_value == value, f"Default parameter {key} is different: {env_value} != {value}"
@@ -53,8 +54,7 @@ def test_custom_initialization():
     }
     action_normalizations = {"torque": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10))}
     params = {"l": jnp.array(1), "g": jnp.array(9.81), "m": jnp.array(1)}
-    env = excenvs.make(
-        "Pendulum-v0",
+    env = EnvironmentRegistry.PENDULUM.make(
         static_params=params,
         physical_normalizations=physical_normalizations,
         action_normalizations=action_normalizations,
@@ -80,8 +80,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = excenvs.make(
-        "Pendulum-v0",
+    env = EnvironmentRegistry.PENDULUM.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

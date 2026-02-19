@@ -9,14 +9,14 @@ A basic routine is as simple as:
 ```py
 import jax.numpy as jnp
 import exciting_environments as excenvs
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization
 
-env = excenvs.make(
-    "Pendulum-v0",
+env = EnvironmentRegistry.PENDULUM.make(
     batch_size=5,
     action_normalizations={"torque": MinMaxNormalization(min=-15,max=15)},
     tau=2e-2
-) 
+)
 obs, state = env.vmap_reset()
 
 actions = jnp.linspace(start=-1, stop=1, num=1000)[None, :, None]
@@ -45,11 +45,11 @@ alternatively, simulate full trajectories:
 ```py
 import jax.numpy as jnp
 import exciting_environments as excenvs
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization
 import diffrax
 
-env = excenvs.make(
-    "Pendulum-v0",
+env = EnvironmentRegistry.PENDULUM.make(
     solver=diffrax.Tsit5(),
     batch_size=5,
     action_normalizations={"torque": MinMaxNormalization(min=-15,max=15)},

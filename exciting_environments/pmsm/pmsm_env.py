@@ -15,7 +15,7 @@ from dataclasses import fields
 from copy import deepcopy
 
 from exciting_environments import CoreEnvironment
-from exciting_environments.pmsm import default_params
+from exciting_environments.pmsm import MotorVariant
 
 
 # only for alpha/beta -> abc
@@ -121,7 +121,7 @@ class PMSM(CoreEnvironment):
     def __init__(
         self,
         saturated=False,
-        LUT_motor_name: str = None,
+        motor_variant: MotorVariant = MotorVariant.DEFAULT,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
         soft_constraints: Callable = None,
@@ -133,7 +133,7 @@ class PMSM(CoreEnvironment):
         """
         Args:
             saturated (bool): Permanent magnet flux linkages and inductances are taken from LUT_motor_name specific LUTs. Default: False
-            LUT_motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
+            motor_variant (MotorVariant): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor variant and stores associated LUTs for the possible saturated case. Needed if saturated==True.
             physical_normalizations (dict): min-max normalization values of the physical state of the environment.
                 u_d_buffer (MinMaxNormalization): Direct share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
                 u_q_buffer (MinMaxNormalization): Quadrature share of the delayed action due to system deadtime. Default: min=-2 * 400 / 3, max=2 * 400 / 3
@@ -161,8 +161,8 @@ class PMSM(CoreEnvironment):
             passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
 
-        if LUT_motor_name is not None:
-            motor_params = deepcopy(default_params(LUT_motor_name))
+        if motor_variant != MotorVariant.DEFAULT:
+            motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
@@ -178,7 +178,10 @@ class PMSM(CoreEnvironment):
 
         else:
             if saturated:
-                raise Exception("LUT_motor_name is needed to load LUTs.")
+                raise ValueError(
+                    f"MotorVariant '{motor_variant.value}' is not allowed for saturated LUTs. "
+                    "Use a specific motor variant. DEFAULT is only valid for saturated=False."
+                )
 
             saturated_quants = [
                 "L_dd",
@@ -189,7 +192,7 @@ class PMSM(CoreEnvironment):
                 "Psi_q",
             ]
 
-            motor_params = deepcopy(default_params(LUT_motor_name))
+            motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__

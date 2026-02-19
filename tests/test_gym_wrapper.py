@@ -11,14 +11,15 @@ from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 jax.config.update("jax_platform_name", "cpu")
 jax.config.update("jax_enable_x64", True)
 
+from exciting_environments import EnvironmentRegistry
 
-env_ids = ["Pendulum-v0", "MassSpringDamper-v0", "CartPole-v0", "FluidTank-v0", "PMSM-v0"]
+envs_to_test = list(EnvironmentRegistry)
 
 
-@pytest.mark.parametrize("env_id", env_ids)
-def test_step_returns_correct_outputs(env_id):
+@pytest.mark.parametrize("env_type", envs_to_test)
+def test_step_returns_correct_outputs(env_type):
     """Ensure step function returns outputs of expected type and shape."""
-    env = excenvs.make(env_id, batch_size=4)
+    env = env_type.make(batch_size=4)
     gym_env = excenvs.GymWrapper(env=env)
 
     action = jnp.ones((env.batch_size, env.action_dim))
@@ -37,9 +38,9 @@ def test_step_returns_correct_outputs(env_id):
     assert terminated.shape == (4, 1), "Unexpected terminated shape"
 
 
-@pytest.mark.parametrize("env_id", env_ids)
-def test_gym_wrapper_ref_generation(env_id):
-    env = excenvs.make(env_id, batch_size=4)
+@pytest.mark.parametrize("env_type", envs_to_test)
+def test_gym_wrapper_ref_generation(env_type):
+    env = env_type.make(batch_size=4)
     gym_env = excenvs.GymWrapper(env=env)
     rng_env = jax.vmap(jax.random.PRNGKey)(jnp.array([0, 1, 2, 3]))
     rng_ref = jax.vmap(jax.random.PRNGKey)(jnp.array([0, 1, 2, 3]))

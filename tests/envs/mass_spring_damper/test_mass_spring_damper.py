@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import diffrax
+from exciting_environments import EnvironmentRegistry
 from exciting_environments.utils import MinMaxNormalization, load_sim_properties_from_json
 from pathlib import Path
 import pickle
@@ -20,7 +21,7 @@ def test_default_initialization():
         "deflection": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
         "velocity": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
     }
-    env = excenvs.make("MassSpringDamper-v0")
+    env = EnvironmentRegistry.MASS_SPRING_DAMPER.make()
     for key, value in params.items():
         env_value = getattr(env.env_properties.static_params, key)
         assert env_value == value, f"Default parameter {key} is different: {env_value} != {value}"
@@ -53,8 +54,7 @@ def test_custom_initialization():
     }
     action_normalizations = {"force": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(20))}
     params = {"k": jnp.array(10), "m": jnp.array(5), "d": jnp.array(2)}
-    env = excenvs.make(
-        "MassSpringDamper-v0",
+    env = EnvironmentRegistry.MASS_SPRING_DAMPER.make(
         static_params=params,
         physical_normalizations=physical_normalizations,
         action_normalizations=action_normalizations,
@@ -80,8 +80,7 @@ def test_step_results():
     loaded_params, loaded_action_normalizations, loaded_physical_normalizations, loaded_tau = (
         load_sim_properties_from_json(file_path)
     )
-    env = excenvs.make(
-        "MassSpringDamper-v0",
+    env = EnvironmentRegistry.MASS_SPRING_DAMPER.make(
         tau=loaded_tau,
         solver=diffrax.Euler(),
         static_params=loaded_params,

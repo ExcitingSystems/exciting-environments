@@ -13,6 +13,8 @@ from copy import deepcopy
 import numpy as np
 from scipy.interpolate import griddata
 
+from enum import Enum
+
 
 class PhysicalNormalizations(eqx.Module):
     u_d_buffer: jax.Array
@@ -199,21 +201,15 @@ DEFAULT = MotorParams(
 )
 
 
-def default_params(name):
-    """
-    Returns default parameters for specified motor configurations.
+class MotorVariant(Enum):
+    DEFAULT = "DEFAULT"
+    BRUSA = "BRUSA"
+    SEW = "SEW"
 
-    Args:
-        name (str): Name of the motor ("BRUSA" or "SEW").
-
-    Returns:
-        MotorConfig: Configuration containing physical constraints, action constraints, static parameters, and LUT data.
-    """
-    if name is None:
-        return deepcopy(DEFAULT)
-    elif name == "BRUSA":
-        return deepcopy(BRUSA)
-    elif name == "SEW":
-        return deepcopy(SEW)
-    else:
-        raise ValueError(f"Motor name {name} is not known.")
+    def get_params(self):
+        if self is MotorVariant.BRUSA:
+            return deepcopy(BRUSA)
+        elif self is MotorVariant.SEW:
+            return deepcopy(SEW)
+        else:
+            return deepcopy(DEFAULT)
