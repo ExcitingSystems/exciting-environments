@@ -6,29 +6,30 @@ from exciting_environments import (
     PMSM,
     Acrobot,
 )
+import jax
+import jax.numpy as jnp
 
 
-def make(env_id: str, **env_kwargs):
-    if env_id == "CartPole-v0":
-        env = CartPole(**env_kwargs)
+def make(env_id: str, batch_size: int = None, **env_kwargs):
+    def create_single_env():
+        if env_id == "CartPole-v0":
+            return CartPole(**env_kwargs)
+        elif env_id == "MassSpringDamper-v0":
+            return MassSpringDamper(**env_kwargs)
+        elif env_id == "Pendulum-v0":
+            return Pendulum(**env_kwargs)
+        elif env_id == "FluidTank-v0":
+            return FluidTank(**env_kwargs)
+        elif env_id == "PMSM-v0":
+            return PMSM(**env_kwargs)
+        elif env_id == "Acrobot-v0":
+            return Acrobot(**env_kwargs)
+        else:
+            raise ValueError(f"No existing environments got env_id ={env_id}")
 
-    elif env_id == "MassSpringDamper-v0":
-        env = MassSpringDamper(**env_kwargs)
+    if batch_size is not None:
+        envs_list = [create_single_env() for _ in range(batch_size)]
+        batched_envs = jax.tree.map(lambda *args: jnp.stack(args), *envs_list)
+        return batched_envs
 
-    elif env_id == "Pendulum-v0":
-        env = Pendulum(**env_kwargs)
-
-    elif env_id == "FluidTank-v0":
-        env = FluidTank(**env_kwargs)
-
-    elif env_id == "PMSM-v0":
-        env = PMSM(**env_kwargs)
-
-    elif env_id == "Acrobot-v0":
-        env = Acrobot(**env_kwargs)
-
-    else:
-        print(f"No existing environments got env_id ={env_id}")
-        env = None
-
-    return env
+    return create_single_env()

@@ -207,7 +207,7 @@ class FluidTank(CoreEnvironment):
         additions = self.Additions(
             solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
         )
-        PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
+        PRNGKey = jnp.broadcast_to(jnp.asarray(init_state.PRNGKey), (obs_len,) + jnp.asarray(init_state.PRNGKey).shape)
         ref = self.PhysicalState(
             height=jnp.full(obs_len, init_state.reference.height),
         )
@@ -226,7 +226,7 @@ class FluidTank(CoreEnvironment):
             phys = self.PhysicalState(
                 height=jnp.array(0.0),
             )
-            subkey = jnp.nan
+            subkey = jnp.array(jnp.nan)
         else:
             state_norm = jax.random.uniform(rng, minval=0, maxval=1, shape=(1,))
             phys = self.PhysicalState(

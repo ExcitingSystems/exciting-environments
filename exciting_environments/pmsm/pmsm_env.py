@@ -116,7 +116,7 @@ def clip_in_abc_coordinates(u_dq, u_dc, omega_el, eps, tau):
 class PMSM(CoreEnvironment):
     control_state: list = eqx.field(static=True)
     soft_constraints_logic: Callable = eqx.field(static=True)
-    LUT_interpolators: dict  # = eqx.field(static=True)
+    LUT_interpolators: dict
 
     def __init__(
         self,
@@ -344,7 +344,7 @@ class PMSM(CoreEnvironment):
                 / 2,
             )
 
-            rng = jnp.nan
+            rng = jnp.array(jnp.nan)
         else:
             rng, subkey = jax.random.split(rng)
             state_norm = jax.random.uniform(subkey, minval=-1, maxval=1, shape=(2,))
@@ -641,7 +641,9 @@ class PMSM(CoreEnvironment):
         )
         return self.State(
             physical_state=phys,
-            PRNGKey=jnp.full(obs_len, init_state.PRNGKey),
+            PRNGKey=jnp.broadcast_to(
+                jnp.asarray(init_state.PRNGKey), (obs_len,) + jnp.asarray(init_state.PRNGKey).shape
+            ),
             additions=additions,
             reference=ref,
         )
@@ -660,12 +662,16 @@ class PMSM(CoreEnvironment):
         state = eqx.tree_at(lambda s: s.physical_state.epsilon, state, epsilon_update)
         state = eqx.tree_at(lambda s: s.reference, state, repeat_tree(state.reference, act_len))
         state = eqx.tree_at(lambda s: s.additions, state, repeat_tree(state.additions, act_len))
-        state = eqx.tree_at(lambda s: s.PRNGKey, state, jnp.full(act_len, init_state.PRNGKey))
+        state = eqx.tree_at(
+            lambda s: s.PRNGKey,
+            state,
+            jnp.broadcast_to(jnp.asarray(init_state.PRNGKey), (act_len,) + jnp.asarray(init_state.PRNGKey).shape),
+        )
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0))(actions, state)
         return actions
 
     @eqx.filter_jit
-    def sim_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
+    def sim_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple JAX-JIT compiled simulation steps for one batch.
 
         The length of the set of inputs together with the action_stepsize determine the
@@ -679,8 +685,13 @@ class PMSM(CoreEnvironment):
             obs_stepsize: The sampling time for the observations.
             action_stepsize: The time between changes in the input/action.
         """
+        if not obs_stepsize:
+            obs_stepsize = self.tau
 
-        actions = self.constraint_denormalization_ahead(actions, init_state, env_properties)
+        if not action_stepsize:
+            action_stepsize = self.tau
+
+        actions = self.constraint_denormalization_ahead(actions, init_state)
         env_properties = self.env_properties
         deadtime = env_properties.static_params.deadtime
         acts_buf = jnp.repeat(
@@ -695,7 +706,6 @@ class PMSM(CoreEnvironment):
         )
 
         actions_dead = jnp.vstack([acts_buf, actions[: (actions.shape[0] - deadtime), :]])
-        single_state_struct = tree_structure(init_state)
 
         # compute states trajectory for given actions
         states = self._ode_solver_simulate_ahead(init_state, actions_dead, obs_stepsize, action_stepsize)
@@ -710,26 +720,28 @@ class PMSM(CoreEnvironment):
         # generate observations for all timesteps
         observations = jax.vmap(self.generate_observation, in_axes=(0))(states)
 
-        states_flatten, _ = tree_flatten(states)
+        # states_flatten, _ = tree_flatten(states)
 
         # get last state so that the simulation can be continued from the end point
-        last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
+        # last_state = tree_unflatten(single_state_struct, jnp.array(states_flatten)[:, -1])
+        last_state = jax.tree.map(lambda x: x[-1], states)
 
         return observations, states, last_state
 
     def generate_rew_trunc_term_ahead(self, states, actions):
         """Computes reward, truncated and terminated for sim_ahead simulation for one batch."""
-        assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
-        assert (
-            actions.shape[-1] == self.action_dim
-        ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
+        # assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
+        # assert (
+        #     actions.shape[-1] == self.action_dim
+        # ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
         env_properties = self.env_properties
         deadtime = env_properties.static_params.deadtime
-
-        states_flatten, struct = tree_flatten(states)
-        states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
-        states_without_last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, :-1])
-
+        num_state_steps = jax.tree.leaves(states)[0].shape[0]
+        # states_flatten, struct = tree_flatten(states)
+        # states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
+        # states_without_last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, :-1])
+        states_without_init_state = jax.tree.map(lambda x: x[1:], states)
+        states_without_last_state = jax.tree.map(lambda x: x[:-1], states)
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0))(actions, states_without_last_state)
 
         deadtime = env_properties.static_params.deadtime
@@ -751,7 +763,7 @@ class PMSM(CoreEnvironment):
             jnp.expand_dims(
                 jnp.repeat(
                     actions_dead,
-                    int((jnp.array(states_flatten).shape[1] - 1) / actions_dead.shape[0]),
+                    int((num_state_steps - 1) / actions_dead.shape[0]),
                     axis=0,
                 ),
                 1,

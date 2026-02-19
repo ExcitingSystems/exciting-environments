@@ -44,7 +44,7 @@ class MotorParams(eqx.Module):
     action_normalizations: ActionNormalizations
     static_params: StaticParams
     default_soft_constraints: Callable
-    interpolators: dict = eqx.field(static=True)
+    interpolators: dict
 
 
 def generate_interpolators_and_lut(pmsm_lut):

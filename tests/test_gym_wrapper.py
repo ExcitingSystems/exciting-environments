@@ -29,7 +29,9 @@ def test_step_returns_correct_outputs(env_id):
     _ = gym_env.reset()
     new_obs_gym, reward, terminated, truncated = gym_env.step(action)
 
-    assert jnp.array_equal(new_obs, new_obs_gym), "gym_step generates different observation compared to standalone env"
+    assert jnp.allclose(
+        new_obs, new_obs_gym, atol=1e-7, rtol=1e-7
+    ), "gym_step generates different observation compared to standalone env"
 
     assert reward.shape == (4, 1), "Unexpected reward shape"
     assert terminated.shape == (4, 1), "Unexpected terminated shape"

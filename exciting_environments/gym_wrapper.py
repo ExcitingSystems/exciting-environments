@@ -27,15 +27,15 @@ class GymWrapper(ABC):
 
         if control_state is None:
             print(f"No chosen control state in the GymWrapper. Control state is set to {self.env.control_state}.")
-            self.control_state = self.env.control_state
+            control_state = self.env.control_state
         else:
-            assert type(control_state) == list, f"Control state has to be a list."
-            for i in control_state:
-                assert i in list(
-                    self.env.PhysicalState.__match_args__
-                ), f"Given control state {i} is no valid physical state {list(self.env.PhysicalState.__match_args__)}."
-            self.control_state = control_state
-            self.env.control_state = control_state
+            if control_state != self.env.control_state:
+                raise ValueError(
+                    f"Inconsistent control_state definition: Wrapper has got '{control_state}', "
+                    f"but underlying environment has got '{self.env.control_state}'."
+                )
+
+        self.control_state = control_state
 
         self.ref_gen = False
 
@@ -52,16 +52,16 @@ class GymWrapper(ABC):
         self.state_tree_struct = tree_structure(init_state)
 
         if not generate_reward:
-            self.generate_reward = self.env.generate_reward
+            self.generate_reward = jax.vmap(lambda e, s, a: e.generate_reward(s, a))
         if not generate_truncated:
-            self.generate_truncated = self.env.generate_truncated
+            self.generate_truncated = jax.vmap(lambda e, s: e.generate_truncated(s))
         if not generate_terminated:
-            self.generate_terminated = self.env.generate_terminated
+            self.generate_terminated = jax.vmap(lambda e, s, r: e.generate_terminated(s, r))
 
     @classmethod
-    def from_name(cls, env_id: str, **env_kwargs):
+    def from_name(cls, env_id: str, batch_size: int = 1, **env_kwargs):
         """Creates GymWrapper with environment based on passed env_id."""
-        env = make(env_id, **env_kwargs)
+        env = make(env_id, batch_size=batch_size, **env_kwargs)
         return cls(env)
 
     def step(self, action):
@@ -103,27 +103,18 @@ class GymWrapper(ABC):
             state: New state for the next step.
         """
 
-        # transform array to dataclass defined in environment
         state = tree_unflatten(self.state_tree_struct, state)
 
         obs, state = self.env.vmap_step(state, action)
 
         # update reference
         if len(self.control_state) and self.ref_gen:
-            state, reference_hold_steps = jax.vmap(self.update_ref, in_axes=(0, self.env.in_axes_env_properties, 0))(
-                state, self.env.env_properties, reference_hold_steps
-            )
+            state, reference_hold_steps = jax.vmap(self.update_ref)(state, self.env, reference_hold_steps)
 
-        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.env.in_axes_env_properties))(
-            state, action, self.env.env_properties
-        )
+        reward = self.generate_reward(self.env, state, action)
 
-        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.env.in_axes_env_properties))(
-            state, reward, self.env.env_properties
-        )
-        truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.env.in_axes_env_properties))(
-            state, self.env.env_properties
-        )
+        terminated = self.generate_terminated(self.env, state, reward)
+        truncated = self.generate_truncated(self.env, state)
         # transform dataclass to array
         state = tree_flatten(state)[0]
 
@@ -151,20 +142,19 @@ class GymWrapper(ABC):
             state = eqx.tree_at(lambda s: s.PRNGKey, state, key)
 
             self.ref_gen = True
-            state, self.reference_hold_steps = jax.vmap(
-                self.generate_new_ref, in_axes=(0, self.env.in_axes_env_properties, 0)
-            )(state, self.env.env_properties, jnp.zeros(self.env.batch_size))
+            state, self.reference_hold_steps = jax.vmap(self.generate_new_ref)(
+                state, self.env, jnp.zeros(self.env.batch_size)
+            )
         else:
             self.ref_gen = False
             print("Since no PRNGKey for reference was provided, reference generation is deactivated.")
 
         self.state = tree_flatten(state)[0]
-        obs = jax.vmap(self.env.generate_observation, in_axes=(0, self.env.in_axes_env_properties))(
-            state, self.env.env_properties
-        )
+        obs = jax.vmap(lambda e, s: e.generate_observation(s))(self.env, state)
+
         return obs, {}
 
-    def update_ref(self, state, env_properties, hold_steps):
+    def update_ref(self, state, env, hold_steps):
         def true_fun(s, e, h):
             new_state, new_hold = self.generate_new_ref(s, e, h)
             new_hold = new_hold.astype(h.dtype)
@@ -173,13 +163,13 @@ class GymWrapper(ABC):
         def false_fun(s, e, h):
             return s, h
 
-        state, hold_steps = jax.lax.cond(hold_steps[0] == 0, true_fun, false_fun, state, env_properties, hold_steps)
+        state, hold_steps = jax.lax.cond(hold_steps[0] == 0, true_fun, false_fun, state, env, hold_steps)
 
         hold_steps = hold_steps - 1
         return state, hold_steps
 
-    def generate_new_ref(self, state, env_properties, hold_steps):  # TODO
-        init = self.env.init_state(env_properties, state.PRNGKey)
+    def generate_new_ref(self, state, env, hold_steps):  # TODO
+        init = env.init_state(state.PRNGKey)
         new_reference = state.reference
         for name in self.control_state:
             new_reference = eqx.tree_at(lambda r: getattr(r, name), new_reference, getattr(init.physical_state, name))

@@ -254,7 +254,7 @@ class Pendulum(CoreEnvironment):
         additions = self.Additions(
             solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
         )
-        PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
+        PRNGKey = jnp.broadcast_to(jnp.asarray(init_state.PRNGKey), (obs_len,) + jnp.asarray(init_state.PRNGKey).shape)
         return self.State(
             physical_state=physical_states,
             PRNGKey=PRNGKey,
@@ -271,7 +271,7 @@ class Pendulum(CoreEnvironment):
                 theta=jnp.array(1.0),
                 omega=jnp.array(0.0),
             )
-            subkey = jnp.nan
+            subkey = jnp.array(jnp.nan)
         else:
             state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(2,))
             phys = self.PhysicalState(
