@@ -19,6 +19,7 @@ from exciting_environments.im import default_params
 
 import numpy as np
 from scipy.linalg import expm
+import jaxopt
 
 # only for alpha/beta -> abc
 t32 = jnp.array([[1, 0], [-0.5, 0.5 * jnp.sqrt(3)], [-0.5, -0.5 * jnp.sqrt(3)]])
@@ -119,7 +120,7 @@ class IM(CoreEnvironment):
     def __init__(
         self,
         batch_size: int = 8,
-        saturated=False,
+        nonlinear=False,
         motor_name: str = None,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
@@ -133,8 +134,8 @@ class IM(CoreEnvironment):
         """
         Args:
             batch_size (int): Number of parallel environment simulations. Default: 8
-            saturated (bool): Inductances are taken from motor_name specific LUTs. Default: False #TODO
-            motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible saturated case. Needed if saturated==True.
+            nonlinear (bool): Nonlinear effects are considered. Default: False
+            motor_name (str): Sets physical_normalizations, action_normalizations, soft_constraints and static_params to default values for the passed motor name and stores associated LUTs for the possible nonlinear case. Needed if nonlinear==True.
             physical_normalizations (dict): min-max normalization values of the physical state of the environment.
                 u_alpha_buffer (MinMaxNormalization): Voltage in alpha axis of the delayed action due to system deadtime. Default: min=-2 * 560 / 3, max=2 * 560 / 3
                 u_beta_buffer (MinMaxNormalization): Voltage in beta axis of the delayed action due to system deadtime. Default: min=-2 * 560 / 3, max=2 * 560 / 3
@@ -168,43 +169,23 @@ class IM(CoreEnvironment):
         self._solver = solver
         self.exact_discretization = exact_discretization
 
-        if motor_name is not None:
-            motor_params = deepcopy(default_params(motor_name))
-            default_physical_normalizations = motor_params.physical_normalizations.__dict__
-            default_action_normalizations = motor_params.action_normalizations.__dict__
-            default_static_params = motor_params.static_params.__dict__
-            default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
-            LUT_predefined = motor_params.lut
-            if saturated:
-                raise NotImplementedError("Saturation case not implemented")
-
-            else:
-                saturated_quants = [
-                    "l_m",
-                    "l_sigs",
-                    "l_sigr",
-                ]
-                self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
+        motor_params = deepcopy(default_params(motor_name))
+        default_physical_normalizations = motor_params.physical_normalizations.__dict__
+        default_action_normalizations = motor_params.action_normalizations.__dict__
+        default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
+        saturation_params = motor_params.saturation_params
+        if nonlinear:
+            default_static_params = motor_params.static_params_nonlinear.__dict__
+            self.saturation_interpolators = self.generate_saturation_interpolators(
+                saturation_params, motor_params.physical_normalizations, motor_params.static_params_nonlinear
+            )
 
         else:
-            if saturated:
-                raise NotImplementedError("Saturation case not implemented")
-                # raise Exception("motor_name is needed to load LUTs.")
-
+            default_static_params = motor_params.static_params.__dict__
             saturated_quants = [
                 "l_m",
-                "l_sigs",
-                "l_sigr",
             ]
-
-            motor_params = deepcopy(default_params(motor_name))
-            default_physical_normalizations = motor_params.physical_normalizations.__dict__
-            default_action_normalizations = motor_params.action_normalizations.__dict__
-            default_static_params = motor_params.static_params.__dict__
-            default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
-            LUT_predefined = motor_params.__dict__
-            self.LUT = LUT_predefined
-            self.LUT_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
+            self.saturation_interpolators = {q: lambda x: jnp.array([np.nan]) for q in saturated_quants}
 
         if not static_params:
             static_params = default_static_params
@@ -243,7 +224,7 @@ class IM(CoreEnvironment):
         action_normalizations = self.Action(**action_normalizations)
 
         env_properties = self.EnvProperties(
-            saturated=saturated,
+            nonlinear=nonlinear,
             physical_normalizations=physical_normalizations,
             action_normalizations=action_normalizations,
             static_params=static_params,
@@ -274,12 +255,17 @@ class IM(CoreEnvironment):
         """Dataclass containing the physical parameters of the environment."""
 
         p: jax.Array
-        r_s: jax.Array
-        r_r: jax.Array
+        r_fe: jax.Array
         l_m: jax.Array
         l_sigs: jax.Array
         l_sigr: jax.Array
+        r_r: jax.Array
+        r_s: jax.Array
+        h_r: jax.Array
+        h_s: jax.Array
         u_dc: jax.Array
+        omega_rs_N: jax.Array
+        psi_r_N: jax.Array
         deadtime: jax.Array
 
     @jdc.pytree_dataclass
@@ -295,6 +281,8 @@ class IM(CoreEnvironment):
         epsilon: jax.Array
         omega_el: jax.Array
         torque: jax.Array
+        i_sl_alpha: jax.Array
+        i_sl_beta: jax.Array
 
     @jdc.pytree_dataclass
     class Additions:
@@ -314,7 +302,7 @@ class IM(CoreEnvironment):
     class EnvProperties:
         """Dataclass used for simulation which contains environment specific dataclasses."""
 
-        saturated: jax.Array
+        nonlinear: jax.Array
         physical_normalizations: jdc.pytree_dataclass
         action_normalizations: jdc.pytree_dataclass
         static_params: jdc.pytree_dataclass
@@ -328,6 +316,115 @@ class IM(CoreEnvironment):
             * (psi_r_alpha * i_s_beta - psi_r_beta * i_s_alpha)
         )
         return torque
+
+    def get_L_saturated(self, i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta):
+        ax, ay = psi_r_alpha, psi_r_beta
+        bx, by = i_s_alpha, i_s_beta
+        psi_r_mag = jnp.sqrt(ax * ax + ay * ay)
+        i_s_mag = jnp.sqrt(bx * bx + by * by)
+        cross = ax * by - ay * bx
+        dot = ax * bx + ay * by
+        angle = jnp.abs(jnp.atan2(cross, dot))
+
+        query_point = jnp.stack([angle, psi_r_mag, i_s_mag])[None, :]
+        l_m_sat = self.saturation_interpolators["l_m"](query_point)[0]
+        return l_m_sat
+
+    def get_R_s_and_R_r(self, i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, l_m, omega_rs, params, i_s_max):
+        l_sigr = params.l_sigr
+        l_r = l_m + l_sigr
+        r_dcr = params.r_r
+        r_dcs = params.r_s
+        h_r = params.h_r
+        h_s = params.h_s
+        psi_r_mag = jnp.sqrt(psi_r_alpha**2 + psi_r_beta**2)
+        psi_r_mag_safe = jnp.maximum(psi_r_mag, 1e-6)
+        i_sq = (-i_s_alpha * psi_r_beta + i_s_beta * psi_r_alpha) / psi_r_mag_safe
+        omega_sl = (r_dcr * l_m * i_sq) / (l_r * psi_r_mag_safe)
+        psi_r_N = params.psi_r_N
+        omega_sl_max = (r_dcr * l_m * i_s_max) / (l_r * psi_r_N * 0.75)  # 0.75 for little more margin
+        omega_sl = jnp.clip(omega_sl, -omega_sl_max, omega_sl_max)
+        omega_s = omega_sl + omega_rs
+        omega_rs_N = params.omega_rs_N
+        r_r = r_dcr * (1 + h_r * (jnp.square(omega_sl) / jnp.square(omega_rs_N)))
+        r_s = r_dcs * (1 + h_s * (jnp.square(omega_s) / jnp.square(omega_rs_N)))
+        return r_s, r_r
+
+    def currents_to_torque_sat(self, i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, env_properties):
+        l_m_sat = self.get_L_saturated(i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta)
+        torque = (
+            1.5
+            * env_properties.static_params.p
+            * l_m_sat
+            / (l_m_sat + env_properties.static_params.l_sigr)
+            * (psi_r_alpha * i_s_beta - psi_r_beta * i_s_alpha)
+        )
+        return torque
+
+    def calc_flux_magnitudes(self, L_vec, i_sl_ab, psi_r_ab, l_sigr):
+        lm_sat = L_vec
+        i_r_ab = (psi_r_ab - lm_sat * i_sl_ab) / (lm_sat + l_sigr)
+
+        psi_m_mag = jnp.linalg.norm(lm_sat * (i_sl_ab + i_r_ab))
+        return psi_m_mag, i_r_ab
+
+    def saturation_residuals_vector(self, L_vec, i_s_ab, psi_r_ab, params, static_params):
+        lm_sat = L_vec
+        psi_m_mag, i_r_ab = self.calc_flux_magnitudes(L_vec, i_s_ab, psi_r_ab, static_params.l_sigr)
+
+        k1 = params.k1
+        k2 = params.k2
+        k3 = params.k3
+        k4 = params.k4
+        lm_new = k1 + (k1 - k2) / (1 + jnp.exp(-k3 * (0 - k4))) - (k1 - k2) / (1 + jnp.exp(-k3 * (psi_m_mag - k4)))
+
+        return lm_sat - lm_new
+
+    def generate_saturation_interpolators(self, nonlinear_params, physical_normalizations, static_params):
+        i_s_max = physical_normalizations.i_s_alpha.max
+        psi_r_max = physical_normalizations.psi_r_alpha.max
+        n_res = 50
+        i_s_grid_1d = jnp.linspace(0.0, i_s_max * 1.25, n_res)
+        psi_r_grid_1d = jnp.linspace(0.0, psi_r_max * 1.25, n_res)
+        angle_grid_1d = jnp.linspace(0, jnp.pi, n_res)
+
+        @jax.jit
+        def solve_single_point(i_s_mag, psi_r_mag, angle, params):
+            i_s_ab = jnp.array([i_s_mag, 0.0])
+            psi_r_ab = jnp.array([psi_r_mag * jnp.cos(angle), psi_r_mag * jnp.sin(angle)])
+
+            def root_fun(L_vec):
+                return self.saturation_residuals_vector(L_vec, i_s_ab, psi_r_ab, params, static_params)
+
+            solver = jaxopt.Broyden(fun=root_fun, maxiter=100, tol=1e-6)
+            init_L = jnp.array(static_params.l_m)
+            sol = solver.run(init_L)
+            L_final = sol.params
+
+            psi_m_mag, i_r_ab = self.calc_flux_magnitudes(L_final, i_s_ab, psi_r_ab, static_params.l_sigr)
+
+            i_m_mag = jnp.linalg.norm(i_s_ab + i_r_ab)
+            i_r_mag = jnp.linalg.norm(i_r_ab)
+
+            return jnp.array([L_final, psi_m_mag, i_m_mag, i_r_mag, i_s_mag, psi_r_mag, angle])
+
+        v_solve = jax.vmap(
+            jax.vmap(jax.vmap(solve_single_point, in_axes=(0, None, None, None)), in_axes=(None, 0, None, None)),
+            in_axes=(None, None, 0, None),
+        )
+        grid_results = v_solve(i_s_grid_1d, psi_r_grid_1d, angle_grid_1d, nonlinear_params)
+
+        lm_grid = grid_results[:, :, :, 0]
+
+        points = (angle_grid_1d, psi_r_grid_1d, i_s_grid_1d)
+
+        saturation_interpolators = {
+            "l_m": jax.scipy.interpolate.RegularGridInterpolator(
+                points, lm_grid, method="linear", bounds_error=False, fill_value=None
+            ),
+        }
+
+        return saturation_interpolators
 
     def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
         """Returns default initial state for all batches."""
@@ -346,6 +443,8 @@ class IM(CoreEnvironment):
                     + env_properties.physical_normalizations.omega_el.max
                 )
                 / 2,
+                i_sl_alpha=0.0,
+                i_sl_beta=0.0,
             )
 
             rng = jnp.nan
@@ -357,9 +456,21 @@ class IM(CoreEnvironment):
             i_s_alpha_beta = jax.random.ball(subkey, 2) * env_properties.physical_normalizations.i_s_alpha.max
             psi_r_alpha_beta = jax.random.ball(subkey, 2) * env_properties.physical_normalizations.psi_r_alpha.max
 
-            torque = self.currents_to_torque(
-                i_s_alpha_beta[0], i_s_alpha_beta[1], psi_r_alpha_beta[0], psi_r_alpha_beta[1], env_properties
-            )
+            if env_properties.nonlinear:
+                k_fe = (
+                    env_properties.static_params.r_s + env_properties.static_params.r_fe
+                ) / env_properties.static_params.r_fe
+                i_sl_alpha = i_s_alpha_beta[0] * k_fe
+                i_sl_beta = i_s_alpha_beta[1] * k_fe
+                torque = self.currents_to_torque_sat(
+                    i_sl_alpha, i_sl_beta, psi_r_alpha_beta[0], psi_r_alpha_beta[1], env_properties
+                )
+            else:
+                i_sl_alpha = i_s_alpha_beta[0]
+                i_sl_beta = i_s_alpha_beta[1]
+                torque = self.currents_to_torque(
+                    i_sl_alpha, i_sl_beta, psi_r_alpha_beta[0], psi_r_alpha_beta[1], env_properties
+                )
 
             phys = self.PhysicalState(
                 u_alpha_buffer=0.0,
@@ -383,22 +494,33 @@ class IM(CoreEnvironment):
                     - env_properties.physical_normalizations.omega_el.min
                 )
                 + env_properties.physical_normalizations.omega_el.min,
+                i_sl_alpha=i_sl_alpha,
+                i_sl_beta=i_sl_beta,
             )
 
         def voltage(t):
             return jnp.array([0, 0])
 
         args = (env_properties.static_params, phys.omega_el)
-        if env_properties.saturated:
-            raise NotImplementedError("Saturated case not implemented yet.")
-            vector_field = partial(self.saturated_ode, action=voltage)
+        if env_properties.nonlinear:
+            vector_field = partial(
+                self.nonlinear_ode, action=voltage, i_s_max=env_properties.physical_normalizations.i_s_alpha.max
+            )
         else:
             vector_field = partial(self.ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([phys.i_s_alpha, phys.i_s_beta, phys.psi_r_alpha, phys.psi_r_beta, phys.epsilon])
+        y0 = tuple(
+            [
+                phys.psi_r_alpha,
+                phys.psi_r_beta,
+                phys.epsilon,
+                phys.i_sl_alpha,
+                phys.i_sl_beta,
+            ]
+        )
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
         # dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
@@ -415,15 +537,13 @@ class IM(CoreEnvironment):
             psi_r_beta=jnp.nan,
             torque=jnp.nan,
             omega_el=jnp.nan,
+            i_sl_alpha=jnp.nan,
+            i_sl_beta=jnp.nan,
         )
         return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
 
-    def saturated_ode(self, t, y, args, action):
-        raise NotImplementedError("")
-        return
-
     def ode(self, t, y, args, action):
-        i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, eps = y
+        psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta = y
         params, omega_el = args
         r_s = params.r_s
         r_r = params.r_r
@@ -438,23 +558,67 @@ class IM(CoreEnvironment):
         u_beta = u_alpha_beta[1]
 
         i_s_alpha_diff = (
-            (-1 / tau_sig) * i_s_alpha
+            (-1 / tau_sig) * i_sl_alpha
             + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_alpha
             + (l_m * omega_el / (sigma * l_r * l_s)) * psi_r_beta
             + (1 / (sigma * l_s)) * u_alpha
         )
         i_s_beta_diff = (
-            (-1 / tau_sig) * i_s_beta
+            (-1 / tau_sig) * i_sl_beta
             + (-l_m * omega_el / (sigma * l_r * l_s)) * psi_r_alpha
             + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_beta
             + (1 / (sigma * l_s)) * u_beta
         )
-        psi_r_alpha_diff = (l_m / tau_r) * i_s_alpha + (-1 / tau_r) * psi_r_alpha + (-omega_el) * psi_r_beta
+        psi_r_alpha_diff = (l_m / tau_r) * i_sl_alpha + (-1 / tau_r) * psi_r_alpha + (-omega_el) * psi_r_beta
 
-        psi_r_beta_diff = (l_m / tau_r) * i_s_beta + (omega_el) * psi_r_alpha + (-1 / tau_r) * psi_r_beta
+        psi_r_beta_diff = (l_m / tau_r) * i_sl_beta + (omega_el) * psi_r_alpha + (-1 / tau_r) * psi_r_beta
 
         eps_diff = omega_el
-        d_y = i_s_alpha_diff, i_s_beta_diff, psi_r_alpha_diff, psi_r_beta_diff, eps_diff
+        d_y = psi_r_alpha_diff, psi_r_beta_diff, eps_diff, i_s_alpha_diff, i_s_beta_diff
+        return d_y
+
+    def nonlinear_ode(self, t, y, args, action, i_s_max):
+        psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta = y
+        params, omega_el = args
+        r_fe = params.r_fe
+        l_m = self.get_L_saturated(i_sl_alpha, i_sl_beta, psi_r_alpha, psi_r_beta)
+        r_s, r_r = self.get_R_s_and_R_r(i_sl_alpha, i_sl_beta, psi_r_alpha, psi_r_beta, l_m, omega_el, params, i_s_max)
+        l_r = params.l_sigr + l_m
+        l_s = params.l_sigs + l_m
+        sigma = (l_s * l_r - l_m**2) / (l_s * l_r)
+        tau_r = l_r / r_r
+        # tau_sig = sigma * l_s / (r_s + r_r * (l_m**2) / (l_r**2))
+        u_alpha_beta = action(t)
+        u_alpha = u_alpha_beta[0]
+        u_beta = u_alpha_beta[1]
+        k_fe = (r_s + r_fe) / r_fe
+
+        helper = 1 / (sigma * l_s) * (-(r_s) / (k_fe) - (l_m**2 * r_r) / (l_r**2))
+
+        i_sl_alpha_diff = (
+            helper * i_sl_alpha
+            + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_alpha
+            + (l_m * omega_el / (sigma * l_r * l_s)) * psi_r_beta
+            + (1 / (k_fe * sigma * l_s)) * u_alpha
+        )
+        i_sl_beta_diff = (
+            helper * i_sl_beta
+            + (-l_m * omega_el / (sigma * l_r * l_s)) * psi_r_alpha
+            + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_beta
+            + (1 / (k_fe * sigma * l_s)) * u_beta
+        )
+        psi_r_alpha_diff = (l_m / tau_r) * i_sl_alpha + (-1 / tau_r) * psi_r_alpha + (-omega_el) * psi_r_beta
+
+        psi_r_beta_diff = (l_m / tau_r) * i_sl_beta + (omega_el) * psi_r_alpha + (-1 / tau_r) * psi_r_beta
+
+        eps_diff = omega_el
+        d_y = (
+            psi_r_alpha_diff,
+            psi_r_beta_diff,
+            eps_diff,
+            i_sl_alpha_diff,
+            i_sl_beta_diff,
+        )
         return d_y
 
     def get_discrete_matrices(self, env_properties):
@@ -570,42 +734,6 @@ class IM(CoreEnvironment):
                 ],
             ]
         )
-        # n = A_mat.shape[0]
-        # m = B_mat.shape[1]
-
-        # # Augmented matrix
-        # M = jnp.block([[A_mat, B_mat], [jnp.zeros((m, n + m))]])
-        # Md = expm(M * self.tau)
-        # Ad = Md[:n, :n]
-        # Bd = Md[:n, n:]
-
-        # n = A_mat.shape[0]
-        # I = jnp.eye(n)
-
-        # Ad = expm(A_mat * self.tau)
-        # # Solve (Ad - I) B = A Bd  -> Bd = A^-1 (Ad - I) B
-        # Bd = jnp.linalg.solve(A_mat, (Ad - I) @ B_mat)
-
-        # A = A_mat
-        # B = B_mat
-        # n, m = A.shape[0], B.shape[1]
-        # steps = 100
-        # h = self.tau / steps
-        # Ad = jnp.eye(n)
-        # Bd = jnp.zeros((n, m))
-
-        # for _ in range(steps):
-        #     k1 = A @ Ad
-        #     k2 = A @ (Ad + 0.5 * h * k1)
-        #     k3 = A @ (Ad + 0.5 * h * k2)
-        #     k4 = A @ (Ad + h * k3)
-        #     Ad = Ad + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-
-        #     k1B = A @ Bd + B
-        #     k2B = A @ (Bd + 0.5 * h * k1B) + B
-        #     k3B = A @ (Bd + 0.5 * h * k2B) + B
-        #     k4B = A @ (Bd + h * k3B) + B
-        #     Bd = Bd + (h / 6.0) * (k1B + 2 * k2B + 2 * k3B + k4B)
 
         n, m = A_mat.shape[0], B_mat.shape[1]
         M = np.block([[A_mat, B_mat], [np.zeros((m, n + m))]])
@@ -646,7 +774,7 @@ class IM(CoreEnvironment):
         i_s_alpha_k1, i_s_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, _, _, _ = y
         eps_k1 = step_eps(system_state.epsilon, omega_el, self.tau)
 
-        if properties.saturated:
+        if properties.nonlinear:
             raise NotImplementedError("Saturated case not implemented yet.")
         else:
             torque = self.currents_to_torque(i_s_alpha_k1, i_s_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)
@@ -678,8 +806,8 @@ class IM(CoreEnvironment):
         """
         system_state = state.physical_state
         omega_el = system_state.omega_el
-        i_s_alpha = system_state.i_s_alpha
-        i_s_beta = system_state.i_s_beta
+        i_sl_alpha = system_state.i_sl_alpha
+        i_sl_beta = system_state.i_sl_beta
         psi_r_alpha = system_state.psi_r_alpha
         psi_r_beta = system_state.psi_r_beta
         eps = system_state.epsilon
@@ -688,16 +816,17 @@ class IM(CoreEnvironment):
             return u_alpha_beta
 
         args = (properties.static_params, omega_el)
-        if properties.saturated:
-            raise NotImplementedError("Saturated case not implemented yet.")
-            vector_field = partial(self.saturated_ode, action=voltage)
+        if properties.nonlinear:
+            vector_field = partial(
+                self.nonlinear_ode, action=voltage, i_s_max=properties.physical_normalizations.i_s_alpha.max
+            )
         else:
             vector_field = partial(self.ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, eps])
+        y0 = tuple([psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta])
 
         def false_fn(_):
             return self.Additions(solver_state=self._solver.init(term, t0, t1, y0, args), active_solver_state=True)
@@ -709,26 +838,37 @@ class IM(CoreEnvironment):
 
         y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, additions.solver_state, made_jump=False)
 
-        i_s_alpha_k1 = y[0]
-        i_s_beta_k1 = y[1]
-        psi_r_alpha_k1 = y[2]
-        psi_r_beta_k1 = y[3]
-        eps_k1 = y[4]
+        psi_r_alpha_k1 = y[0]
+        psi_r_beta_k1 = y[1]
+        eps_k1 = y[2]
+        i_sl_alpha_k1 = y[3]
+        i_sl_beta_k1 = y[4]
 
         eps_k1 = ((eps_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
-        if properties.saturated:
-            raise NotImplementedError("Saturated case not implemented yet.")
+        if properties.nonlinear:
+            l_m = self.get_L_saturated(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1)
+            r_s, r_r = self.get_R_s_and_R_r(
+                i_sl_alpha_k1,
+                i_sl_beta_k1,
+                psi_r_alpha_k1,
+                psi_r_beta_k1,
+                l_m,
+                omega_el,
+                properties.static_params,
+                properties.physical_normalizations.i_s_alpha.max,
+            )
+            k_fe = (r_s + properties.static_params.r_fe) / properties.static_params.r_fe
+            i_s_alpha_k1 = i_sl_alpha_k1 * 1 / (k_fe) + 1 / (r_s + properties.static_params.r_fe) * u_alpha_beta[0]
+            i_s_beta_k1 = i_sl_beta_k1 * 1 / (k_fe) + 1 / (r_s + properties.static_params.r_fe) * u_alpha_beta[1]
             torque = jnp.array(
-                [
-                    self.currents_to_torque_saturated(
-                        i_s_alpha=i_s_alpha_k1, i_s_beta=i_s_beta_k1, env_properties=properties
-                    )
-                ]
+                [self.currents_to_torque_sat(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
             )[0]
         else:
+            i_s_alpha_k1 = i_sl_alpha_k1
+            i_s_beta_k1 = i_sl_beta_k1
             torque = jnp.array(
-                [self.currents_to_torque(i_s_alpha_k1, i_s_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
+                [self.currents_to_torque(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
             )[0]
 
         with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
@@ -738,6 +878,8 @@ class IM(CoreEnvironment):
             system_state_next.psi_r_alpha = psi_r_alpha_k1
             system_state_next.psi_r_beta = psi_r_beta_k1
             system_state_next.torque = torque
+            system_state_next.i_sl_alpha = i_sl_alpha_k1
+            system_state_next.i_sl_beta = i_sl_beta_k1
 
         with jdc.copy_and_mutate(state, validate=True) as new_state:
             new_state.physical_state = system_state_next
@@ -785,8 +927,8 @@ class IM(CoreEnvironment):
         """
         init_state_phys = init_state.physical_state
         omega_el = init_state_phys.omega_el
-        i_s_alpha = init_state_phys.i_s_alpha
-        i_s_beta = init_state_phys.i_s_beta
+        i_sl_alpha = init_state_phys.i_sl_alpha
+        i_sl_beta = init_state_phys.i_sl_beta
         psi_r_alpha = init_state_phys.psi_r_alpha
         psi_r_beta = init_state_phys.psi_r_beta
         eps = init_state_phys.epsilon
@@ -795,16 +937,17 @@ class IM(CoreEnvironment):
             return actions[jnp.array(t / action_stepsize, int)]
 
         args = (properties.static_params, omega_el)
-        if properties.saturated:
-            raise NotImplementedError("")
-            vector_field = partial(self.saturated_ode, action=voltage)
+        if properties.nonlinear:
+            vector_field = partial(
+                self.nonlinear_ode, action=voltage, i_s_max=properties.physical_normalizations.i_s_alpha.max
+            )
         else:
             vector_field = partial(self.ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = action_stepsize * actions.shape[0]
-        y0 = tuple([i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, eps])
+        y0 = tuple([psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta])
         saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))
 
         controller = diffrax.ConstantStepSize()
@@ -821,25 +964,65 @@ class IM(CoreEnvironment):
             stepsize_controller=controller,
         )
 
-        i_s_alpha_t = y.ys[0]
-        i_s_beta_t = y.ys[1]
-        psi_r_alpha_t = y.ys[2]
-        psi_r_beta_t = y.ys[3]
-        eps_t = y.ys[4]
+        psi_r_alpha_t = y.ys[0]
+        psi_r_beta_t = y.ys[1]
+        eps_t = y.ys[2]
+        i_sl_alpha_t = y.ys[3]
+        i_sl_beta_t = y.ys[4]
         # keep eps between -pi and pi
         eps_t = ((eps_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
-        obs_len = i_s_alpha_t.shape[0]
+        obs_len = i_sl_alpha_t.shape[0]
 
-        if properties.saturated:
-            raise NotImplementedError("")
-            torque_t = jax.vmap(self.currents_to_torque_saturated, in_axes=(0, 0, 0, 0, None))(
-                i_s_alpha_t, i_s_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
+        # if properties.nonlinear:
+        #     l_m = self.get_L_saturated(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1)
+        #     r_s, r_r = self.get_R_s_and_R_r(
+        #         i_sl_alpha_k1,
+        #         i_sl_beta_k1,
+        #         psi_r_alpha_k1,
+        #         psi_r_beta_k1,
+        #         l_m,
+        #         omega_el,
+        #         properties.static_params,
+        #         properties.physical_normalizations.i_s_alpha.max,
+        #     )
+        #     k_fe = (r_s + properties.static_params.r_fe) / properties.static_params.r_fe
+        #     i_s_alpha_k1 = i_sl_alpha_k1*1/(k_fe) + 1/(r_s + properties.static_params.r_fe) * u_alpha_beta[0]
+        #     i_s_beta_k1 = i_sl_beta_k1*1/(k_fe) + 1/(r_s + properties.static_params.r_fe) * u_alpha_beta[1]
+        #     torque = jnp.array(
+        #         [self.currents_to_torque_sat(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
+        #     )[0]
+        # else:
+        #     i_s_alpha_k1 = i_sl_alpha_k1
+        #     i_s_beta_k1 = i_sl_beta_k1
+        #     torque = jnp.array(
+        #         [self.currents_to_torque(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
+        #     )[0]
+
+        if properties.nonlinear:
+            l_m_t = jax.vmap(self.get_L_saturated)(i_sl_alpha_t, i_sl_beta_t, psi_r_alpha_t, psi_r_beta_t)
+            r_s_t, r_r = jax.vmap(self.get_R_s_and_R_, in_axes=(0, 0, 0, 0, 0, None, None, None))(
+                i_sl_alpha_t,
+                i_sl_beta_t,
+                psi_r_alpha_t,
+                psi_r_beta_t,
+                l_m_t,
+                omega_el,
+                properties.static_params,
+                properties.physical_normalizations.i_s_alpha.max,
+            )
+            k_fe_t = (r_s_t + properties.static_params.r_fe) / properties.static_params.r_fe
+            i_s_alpha_t = i_sl_alpha_t * 1 / (k_fe_t) + 1 / (r_s_t + properties.static_params.r_fe) * actions[:, 0]
+            i_s_beta_t = i_sl_beta_t * 1 / (k_fe_t) + 1 / (r_s_t + properties.static_params.r_fe) * actions[:, 1]
+            torque_t = jax.vmap(self.currents_to_torque_sat, in_axes=(0, 0, 0, 0, None))(
+                i_sl_alpha_t, i_sl_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
             )
 
         else:
             torque_t = jax.vmap(self.currents_to_torque, in_axes=(0, 0, 0, 0, None))(
-                i_s_alpha_t, i_s_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
+                i_sl_alpha_t, i_sl_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
             )
+            i_s_alpha_t = i_sl_alpha_t
+            i_s_beta_t = i_sl_beta_t
 
         phys = self.PhysicalState(
             u_alpha_buffer=jnp.zeros(obs_len),
@@ -850,10 +1033,12 @@ class IM(CoreEnvironment):
             psi_r_alpha=psi_r_alpha_t,
             psi_r_beta=psi_r_beta_t,
             torque=torque_t,
+            i_sl_alpha=i_sl_alpha_t,
+            i_sl_beta=i_sl_beta_t,
             omega_el=jnp.full(obs_len, init_state_phys.omega_el),
         )
 
-        y0 = tuple([i_s_alpha_t[-1], i_s_beta_t[-1], psi_r_alpha_t[-1], psi_r_beta_t[-1], eps_t[-1]])
+        y0 = tuple([psi_r_alpha_t[-1], psi_r_beta_t[-1], eps_t[-1], i_sl_alpha_t[-1], i_sl_beta_t[-1]])
         solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
         additions = self.Additions(
             solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
@@ -867,6 +1052,8 @@ class IM(CoreEnvironment):
             psi_r_alpha=jnp.full(obs_len, jnp.nan),
             psi_r_beta=jnp.full(obs_len, jnp.nan),
             torque=jnp.full(obs_len, jnp.nan),
+            i_sl_alpha=jnp.full(obs_len, jnp.nan),
+            i_sl_beta=jnp.full(obs_len, jnp.nan),
             omega_el=jnp.full(obs_len, jnp.nan),
         )
         return self.State(
@@ -1087,6 +1274,8 @@ class IM(CoreEnvironment):
                 sin_eps,
                 norm_state_phys.u_alpha_buffer,
                 norm_state_phys.u_beta_buffer,
+                norm_state_phys.i_sl_alpha,
+                norm_state_phys.i_sl_beta,
             )
         )
         for name in self.control_state:
@@ -1110,22 +1299,33 @@ class IM(CoreEnvironment):
             psi_r_beta=obs[3],
             torque=obs[5],
             omega_el=obs[4],
+            i_sl_alpha=obs[10],
+            i_sl_beta=obs[11],
         )
 
         def voltage(t):
             return jnp.array([0, 0])
 
         args = (env_properties.static_params, phys.omega_el)
-        if env_properties.saturated:
-            raise NotImplementedError("")
-            vector_field = partial(self.saturated_ode, action=voltage)
+        if env_properties.nonlinear:
+            vector_field = partial(
+                self.nonlinear_ode, action=voltage, i_s_max=env_properties.physical_normalizations.i_s_alpha.max
+            )
         else:
             vector_field = partial(self.ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([phys.i_s_alpha, phys.i_s_beta, phys.psi_r_alpha, phys.psi_r_beta, phys.epsilon])
+        y0 = tuple(
+            [
+                phys.psi_r_alpha,
+                phys.psi_r_beta,
+                phys.epsilon,
+                phys.i_sl_alpha,
+                phys.i_sl_beta,
+            ]
+        )
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
@@ -1143,10 +1343,12 @@ class IM(CoreEnvironment):
             psi_r_beta=jnp.nan,
             torque=jnp.nan,
             omega_el=jnp.nan,
+            i_sl_alpha=jnp.nan,
+            i_sl_beta=jnp.nan,
         )
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[10 + pos])
+                setattr(new_ref, name, obs[12 + pos])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state, env_properties)
 

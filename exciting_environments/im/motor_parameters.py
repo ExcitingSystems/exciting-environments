@@ -22,6 +22,8 @@ class PhysicalNormalizations:
     psi_r_beta: float
     omega_el: float
     torque: float
+    i_sl_alpha: float
+    i_sl_beta: float
 
 
 @jdc.pytree_dataclass
@@ -33,13 +35,26 @@ class ActionNormalizations:
 @jdc.pytree_dataclass
 class StaticParams:
     p: int
-    r_s: float
-    r_r: float
+    r_fe: float
     l_m: float
     l_sigs: float
     l_sigr: float
+    r_r: float
+    r_s: float
+    h_r: float
+    h_s: float
     u_dc: float
+    omega_rs_N: float
+    psi_r_N: float
     deadtime: int
+
+
+@jdc.pytree_dataclass
+class SaturationParams:
+    k1: float
+    k2: float
+    k3: float
+    k4: float
 
 
 @jdc.pytree_dataclass
@@ -47,8 +62,9 @@ class MotorParams:
     physical_normalizations: PhysicalNormalizations
     action_normalizations: ActionNormalizations
     static_params: StaticParams
+    static_params_nonlinear: StaticParams
     default_soft_constraints: Callable
-    lut: dict
+    saturation_params: SaturationParams
 
 
 # Predefined motor configurations
@@ -143,23 +159,63 @@ DEFAULT = MotorParams(
         torque=MinMaxNormalization(
             min=(-torque_limit(2, 143.75e-3, 5.87e-3, 5.5)), max=(torque_limit(2, 143.75e-3, 5.87e-3, 5.5))
         ),  #
+        i_sl_alpha=MinMaxNormalization(min=(-5.5), max=(5.5)),
+        i_sl_beta=MinMaxNormalization(min=(-5.5), max=(5.5)),
     ),
     action_normalizations=ActionNormalizations(
         u_alpha=MinMaxNormalization(min=(-2 * 560 / 3), max=(2 * 560 / 3)),
         u_beta=MinMaxNormalization(min=(-2 * 560 / 3), max=(2 * 560 / 3)),
     ),
+    #  p: int
+    # r_s: float
+    # r_r: float
+    # r_fe: float
+    # l_m: float
+    # l_sigs: float
+    # l_sigr: float
+    # r_dcr: float
+    # r_dcs: float
+    # h_r: float
+    # h_s: float
+    # u_dc: float
+    # deadtime: int
     static_params=StaticParams(
         p=2,
-        r_s=2.9338,
+        r_fe=700.4,
         r_r=1.355,
+        r_s=2.9338,
+        h_r=jnp.nan,
+        h_s=jnp.nan,
         l_m=143.75e-3,
         l_sigs=5.87e-3,
         l_sigr=5.87e-3,
+        omega_rs_N=3000 * 2 * 2 * jnp.pi / 60,
+        psi_r_N=0.58,
+        u_dc=560,  # estimation
+        deadtime=0,
+    ),
+    static_params_nonlinear=StaticParams(
+        p=2,
+        r_fe=700.4,
+        r_r=1.7297,
+        r_s=1.6997,
+        h_r=0.0029,
+        h_s=0.6780,
+        l_m=143.75e-3,
+        l_sigs=0.0046,
+        l_sigr=0.0101,
+        omega_rs_N=3000 * 2 * 2 * jnp.pi / 60,
+        psi_r_N=0.58,
         u_dc=560,  # estimation
         deadtime=0,
     ),
     default_soft_constraints=default_soft_constraints,
-    lut=None,
+    saturation_params=SaturationParams(
+        k1=0.1596,
+        k2=0.0478,
+        k3=39.4442,
+        k4=0.4938,
+    ),
 )
 
 
