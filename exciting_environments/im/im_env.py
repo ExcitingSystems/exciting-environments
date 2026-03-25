@@ -174,14 +174,13 @@ class IM(CoreEnvironment):
         default_action_normalizations = motor_params.action_normalizations.__dict__
         default_soft_constraints = MethodType(motor_params.default_soft_constraints, self)
         saturation_params = motor_params.saturation_params
+        default_static_params = motor_params.static_params.__dict__
         if nonlinear:
-            default_static_params = motor_params.static_params_nonlinear.__dict__
             self.saturation_interpolators = self.generate_saturation_interpolators(
-                saturation_params, motor_params.physical_normalizations, motor_params.static_params_nonlinear
+                saturation_params, motor_params.physical_normalizations, motor_params.static_params
             )
 
         else:
-            default_static_params = motor_params.static_params.__dict__
             saturated_quants = [
                 "l_m",
             ]
@@ -255,17 +254,12 @@ class IM(CoreEnvironment):
         """Dataclass containing the physical parameters of the environment."""
 
         p: jax.Array
-        r_fe: jax.Array
         l_m: jax.Array
         l_sigs: jax.Array
         l_sigr: jax.Array
         r_r: jax.Array
         r_s: jax.Array
-        h_r: jax.Array
-        h_s: jax.Array
         u_dc: jax.Array
-        omega_rs_N: jax.Array
-        psi_r_N: jax.Array
         deadtime: jax.Array
 
     @jdc.pytree_dataclass
@@ -281,8 +275,6 @@ class IM(CoreEnvironment):
         epsilon: jax.Array
         omega_el: jax.Array
         torque: jax.Array
-        i_sl_alpha: jax.Array
-        i_sl_beta: jax.Array
 
     @jdc.pytree_dataclass
     class Additions:
@@ -330,26 +322,6 @@ class IM(CoreEnvironment):
         l_m_sat = self.saturation_interpolators["l_m"](query_point)[0]
         return l_m_sat
 
-    def get_R_s_and_R_r(self, i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, l_m, omega_rs, params, i_s_max):
-        l_sigr = params.l_sigr
-        l_r = l_m + l_sigr
-        r_dcr = params.r_r
-        r_dcs = params.r_s
-        h_r = params.h_r
-        h_s = params.h_s
-        psi_r_mag = jnp.sqrt(psi_r_alpha**2 + psi_r_beta**2)
-        psi_r_mag_safe = jnp.maximum(psi_r_mag, 1e-6)
-        i_sq = (-i_s_alpha * psi_r_beta + i_s_beta * psi_r_alpha) / psi_r_mag_safe
-        omega_sl = (r_dcr * l_m * i_sq) / (l_r * psi_r_mag_safe)
-        psi_r_N = params.psi_r_N
-        omega_sl_max = (r_dcr * l_m * i_s_max) / (l_r * psi_r_N * 0.75)  # 0.75 for little more margin
-        omega_sl = jnp.clip(omega_sl, -omega_sl_max, omega_sl_max)
-        omega_s = omega_sl + omega_rs
-        omega_rs_N = params.omega_rs_N
-        r_r = r_dcr * (1 + h_r * (jnp.square(omega_sl) / jnp.square(omega_rs_N)))
-        r_s = r_dcs * (1 + h_s * (jnp.square(omega_s) / jnp.square(omega_rs_N)))
-        return r_s, r_r
-
     def currents_to_torque_sat(self, i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, env_properties):
         l_m_sat = self.get_L_saturated(i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta)
         torque = (
@@ -384,8 +356,9 @@ class IM(CoreEnvironment):
         i_s_max = physical_normalizations.i_s_alpha.max
         psi_r_max = physical_normalizations.psi_r_alpha.max
         n_res = 50
-        i_s_grid_1d = jnp.linspace(0.0, i_s_max * 1.25, n_res)
-        psi_r_grid_1d = jnp.linspace(0.0, psi_r_max * 1.25, n_res)
+        eps = 1e-6
+        i_s_grid_1d = jnp.linspace(eps, i_s_max * 1.25, n_res)
+        psi_r_grid_1d = jnp.linspace(eps, psi_r_max * 1.25, n_res)
         angle_grid_1d = jnp.linspace(0, jnp.pi, n_res)
 
         @jax.jit
@@ -443,8 +416,6 @@ class IM(CoreEnvironment):
                     + env_properties.physical_normalizations.omega_el.max
                 )
                 / 2,
-                i_sl_alpha=0.0,
-                i_sl_beta=0.0,
             )
 
             rng = jnp.nan
@@ -457,19 +428,12 @@ class IM(CoreEnvironment):
             psi_r_alpha_beta = jax.random.ball(subkey, 2) * env_properties.physical_normalizations.psi_r_alpha.max
 
             if env_properties.nonlinear:
-                k_fe = (
-                    env_properties.static_params.r_s + env_properties.static_params.r_fe
-                ) / env_properties.static_params.r_fe
-                i_sl_alpha = i_s_alpha_beta[0] * k_fe
-                i_sl_beta = i_s_alpha_beta[1] * k_fe
                 torque = self.currents_to_torque_sat(
-                    i_sl_alpha, i_sl_beta, psi_r_alpha_beta[0], psi_r_alpha_beta[1], env_properties
+                    i_s_alpha_beta[0], i_s_alpha_beta[1], psi_r_alpha_beta[0], psi_r_alpha_beta[1], env_properties
                 )
             else:
-                i_sl_alpha = i_s_alpha_beta[0]
-                i_sl_beta = i_s_alpha_beta[1]
                 torque = self.currents_to_torque(
-                    i_sl_alpha, i_sl_beta, psi_r_alpha_beta[0], psi_r_alpha_beta[1], env_properties
+                    i_s_alpha_beta[0], i_s_alpha_beta[1], psi_r_alpha_beta[0], psi_r_alpha_beta[1], env_properties
                 )
 
             phys = self.PhysicalState(
@@ -494,8 +458,6 @@ class IM(CoreEnvironment):
                     - env_properties.physical_normalizations.omega_el.min
                 )
                 + env_properties.physical_normalizations.omega_el.min,
-                i_sl_alpha=i_sl_alpha,
-                i_sl_beta=i_sl_beta,
             )
 
         def voltage(t):
@@ -503,9 +465,7 @@ class IM(CoreEnvironment):
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.nonlinear:
-            vector_field = partial(
-                self.nonlinear_ode, action=voltage, i_s_max=env_properties.physical_normalizations.i_s_alpha.max
-            )
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
             vector_field = partial(self.ode, action=voltage)
 
@@ -514,11 +474,11 @@ class IM(CoreEnvironment):
         t1 = self.tau
         y0 = tuple(
             [
+                phys.i_s_alpha,
+                phys.i_s_beta,
                 phys.psi_r_alpha,
                 phys.psi_r_beta,
                 phys.epsilon,
-                phys.i_sl_alpha,
-                phys.i_sl_beta,
             ]
         )
 
@@ -537,13 +497,11 @@ class IM(CoreEnvironment):
             psi_r_beta=jnp.nan,
             torque=jnp.nan,
             omega_el=jnp.nan,
-            i_sl_alpha=jnp.nan,
-            i_sl_beta=jnp.nan,
         )
         return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
 
     def ode(self, t, y, args, action):
-        psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta = y
+        i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, eps = y
         params, omega_el = args
         r_s = params.r_s
         r_r = params.r_r
@@ -558,67 +516,58 @@ class IM(CoreEnvironment):
         u_beta = u_alpha_beta[1]
 
         i_s_alpha_diff = (
-            (-1 / tau_sig) * i_sl_alpha
+            (-1 / tau_sig) * i_s_alpha
             + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_alpha
             + (l_m * omega_el / (sigma * l_r * l_s)) * psi_r_beta
             + (1 / (sigma * l_s)) * u_alpha
         )
         i_s_beta_diff = (
-            (-1 / tau_sig) * i_sl_beta
+            (-1 / tau_sig) * i_s_beta
             + (-l_m * omega_el / (sigma * l_r * l_s)) * psi_r_alpha
             + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_beta
             + (1 / (sigma * l_s)) * u_beta
         )
-        psi_r_alpha_diff = (l_m / tau_r) * i_sl_alpha + (-1 / tau_r) * psi_r_alpha + (-omega_el) * psi_r_beta
+        psi_r_alpha_diff = (l_m / tau_r) * i_s_alpha + (-1 / tau_r) * psi_r_alpha + (-omega_el) * psi_r_beta
 
-        psi_r_beta_diff = (l_m / tau_r) * i_sl_beta + (omega_el) * psi_r_alpha + (-1 / tau_r) * psi_r_beta
+        psi_r_beta_diff = (l_m / tau_r) * i_s_beta + (omega_el) * psi_r_alpha + (-1 / tau_r) * psi_r_beta
 
         eps_diff = omega_el
-        d_y = psi_r_alpha_diff, psi_r_beta_diff, eps_diff, i_s_alpha_diff, i_s_beta_diff
+        d_y = i_s_alpha_diff, i_s_beta_diff, psi_r_alpha_diff, psi_r_beta_diff, eps_diff
         return d_y
 
-    def nonlinear_ode(self, t, y, args, action, i_s_max):
-        psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta = y
+    def nonlinear_ode(self, t, y, args, action):
+        i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, eps = y
         params, omega_el = args
-        r_fe = params.r_fe
-        l_m = self.get_L_saturated(i_sl_alpha, i_sl_beta, psi_r_alpha, psi_r_beta)
-        r_s, r_r = self.get_R_s_and_R_r(i_sl_alpha, i_sl_beta, psi_r_alpha, psi_r_beta, l_m, omega_el, params, i_s_max)
+        r_s = params.r_s
+        r_r = params.r_r
+        l_m = self.get_L_saturated(i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta)
         l_r = params.l_sigr + l_m
         l_s = params.l_sigs + l_m
         sigma = (l_s * l_r - l_m**2) / (l_s * l_r)
         tau_r = l_r / r_r
-        # tau_sig = sigma * l_s / (r_s + r_r * (l_m**2) / (l_r**2))
+        tau_sig = sigma * l_s / (r_s + r_r * (l_m**2) / (l_r**2))
         u_alpha_beta = action(t)
         u_alpha = u_alpha_beta[0]
         u_beta = u_alpha_beta[1]
-        k_fe = (r_s + r_fe) / r_fe
 
-        helper = 1 / (sigma * l_s) * (-(r_s) / (k_fe) - (l_m**2 * r_r) / (l_r**2))
-
-        i_sl_alpha_diff = (
-            helper * i_sl_alpha
+        i_s_alpha_diff = (
+            (-1 / tau_sig) * i_s_alpha
             + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_alpha
             + (l_m * omega_el / (sigma * l_r * l_s)) * psi_r_beta
-            + (1 / (k_fe * sigma * l_s)) * u_alpha
+            + (1 / (sigma * l_s)) * u_alpha
         )
-        i_sl_beta_diff = (
-            helper * i_sl_beta
+        i_s_beta_diff = (
+            (-1 / tau_sig) * i_s_beta
             + (-l_m * omega_el / (sigma * l_r * l_s)) * psi_r_alpha
             + (l_m * r_r / (sigma * l_r**2 * l_s)) * psi_r_beta
-            + (1 / (k_fe * sigma * l_s)) * u_beta
+            + (1 / (sigma * l_s)) * u_beta
         )
-        psi_r_alpha_diff = (l_m / tau_r) * i_sl_alpha + (-1 / tau_r) * psi_r_alpha + (-omega_el) * psi_r_beta
+        psi_r_alpha_diff = (l_m / tau_r) * i_s_alpha + (-1 / tau_r) * psi_r_alpha + (-omega_el) * psi_r_beta
 
-        psi_r_beta_diff = (l_m / tau_r) * i_sl_beta + (omega_el) * psi_r_alpha + (-1 / tau_r) * psi_r_beta
+        psi_r_beta_diff = (l_m / tau_r) * i_s_beta + (omega_el) * psi_r_alpha + (-1 / tau_r) * psi_r_beta
 
         eps_diff = omega_el
-        d_y = (
-            psi_r_alpha_diff,
-            psi_r_beta_diff,
-            eps_diff,
-            i_sl_alpha_diff,
-            i_sl_beta_diff,
-        )
+        d_y = i_s_alpha_diff, i_s_beta_diff, psi_r_alpha_diff, psi_r_beta_diff, eps_diff
         return d_y
 
     def get_discrete_matrices(self, env_properties):
@@ -806,8 +755,8 @@ class IM(CoreEnvironment):
         """
         system_state = state.physical_state
         omega_el = system_state.omega_el
-        i_sl_alpha = system_state.i_sl_alpha
-        i_sl_beta = system_state.i_sl_beta
+        i_s_alpha = system_state.i_s_alpha
+        i_s_beta = system_state.i_s_beta
         psi_r_alpha = system_state.psi_r_alpha
         psi_r_beta = system_state.psi_r_beta
         eps = system_state.epsilon
@@ -817,16 +766,14 @@ class IM(CoreEnvironment):
 
         args = (properties.static_params, omega_el)
         if properties.nonlinear:
-            vector_field = partial(
-                self.nonlinear_ode, action=voltage, i_s_max=properties.physical_normalizations.i_s_alpha.max
-            )
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
             vector_field = partial(self.ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta])
+        y0 = tuple([i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, eps])
 
         def false_fn(_):
             return self.Additions(solver_state=self._solver.init(term, t0, t1, y0, args), active_solver_state=True)
@@ -838,37 +785,21 @@ class IM(CoreEnvironment):
 
         y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, additions.solver_state, made_jump=False)
 
-        psi_r_alpha_k1 = y[0]
-        psi_r_beta_k1 = y[1]
-        eps_k1 = y[2]
-        i_sl_alpha_k1 = y[3]
-        i_sl_beta_k1 = y[4]
+        i_s_alpha_k1 = y[0]
+        i_s_beta_k1 = y[1]
+        psi_r_alpha_k1 = y[2]
+        psi_r_beta_k1 = y[3]
+        eps_k1 = y[4]
 
         eps_k1 = ((eps_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
         if properties.nonlinear:
-            l_m = self.get_L_saturated(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1)
-            r_s, r_r = self.get_R_s_and_R_r(
-                i_sl_alpha_k1,
-                i_sl_beta_k1,
-                psi_r_alpha_k1,
-                psi_r_beta_k1,
-                l_m,
-                omega_el,
-                properties.static_params,
-                properties.physical_normalizations.i_s_alpha.max,
-            )
-            k_fe = (r_s + properties.static_params.r_fe) / properties.static_params.r_fe
-            i_s_alpha_k1 = i_sl_alpha_k1 * 1 / (k_fe) + 1 / (r_s + properties.static_params.r_fe) * u_alpha_beta[0]
-            i_s_beta_k1 = i_sl_beta_k1 * 1 / (k_fe) + 1 / (r_s + properties.static_params.r_fe) * u_alpha_beta[1]
             torque = jnp.array(
-                [self.currents_to_torque_sat(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
+                [self.currents_to_torque_sat(i_s_alpha_k1, i_s_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
             )[0]
         else:
-            i_s_alpha_k1 = i_sl_alpha_k1
-            i_s_beta_k1 = i_sl_beta_k1
             torque = jnp.array(
-                [self.currents_to_torque(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
+                [self.currents_to_torque(i_s_alpha_k1, i_s_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
             )[0]
 
         with jdc.copy_and_mutate(system_state, validate=True) as system_state_next:
@@ -878,8 +809,6 @@ class IM(CoreEnvironment):
             system_state_next.psi_r_alpha = psi_r_alpha_k1
             system_state_next.psi_r_beta = psi_r_beta_k1
             system_state_next.torque = torque
-            system_state_next.i_sl_alpha = i_sl_alpha_k1
-            system_state_next.i_sl_beta = i_sl_beta_k1
 
         with jdc.copy_and_mutate(state, validate=True) as new_state:
             new_state.physical_state = system_state_next
@@ -927,8 +856,8 @@ class IM(CoreEnvironment):
         """
         init_state_phys = init_state.physical_state
         omega_el = init_state_phys.omega_el
-        i_sl_alpha = init_state_phys.i_sl_alpha
-        i_sl_beta = init_state_phys.i_sl_beta
+        i_s_alpha = init_state_phys.i_s_alpha
+        i_s_beta = init_state_phys.i_s_beta
         psi_r_alpha = init_state_phys.psi_r_alpha
         psi_r_beta = init_state_phys.psi_r_beta
         eps = init_state_phys.epsilon
@@ -938,16 +867,14 @@ class IM(CoreEnvironment):
 
         args = (properties.static_params, omega_el)
         if properties.nonlinear:
-            vector_field = partial(
-                self.nonlinear_ode, action=voltage, i_s_max=properties.physical_normalizations.i_s_alpha.max
-            )
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
             vector_field = partial(self.ode, action=voltage)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = action_stepsize * actions.shape[0]
-        y0 = tuple([psi_r_alpha, psi_r_beta, eps, i_sl_alpha, i_sl_beta])
+        y0 = tuple([i_s_alpha, i_s_beta, psi_r_alpha, psi_r_beta, eps])
         saveat = diffrax.SaveAt(ts=jnp.linspace(t0, t1, 1 + int(t1 / obs_stepsize)))
 
         controller = diffrax.ConstantStepSize()
@@ -964,65 +891,25 @@ class IM(CoreEnvironment):
             stepsize_controller=controller,
         )
 
-        psi_r_alpha_t = y.ys[0]
-        psi_r_beta_t = y.ys[1]
-        eps_t = y.ys[2]
-        i_sl_alpha_t = y.ys[3]
-        i_sl_beta_t = y.ys[4]
+        i_s_alpha_t = y.ys[0]
+        i_s_beta_t = y.ys[1]
+        psi_r_alpha_t = y.ys[2]
+        psi_r_beta_t = y.ys[3]
+        eps_t = y.ys[4]
+
         # keep eps between -pi and pi
         eps_t = ((eps_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
-        obs_len = i_sl_alpha_t.shape[0]
-
-        # if properties.nonlinear:
-        #     l_m = self.get_L_saturated(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1)
-        #     r_s, r_r = self.get_R_s_and_R_r(
-        #         i_sl_alpha_k1,
-        #         i_sl_beta_k1,
-        #         psi_r_alpha_k1,
-        #         psi_r_beta_k1,
-        #         l_m,
-        #         omega_el,
-        #         properties.static_params,
-        #         properties.physical_normalizations.i_s_alpha.max,
-        #     )
-        #     k_fe = (r_s + properties.static_params.r_fe) / properties.static_params.r_fe
-        #     i_s_alpha_k1 = i_sl_alpha_k1*1/(k_fe) + 1/(r_s + properties.static_params.r_fe) * u_alpha_beta[0]
-        #     i_s_beta_k1 = i_sl_beta_k1*1/(k_fe) + 1/(r_s + properties.static_params.r_fe) * u_alpha_beta[1]
-        #     torque = jnp.array(
-        #         [self.currents_to_torque_sat(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
-        #     )[0]
-        # else:
-        #     i_s_alpha_k1 = i_sl_alpha_k1
-        #     i_s_beta_k1 = i_sl_beta_k1
-        #     torque = jnp.array(
-        #         [self.currents_to_torque(i_sl_alpha_k1, i_sl_beta_k1, psi_r_alpha_k1, psi_r_beta_k1, properties)]
-        #     )[0]
+        obs_len = i_s_alpha_t.shape[0]
 
         if properties.nonlinear:
-            l_m_t = jax.vmap(self.get_L_saturated)(i_sl_alpha_t, i_sl_beta_t, psi_r_alpha_t, psi_r_beta_t)
-            r_s_t, r_r = jax.vmap(self.get_R_s_and_R_, in_axes=(0, 0, 0, 0, 0, None, None, None))(
-                i_sl_alpha_t,
-                i_sl_beta_t,
-                psi_r_alpha_t,
-                psi_r_beta_t,
-                l_m_t,
-                omega_el,
-                properties.static_params,
-                properties.physical_normalizations.i_s_alpha.max,
-            )
-            k_fe_t = (r_s_t + properties.static_params.r_fe) / properties.static_params.r_fe
-            i_s_alpha_t = i_sl_alpha_t * 1 / (k_fe_t) + 1 / (r_s_t + properties.static_params.r_fe) * actions[:, 0]
-            i_s_beta_t = i_sl_beta_t * 1 / (k_fe_t) + 1 / (r_s_t + properties.static_params.r_fe) * actions[:, 1]
             torque_t = jax.vmap(self.currents_to_torque_sat, in_axes=(0, 0, 0, 0, None))(
-                i_sl_alpha_t, i_sl_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
+                i_s_alpha_t, i_s_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
             )
 
         else:
             torque_t = jax.vmap(self.currents_to_torque, in_axes=(0, 0, 0, 0, None))(
-                i_sl_alpha_t, i_sl_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
+                i_s_alpha_t, i_s_beta_t, psi_r_alpha_t, psi_r_beta_t, properties
             )
-            i_s_alpha_t = i_sl_alpha_t
-            i_s_beta_t = i_sl_beta_t
 
         phys = self.PhysicalState(
             u_alpha_buffer=jnp.zeros(obs_len),
@@ -1033,12 +920,10 @@ class IM(CoreEnvironment):
             psi_r_alpha=psi_r_alpha_t,
             psi_r_beta=psi_r_beta_t,
             torque=torque_t,
-            i_sl_alpha=i_sl_alpha_t,
-            i_sl_beta=i_sl_beta_t,
             omega_el=jnp.full(obs_len, init_state_phys.omega_el),
         )
 
-        y0 = tuple([psi_r_alpha_t[-1], psi_r_beta_t[-1], eps_t[-1], i_sl_alpha_t[-1], i_sl_beta_t[-1]])
+        y0 = tuple([i_s_alpha_t[-1], i_s_beta_t[-1], psi_r_alpha_t[-1], psi_r_beta_t[-1], eps_t[-1]])
         solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
         additions = self.Additions(
             solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
@@ -1052,8 +937,6 @@ class IM(CoreEnvironment):
             psi_r_alpha=jnp.full(obs_len, jnp.nan),
             psi_r_beta=jnp.full(obs_len, jnp.nan),
             torque=jnp.full(obs_len, jnp.nan),
-            i_sl_alpha=jnp.full(obs_len, jnp.nan),
-            i_sl_beta=jnp.full(obs_len, jnp.nan),
             omega_el=jnp.full(obs_len, jnp.nan),
         )
         return self.State(
@@ -1274,8 +1157,6 @@ class IM(CoreEnvironment):
                 sin_eps,
                 norm_state_phys.u_alpha_buffer,
                 norm_state_phys.u_beta_buffer,
-                norm_state_phys.i_sl_alpha,
-                norm_state_phys.i_sl_beta,
             )
         )
         for name in self.control_state:
@@ -1299,8 +1180,6 @@ class IM(CoreEnvironment):
             psi_r_beta=obs[3],
             torque=obs[5],
             omega_el=obs[4],
-            i_sl_alpha=obs[10],
-            i_sl_beta=obs[11],
         )
 
         def voltage(t):
@@ -1308,9 +1187,7 @@ class IM(CoreEnvironment):
 
         args = (env_properties.static_params, phys.omega_el)
         if env_properties.nonlinear:
-            vector_field = partial(
-                self.nonlinear_ode, action=voltage, i_s_max=env_properties.physical_normalizations.i_s_alpha.max
-            )
+            vector_field = partial(self.nonlinear_ode, action=voltage)
         else:
             vector_field = partial(self.ode, action=voltage)
 
@@ -1319,11 +1196,11 @@ class IM(CoreEnvironment):
         t1 = self.tau
         y0 = tuple(
             [
+                phys.i_s_alpha,
+                phys.i_s_beta,
                 phys.psi_r_alpha,
                 phys.psi_r_beta,
                 phys.epsilon,
-                phys.i_sl_alpha,
-                phys.i_sl_beta,
             ]
         )
 
@@ -1343,12 +1220,10 @@ class IM(CoreEnvironment):
             psi_r_beta=jnp.nan,
             torque=jnp.nan,
             omega_el=jnp.nan,
-            i_sl_alpha=jnp.nan,
-            i_sl_beta=jnp.nan,
         )
         with jdc.copy_and_mutate(ref, validate=False) as new_ref:
             for name, pos in zip(self.control_state, range(len(self.control_state))):
-                setattr(new_ref, name, obs[12 + pos])
+                setattr(new_ref, name, obs[10 + pos])
         norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state, env_properties)
 
