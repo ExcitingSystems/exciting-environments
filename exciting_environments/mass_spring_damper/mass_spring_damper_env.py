@@ -141,9 +141,9 @@ class MassSpringDamper(CoreEnvironment):
     class StaticParams(eqx.Module):
         """Dataclass containing the static parameters of the environment."""
 
-        d: jax.Array
-        k: jax.Array
-        m: jax.Array
+        d: jax.Array = eqx.field(converter=jnp.asarray)
+        k: jax.Array = eqx.field(converter=jnp.asarray)
+        m: jax.Array = eqx.field(converter=jnp.asarray)
 
     class Action(eqx.Module):
         """Dataclass containing the action, that can be applied to the environment."""
@@ -201,7 +201,7 @@ class MassSpringDamper(CoreEnvironment):
         return new_state
 
     @eqx.filter_jit
-    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
+    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple simulation steps for one batch.
 
         Args:
@@ -214,6 +214,12 @@ class MassSpringDamper(CoreEnvironment):
         Returns:
             next_states: The computed states during the multiple step simulation.
         """
+        if not obs_stepsize:
+            obs_stepsize = self.tau
+
+        if not action_stepsize:
+            action_stepsize = self.tau
+
         static_params = self.env_properties.static_params
         init_physical_state = init_state.physical_state
         args = static_params
@@ -254,10 +260,12 @@ class MassSpringDamper(CoreEnvironment):
         additions = self.Additions(
             solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
         )
-        PRNGKey = jnp.broadcast_to(jnp.asarray(init_state.PRNGKey), (obs_len,) + jnp.asarray(init_state.PRNGKey).shape)
+        prng_key = jnp.broadcast_to(
+            jnp.asarray(init_state.prng_key), (obs_len,) + jnp.asarray(init_state.prng_key).shape
+        )
         return self.State(
             physical_state=physical_states,
-            PRNGKey=PRNGKey,
+            prng_key=prng_key,
             additions=additions,
             reference=ref,
         )
@@ -299,7 +307,7 @@ class MassSpringDamper(CoreEnvironment):
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan)
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=ref)
         return self.denormalize_state(norm_state)
 
     @eqx.filter_jit
@@ -365,7 +373,7 @@ class MassSpringDamper(CoreEnvironment):
         new_ref = ref
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[2 + i])
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state)
 
     @eqx.filter_jit

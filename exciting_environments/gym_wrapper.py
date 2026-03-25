@@ -86,7 +86,7 @@ class GymWrapper(ABC):
 
         return obs, reward, terminated, truncated
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def gym_step(self, action, state, reference_hold_steps):
         """Jax Jit compiled simulation step using the step function provided by the environment.
 
@@ -140,7 +140,7 @@ class GymWrapper(ABC):
                 key = rng_ref
                 assert rng_ref.shape[0] == self.env.batch_size
 
-            state = eqx.tree_at(lambda s: s.PRNGKey, state, key)
+            state = eqx.tree_at(lambda s: s.prng_key, state, key)
 
             self.ref_gen = True
             state, self.reference_hold_steps = jax.vmap(self.generate_new_ref)(
@@ -170,16 +170,16 @@ class GymWrapper(ABC):
         return state, hold_steps
 
     def generate_new_ref(self, state, env, hold_steps):  # TODO
-        init = env.init_state(state.PRNGKey)
+        init = env.init_state(state.prng_key)
         new_reference = state.reference
         for name in self.control_state:
             new_reference = eqx.tree_at(lambda r: getattr(r, name), new_reference, getattr(init.physical_state, name))
 
-        key, subkey = jax.random.split(init.PRNGKey)
+        key, subkey = jax.random.split(init.prng_key)
         hold_steps = jax.random.randint(
             subkey, minval=self.ref_params["hold_steps_min"], maxval=self.ref_params["hold_steps_max"], shape=(1,)
         )
-        new_state = eqx.tree_at(lambda s: (s.reference, s.PRNGKey), state, (new_reference, key))
+        new_state = eqx.tree_at(lambda s: (s.reference, s.prng_key), state, (new_reference, key))
         return new_state, hold_steps
 
     def render(self, *_, **__):

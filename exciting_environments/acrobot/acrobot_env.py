@@ -158,15 +158,15 @@ class Acrobot(CoreEnvironment):
     class StaticParams(eqx.Module):
         """Dataclass containing the static parameters of the environment."""
 
-        g: jax.Array
-        l_1: jax.Array
-        l_2: jax.Array
-        m_1: jax.Array
-        m_2: jax.Array
-        l_c1: jax.Array
-        l_c2: jax.Array
-        I_1: jax.Array
-        I_2: jax.Array
+        g: jax.Array = eqx.field(converter=jnp.asarray)
+        l_1: jax.Array = eqx.field(converter=jnp.asarray)
+        l_2: jax.Array = eqx.field(converter=jnp.asarray)
+        m_1: jax.Array = eqx.field(converter=jnp.asarray)
+        m_2: jax.Array = eqx.field(converter=jnp.asarray)
+        l_c1: jax.Array = eqx.field(converter=jnp.asarray)
+        l_c2: jax.Array = eqx.field(converter=jnp.asarray)
+        I_1: jax.Array = eqx.field(converter=jnp.asarray)
+        I_2: jax.Array = eqx.field(converter=jnp.asarray)
 
     class Action(eqx.Module):
         """Dataclass containing the action, that can be applied to the environment."""
@@ -263,7 +263,7 @@ class Acrobot(CoreEnvironment):
         return new_state
 
     @eqx.filter_jit
-    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
+    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple simulation steps for one batch.
 
         Args:
@@ -276,6 +276,12 @@ class Acrobot(CoreEnvironment):
         Returns:
             next_states: The computed states during the multiple step simulation.
         """
+        if not obs_stepsize:
+            obs_stepsize = self.tau
+
+        if not action_stepsize:
+            action_stepsize = self.tau
+
         static_params = self.env_properties.static_params
         init_physical_state = init_state.physical_state
         args = static_params
@@ -325,10 +331,12 @@ class Acrobot(CoreEnvironment):
             solver_state=self.repeat_values(solver_state, obs_len),
             active_solver_state=jnp.full(obs_len, True),
         )
-        PRNGKey = jnp.broadcast_to(jnp.asarray(init_state.PRNGKey), (obs_len,) + jnp.asarray(init_state.PRNGKey).shape)
+        prng_key = jnp.broadcast_to(
+            jnp.asarray(init_state.prng_key), (obs_len,) + jnp.asarray(init_state.prng_key).shape
+        )
         return self.State(
             physical_state=physical_states,
-            PRNGKey=PRNGKey,
+            prng_key=prng_key,
             additions=additions,
             reference=ref,
         )
@@ -373,7 +381,7 @@ class Acrobot(CoreEnvironment):
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(theta_1=jnp.nan, theta_2=jnp.nan, omega_1=jnp.nan, omega_2=jnp.nan)
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=ref)
         return self.denormalize_state(norm_state)
 
     @eqx.filter_jit
@@ -451,7 +459,7 @@ class Acrobot(CoreEnvironment):
         new_ref = ref
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[4 + i])
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state)
 
     @eqx.filter_jit

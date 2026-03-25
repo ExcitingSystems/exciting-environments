@@ -104,7 +104,7 @@ class CoreEnvironment(eqx.Module):
 
         pass
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     @abstractmethod
     def _ode_solver_step(self, state, action):
         """
@@ -119,7 +119,7 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @partial(jax.jit, static_argnums=[0, 3, 4])
+    @eqx.filter_jit
     @abstractmethod
     def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
         """
@@ -136,7 +136,7 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     @abstractmethod
     def init_state(self, rng: chex.PRNGKey = None, vmap_helper=None):
         """
@@ -151,7 +151,7 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     @abstractmethod
     def generate_observation(self, state):
         """
@@ -165,7 +165,7 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     @abstractmethod
     def generate_state_from_observation(self, obs, key=None):
         """
@@ -180,7 +180,7 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     @abstractmethod
     def generate_reward(self, state, action):
         """
@@ -195,7 +195,7 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     @abstractmethod
     def generate_truncated(self, state):
         """
@@ -209,7 +209,7 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     @abstractmethod
     def generate_terminated(self, state, reward):
         """
@@ -228,7 +228,7 @@ class CoreEnvironment(eqx.Module):
         """The state of the environment."""
 
         physical_state: eqx.Module
-        PRNGKey: jax.Array
+        prng_key: jax.Array
         additions: eqx.Module
         reference: eqx.Module
 
@@ -580,7 +580,7 @@ class CoreEnvironment(eqx.Module):
                 initial_state
             ), f"initial_state should have the same dataclass structure as self.vmap_init_state()"
 
-        obs, state = jax.vmap(lambda e, k: e.reset(k))(self, rng)
+        obs, state = jax.vmap(lambda e, k, s: e.reset(k, s))(self, rng, initial_state)
         return obs, state
 
     @eqx.filter_jit

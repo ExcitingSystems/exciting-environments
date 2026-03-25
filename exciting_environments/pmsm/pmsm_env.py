@@ -113,10 +113,26 @@ def clip_in_abc_coordinates(u_dq, u_dc, omega_el, eps, tau):
     return u_dq
 
 
+def lut_interpolate(grid_x, grid_y, values, i_d, i_q):
+    ix = jnp.searchsorted(grid_x, i_d) - 1
+    iy = jnp.searchsorted(grid_y, i_q) - 1
+    ix = jnp.clip(ix, 0, grid_x.shape[0] - 2)
+    iy = jnp.clip(iy, 0, grid_y.shape[0] - 2)
+    tx = (i_d - grid_x[ix]) / (grid_x[ix + 1] - grid_x[ix])
+    ty = (i_q - grid_y[iy]) / (grid_y[iy + 1] - grid_y[iy])
+    return (
+        values[ix, iy] * (1 - tx) * (1 - ty)
+        + values[ix + 1, iy] * tx * (1 - ty)
+        + values[ix, iy + 1] * (1 - tx) * ty
+        + values[ix + 1, iy + 1] * tx * ty
+    )
+
+
 class PMSM(CoreEnvironment):
     control_state: list = eqx.field(static=True)
     soft_constraints_logic: Callable = eqx.field(static=True)
-    LUT_interpolators: dict
+    LUT_grids: dict
+    LUT_values: dict
 
     def __init__(
         self,
@@ -160,7 +176,6 @@ class PMSM(CoreEnvironment):
         Note: Attributes of MinMaxNormalization of physical_normalizations and action_normalizations as well as static_params can also be
             passed as jnp.Array with the length of the batch_size to set different values per batch.
         """
-
         if motor_variant != MotorVariant.DEFAULT:
             motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
@@ -171,10 +186,10 @@ class PMSM(CoreEnvironment):
                 default_static_params["l_d"] = jnp.nan
                 default_static_params["l_q"] = jnp.nan
                 default_static_params["psi_p"] = jnp.nan
-                self.LUT_interpolators = motor_params.interpolators
-
+                self.LUT_grids = motor_params.lut_grids
+                self.LUT_values = motor_params.lut_values
             else:
-                self.LUT_interpolators = self.generate_dummy_interpolators()
+                self.LUT_grids, self.LUT_values = self.generate_dummy_luts()
 
         else:
             if saturated:
@@ -183,21 +198,12 @@ class PMSM(CoreEnvironment):
                     "Use a specific motor variant. DEFAULT is only valid for saturated=False."
                 )
 
-            saturated_quants = [
-                "L_dd",
-                "L_dq",
-                "L_qd",
-                "L_qq",
-                "Psi_d",
-                "Psi_q",
-            ]
-
             motor_params = motor_variant.get_params()
             default_physical_normalizations = motor_params.physical_normalizations.__dict__
             default_action_normalizations = motor_params.action_normalizations.__dict__
             default_static_params = motor_params.static_params.__dict__
             default_soft_constraints = motor_params.default_soft_constraints
-            self.LUT_interpolators = self.generate_dummy_interpolators()
+            self.LUT_grids, self.LUT_values = self.generate_dummy_luts()
 
         if not static_params:
             static_params = default_static_params
@@ -241,19 +247,16 @@ class PMSM(CoreEnvironment):
         )
         super().__init__(env_properties=env_properties, tau=tau, solver=solver)
 
-        # self._action_description =
-        # self._obs_description =
-
     class StaticParams(eqx.Module):
         """Dataclass containing the physical parameters of the environment."""
 
-        p: jax.Array
-        r_s: jax.Array
-        l_d: jax.Array
-        l_q: jax.Array
-        psi_p: jax.Array
-        u_dc: jax.Array
-        deadtime: jax.Array = eqx.field(static=True)
+        p: jax.Array = eqx.field(converter=jnp.asarray)
+        r_s: jax.Array = eqx.field(converter=jnp.asarray)
+        l_d: jax.Array = eqx.field(converter=jnp.asarray)
+        l_q: jax.Array = eqx.field(converter=jnp.asarray)
+        psi_p: jax.Array = eqx.field(converter=jnp.asarray)
+        u_dc: jax.Array = eqx.field(converter=jnp.asarray)
+        deadtime: int = eqx.field(static=True)
 
     class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
@@ -286,27 +289,13 @@ class PMSM(CoreEnvironment):
         action_normalizations: eqx.Module
         static_params: eqx.Module
 
-    def generate_dummy_interpolators(self):
+    def generate_dummy_luts(self):
         saturated_quants = ["L_dd", "L_dq", "L_qd", "L_qq", "Psi_d", "Psi_q"]
-
         x_base = jnp.array([0.0, 1.0])
         y_base = jnp.array([0.0, 1.0])
-        dummy_data = jnp.full((2, 2), jnp.nan)
-
-        LUT_interpolators = {}
-
-        for i, q in enumerate(saturated_quants):
-            unique_offset = i * 1e-9
-
-            LUT_interpolators[q] = jax.scipy.interpolate.RegularGridInterpolator(
-                (x_base + unique_offset, y_base + unique_offset),
-                dummy_data,
-                method="linear",
-                bounds_error=False,
-                fill_value=jnp.nan,
-            )
-
-        return LUT_interpolators
+        grids = {q: (x_base, y_base) for q in saturated_quants}
+        values = {q: jnp.full((2, 2), jnp.nan) for q in saturated_quants}
+        return grids, values
 
     def currents_to_torque(self, i_d, i_q):
         env_properties = self.env_properties
@@ -322,11 +311,9 @@ class PMSM(CoreEnvironment):
         return torque
 
     def currents_to_torque_saturated(self, i_d, i_q):
-        env_properties = self.env_properties
-        Psi_d = self.LUT_interpolators["Psi_d"](jnp.array([i_d, i_q]))
-        Psi_q = self.LUT_interpolators["Psi_q"](jnp.array([i_d, i_q]))
-        t = 3 / 2 * env_properties.static_params.p * (Psi_d * i_q - Psi_q * i_d)[0]
-        return t
+        Psi_d = lut_interpolate(*self.LUT_grids["Psi_d"], self.LUT_values["Psi_d"], i_d, i_q)
+        Psi_q = lut_interpolate(*self.LUT_grids["Psi_q"], self.LUT_values["Psi_q"], i_d, i_q)
+        return 3 / 2 * self.env_properties.static_params.p * (Psi_d * i_q - Psi_q * i_d)
 
     def init_state(self, rng: chex.PRNGKey = None):
         """Returns default initial state for all batches."""
@@ -433,7 +420,7 @@ class PMSM(CoreEnvironment):
             torque=jnp.nan,
             omega_el=jnp.nan,
         )
-        return self.State(physical_state=phys, PRNGKey=rng, additions=additions, reference=ref)
+        return self.State(physical_state=phys, prng_key=rng, additions=additions, reference=ref)
 
     def nonlinear_ode(self, t, y, args, action):
         i_d, i_q, eps = y
@@ -441,7 +428,7 @@ class PMSM(CoreEnvironment):
         u_dq = action(t)
         J_k = jnp.array([[0, -1], [1, 0]])
         i_dq = jnp.array([i_d, i_q])
-        p_d = {q: interp(jnp.array([i_d, i_q])) for q, interp in self.LUT_interpolators.items()}
+        p_d = {q: lut_interpolate(*self.LUT_grids[q], self.LUT_values[q], i_d, i_q) for q in self.LUT_grids}
         L_diff = jnp.column_stack([p_d[q] for q in ["L_dd", "L_dq", "L_qd", "L_qq"]]).reshape(2, 2)
         L_diff_inv = jnp.linalg.inv(L_diff)
         psi_dq = jnp.column_stack([p_d[psi] for psi in ["Psi_d", "Psi_q"]]).reshape(-1)
@@ -644,8 +631,8 @@ class PMSM(CoreEnvironment):
         )
         return self.State(
             physical_state=phys,
-            PRNGKey=jnp.broadcast_to(
-                jnp.asarray(init_state.PRNGKey), (obs_len,) + jnp.asarray(init_state.PRNGKey).shape
+            prng_key=jnp.broadcast_to(
+                jnp.asarray(init_state.prng_key), (obs_len,) + jnp.asarray(init_state.prng_key).shape
             ),
             additions=additions,
             reference=ref,
@@ -666,9 +653,9 @@ class PMSM(CoreEnvironment):
         state = eqx.tree_at(lambda s: s.reference, state, repeat_tree(state.reference, act_len))
         state = eqx.tree_at(lambda s: s.additions, state, repeat_tree(state.additions, act_len))
         state = eqx.tree_at(
-            lambda s: s.PRNGKey,
+            lambda s: s.prng_key,
             state,
-            jnp.broadcast_to(jnp.asarray(init_state.PRNGKey), (act_len,) + jnp.asarray(init_state.PRNGKey).shape),
+            jnp.broadcast_to(jnp.asarray(init_state.prng_key), (act_len,) + jnp.asarray(init_state.prng_key).shape),
         )
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0))(actions, state)
         return actions
@@ -733,16 +720,9 @@ class PMSM(CoreEnvironment):
 
     def generate_rew_trunc_term_ahead(self, states, actions):
         """Computes reward, truncated and terminated for sim_ahead simulation for one batch."""
-        # assert actions.ndim == 2, "The actions need to have two dimensions: (n_action_steps, action_dim)"
-        # assert (
-        #     actions.shape[-1] == self.action_dim
-        # ), f"The last dimension does not correspond to the action dim which is {self.action_dim}, but {actions.shape[-1]} is given"
         env_properties = self.env_properties
         deadtime = env_properties.static_params.deadtime
         num_state_steps = jax.tree.leaves(states)[0].shape[0]
-        # states_flatten, struct = tree_flatten(states)
-        # states_without_init_state = tree_unflatten(struct, jnp.array(states_flatten)[:, 1:])
-        # states_without_last_state = tree_unflatten(struct, jnp.array(states_flatten)[:, :-1])
         states_without_init_state = jax.tree.map(lambda x: x[1:], states)
         states_without_last_state = jax.tree.map(lambda x: x[:-1], states)
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0))(actions, states_without_last_state)
@@ -906,7 +886,7 @@ class PMSM(CoreEnvironment):
         new_ref = ref
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[8 + i])
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state)
 
     def generate_truncated(self, system_state):

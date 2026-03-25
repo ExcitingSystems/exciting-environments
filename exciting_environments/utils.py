@@ -1,13 +1,14 @@
-import equinox as eqx
 from typing import Callable
-
+import jax
+import jax.numpy as jnp
+import equinox as eqx
 from dataclasses import asdict
 import json
 
 
 class MinMaxNormalization(eqx.Module):
-    min: float
-    max: float
+    min: jax.Array = eqx.field(converter=jnp.asarray)
+    max: jax.Array = eqx.field(converter=jnp.asarray)
 
     def normalize(self, denormalized_value):
         return 2 * (denormalized_value - self.min) / (self.max - self.min) - 1

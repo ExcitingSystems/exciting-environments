@@ -19,7 +19,7 @@ def fluidtank_soft_constraints(instance, state, action_norm):
     state_norm = instance.normalize(state)
     physical_state_norm = state_norm.physical_state
     phys_soft_const = jax.tree.map(lambda _: jnp.nan, physical_state_norm)
-
+    phys_soft_const = eqx.tree_at(lambda s: s.height, phys_soft_const, jax.nn.relu(physical_state_norm.height - 1.0))
     # define soft constraints for action
     act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
     return phys_soft_const, act_soft_constr
@@ -90,10 +90,10 @@ class FluidTank(CoreEnvironment):
     class StaticParams(eqx.Module):
         """Dataclass containing the static parameters of the environment."""
 
-        base_area: jax.Array
-        orifice_area: jax.Array
-        c_d: jax.Array
-        g: jax.Array
+        base_area: jax.Array = eqx.field(converter=jnp.asarray)
+        orifice_area: jax.Array = eqx.field(converter=jnp.asarray)
+        c_d: jax.Array = eqx.field(converter=jnp.asarray)
+        g: jax.Array = eqx.field(converter=jnp.asarray)
 
     class Action(eqx.Module):
         """Dataclass containing the action, that can be applied to the environment."""
@@ -157,7 +157,7 @@ class FluidTank(CoreEnvironment):
         return new_state
 
     @eqx.filter_jit
-    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
+    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple simulation steps for one batch.
 
         Args:
@@ -170,6 +170,12 @@ class FluidTank(CoreEnvironment):
         Returns:
             next_states: The computed states during the multiple step simulation.
         """
+        if not obs_stepsize:
+            obs_stepsize = self.tau
+
+        if not action_stepsize:
+            action_stepsize = self.tau
+
         static_params = self.env_properties.static_params
         init_physical_state = init_state.physical_state
         args = static_params
@@ -207,13 +213,15 @@ class FluidTank(CoreEnvironment):
         additions = self.Additions(
             solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
         )
-        PRNGKey = jnp.broadcast_to(jnp.asarray(init_state.PRNGKey), (obs_len,) + jnp.asarray(init_state.PRNGKey).shape)
+        prng_key = jnp.broadcast_to(
+            jnp.asarray(init_state.prng_key), (obs_len,) + jnp.asarray(init_state.prng_key).shape
+        )
         ref = self.PhysicalState(
             height=jnp.full(obs_len, init_state.reference.height),
         )
         return self.State(
             physical_state=physical_states,
-            PRNGKey=PRNGKey,
+            prng_key=prng_key,
             additions=additions,
             reference=ref,
         )
@@ -252,7 +260,7 @@ class FluidTank(CoreEnvironment):
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(height=jnp.nan)
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=ref)
         return self.denormalize_state(norm_state)
 
     @eqx.filter_jit
@@ -313,7 +321,7 @@ class FluidTank(CoreEnvironment):
         new_ref = ref
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[1 + i])
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state)
 
     @eqx.filter_jit

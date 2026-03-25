@@ -37,3 +37,6 @@ class EnvironmentRegistry(Enum):
             return batched_envs
         else:
             return cls(**env_kwargs)
+
+    def batch_envs(envs: list):
+        return jax.tree.map(lambda *args: jnp.stack(args), *envs)
