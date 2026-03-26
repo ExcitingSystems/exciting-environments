@@ -2,16 +2,13 @@ import jax
 import jax.numpy as jnp
 
 from typing import Callable
-from dataclasses import fields
 from scipy.io import loadmat
 from pathlib import Path
-import os
 
 import equinox as eqx
 from exciting_environments.utils import MinMaxNormalization
-from copy import deepcopy
 import numpy as np
-from scipy.interpolate import griddata, RegularGridInterpolator
+from scipy.interpolate import griddata
 from enum import Enum
 
 COMMON_GRID_SIZE = (128, 128)
