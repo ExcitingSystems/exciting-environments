@@ -4,7 +4,8 @@ from functools import partial
 from dataclasses import fields
 from typing import Callable, Any, Dict, Type
 import jax.numpy as jnp
-import jax_dataclasses as jdc
+import equinox as eqx
+
 from exciting_environments.utils import MinMaxNormalization
 import jax
 import mujoco
@@ -14,11 +15,10 @@ import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 
 
-def dict_to_jdc_pytree(class_name: str, data: Dict[str, Any]):
-    """Erstellt eine jdc.pytree_dataclass direkt aus einem Dictionary."""
+def dict_to_pytree(class_name: str, data: Dict[str, Any]):
     fields = {key: type(value) for key, value in data.items()}
     namespace = {"__annotations__": fields}
-    DynamicClass = jdc.pytree_dataclass(type(class_name, (object,), namespace))
+    DynamicClass = type(class_name, (eqx.Module,), namespace)
     return DynamicClass(**data), DynamicClass
 
 
@@ -53,14 +53,23 @@ qvel_names_type = {
 qpos_type_angle = {"0": [0, 0, 0, 1, 1, 1, 1], "1": [1, 1, 1, 1], "2": [0], "3": [1]}
 
 
-class MujucoWrapper(ABC):
+class MujucoWrapper(eqx.Module):
+    qpos_dim: int = eqx.field(static=True)
+    qvel_dim: int = eqx.field(static=True)
+    action_dim: int = eqx.field(static=True)
+    sensor_dim: int = eqx.field(static=True)
+    env_properties: eqx.Module
+    mjx_model: eqx.Module
+    tau: jax.Array
+    action_description: list = eqx.field(static=True)
+    obs_description: list = eqx.field(static=True)
+    _batch_tracer: jax.Array
 
     def __init__(
         self,
         mujoco_model,
         physical_normalizations=None,
         action_normalization=None,
-        batch_size: int = 8,
         tau: float = None,
     ):
         """
@@ -73,7 +82,6 @@ class MujucoWrapper(ABC):
                 joint limits if given.
             action_normalization: A dataclass specifying min/max normalization for each
                 action. If not provided, the models actuator limits are used if given.
-            batch_size (int): Number of parallel simulations to run. Default is 8.
             tau (float): Simulation step size. If not provided, defaults to the MuJoCo
                 model's `opt.timestep`. If provided, it must match `opt.timestep`.
         """
@@ -84,13 +92,11 @@ class MujucoWrapper(ABC):
             assert tau == mujoco_model.opt.timestep
             self.tau = tau
 
-        self.batch_size = batch_size
         self.qpos_dim = mujoco_model.nq
         self.qvel_dim = mujoco_model.nv
         self.action_dim = mujoco_model.nu
         self.sensor_dim = mujoco_model.nsensordata
-        self.in_axes_env_properties = None
-        self.mujoco_model = mujoco_model
+        self._batch_tracer = jnp.array(0.0)
 
         action_names = [
             mujoco.mj_id2name(mujoco_model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range(mujoco_model.nu)
@@ -157,12 +163,12 @@ class MujucoWrapper(ABC):
             )
 
             q_vel.update({name: MinMaxNormalization(min=jnp.nan, max=jnp.nan) for i, name in enumerate(qvel_names)})
-        q_pos_jdc, _ = dict_to_jdc_pytree("qpos", q_pos)
-        q_vel_jdc, _ = dict_to_jdc_pytree("qvel", q_vel)
+        q_pos_pytree, _ = dict_to_pytree("qpos", q_pos)
+        q_vel_pytree, _ = dict_to_pytree("qvel", q_vel)
 
         self.qpos_is_angle = is_angle
 
-        return self.PhysicalNormalizations(qpos=q_pos_jdc, qvel=q_vel_jdc)
+        return self.PhysicalNormalizations(qpos=q_pos_pytree, qvel=q_vel_pytree)
 
     def generate_action_normalization_dataclasses(self, model):
         action_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range(model.nu)]
@@ -177,25 +183,24 @@ class MujucoWrapper(ABC):
             )
             for i, name in enumerate(action_names)
         }
-        action_normalization, _ = dict_to_jdc_pytree("Action", action_normalization_data)
+        action_normalization, _ = dict_to_pytree("Action", action_normalization_data)
         return action_normalization
 
-    @jdc.pytree_dataclass
-    class PhysicalNormalizations:
-        qpos: jdc.pytree_dataclass
-        qvel: jdc.pytree_dataclass
+    class PhysicalNormalizations(eqx.Module):
+        qpos: eqx.Module
+        qvel: eqx.Module
 
-    @jdc.pytree_dataclass
-    class EnvProperties:
+    class EnvProperties(eqx.Module):
         """The properties of the environment that stay constant during simulation."""
 
-        physical_normalizations: jdc.pytree_dataclass
-        action_normalizations: jdc.pytree_dataclass
-        static_params: jdc.pytree_dataclass
+        physical_normalizations: eqx.Module
+        action_normalizations: eqx.Module
+        static_params: eqx.Module
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+    @eqx.filter_jit
+    def init_state(self, rng: chex.PRNGKey = None):
         # random qpos, qvel, act, external forces ...
+        env_properties = self.env_properties
         mjx_data = mjx.make_data(self.mjx_model)
         if rng is not None:
             key, subkey = jax.random.split(rng)
@@ -207,9 +212,10 @@ class MujucoWrapper(ABC):
             mjx_data = mjx_data.replace(qvel=qvel)
         return mjx_data
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_observation(self, state):
         # how to normalize has to be determined
+        env_properties = self.env_properties
         qpos = jnp.where(jnp.array(self.qpos_is_angle), self.transform_angle(state.qpos), state.qpos)
         qpos_norm = self.normalize_components(qpos, env_properties.physical_normalizations.qpos)
         qvel_norm = self.normalize_components(state.qvel, env_properties.physical_normalizations.qvel)
@@ -219,7 +225,7 @@ class MujucoWrapper(ABC):
     def transform_angle(self, theta):
         return (theta + jnp.pi) % (2 * jnp.pi) - jnp.pi
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def normalize_components(self, array, normalizations):
         for i, field in enumerate(fields(normalizations)):
             name = field.name
@@ -227,7 +233,7 @@ class MujucoWrapper(ABC):
             array = array.at[i].set(norm_value)
         return array
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def denormalize_components(self, array, normalizations):
         for i, field in enumerate(fields(normalizations)):
             name = field.name
@@ -235,8 +241,8 @@ class MujucoWrapper(ABC):
             array = array.at[i].set(denorm_values)
         return array
 
-    @partial(jax.jit, static_argnums=0)
-    def denormalize_action(self, action_norm, env_properties):
+    @eqx.filter_jit
+    def denormalize_action(self, action_norm):
         """
         Denormalizes a given normalized action.
 
@@ -247,6 +253,7 @@ class MujucoWrapper(ABC):
         Returns:
             action: The denormalized action.
         """
+        env_properties = self.env_properties
         normalizations = env_properties.action_normalizations
         action_denorm = jnp.zeros_like(action_norm)
         for i, field in enumerate(fields(normalizations)):
@@ -254,9 +261,7 @@ class MujucoWrapper(ABC):
             action_denorm = action_denorm.at[i].set(norms.denormalize(action_norm[i]))
         return action_denorm
 
-    def reset(
-        self, env_properties, rng: chex.PRNGKey = None, initial_qpos_qvel: jdc.pytree_dataclass = None, vmap_helper=None
-    ):
+    def reset(self, rng: chex.PRNGKey = None, initial_qpos_qvel: eqx.Module = None, vmap_helper=None):
         """
         Resets environment to default, random or passed initial state.
 
@@ -271,35 +276,26 @@ class MujucoWrapper(ABC):
             state: The initial state.
         """
         if initial_qpos_qvel is not None:
-            assert initial_qpos_qvel.shape[0] == self.qpos_dim + self.qvel_dim
             data = mjx.make_data(self.mjx_model)
             data = data.replace(qpos=initial_qpos_qvel[0 : self.qpos_dim])
             data = data.replace(qvel=initial_qpos_qvel[self.qpos_dim :])
         else:
-            data = self.init_state(env_properties, rng)
-        obs = self.generate_observation(data, env_properties)
+            data = self.init_state(rng)
+        obs = self.generate_observation(data)
         return obs, data
 
-    @partial(jax.jit, static_argnums=0)
-    def step(self, mjx_data, action_norm, env_properties):
-        # action is not normalized jet -> need to define normalizations yourself... none given in mujoco
-
-        assert action_norm.shape == (self.action_dim,), (
-            f"The action needs to be of shape (action_dim,) which is "
-            + f"{(self.action_dim,)}, but {action_norm.shape} is given"
-        )
-
-        # denormalize action
-        action = self.denormalize_action(action_norm, env_properties)
+    @eqx.filter_jit
+    def step(self, mjx_data, action_norm):
+        action = self.denormalize_action(action_norm)
 
         mjx_data_up = mjx_data.replace(ctrl=action)
         data = mjx.step(self.mjx_model, mjx_data_up)
 
-        obs = self.generate_observation(data, env_properties)  # no distinction between obs and state yet
+        obs = self.generate_observation(data)
 
         return obs, data
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def vmap_step(self, mjx_data, action):
         """Computes one JAX-JIT compiled simulation step for multiple (batch_size) batches.
 
@@ -312,19 +308,11 @@ class MujucoWrapper(ABC):
             observation: The gathered observations.
             state: New state for the next step.
         """
-        assert action.shape == (
-            self.batch_size,
-            self.action_dim,
-        ), (
-            "The action needs to be of shape (batch_size, action_dim) which is "
-            + f"{(self.batch_size, self.action_dim)}, but {action.shape} is given"
-        )
-        obs, mjx_data = jax.vmap(self.step, in_axes=(0, 0, self.in_axes_env_properties))(
-            mjx_data, action, self.env_properties
-        )
+        self._assert_batched()
+        obs, mjx_data = jax.vmap(lambda e, s, a: e.step(s, a))(self, mjx_data, action)
         return obs, mjx_data
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def vmap_init_state(self, rng: chex.PRNGKey = None):
         """
         Generates an initial state for all batches, either using default values or random initialization.
@@ -335,12 +323,11 @@ class MujucoWrapper(ABC):
         Returns:
             state: The initial state for all batches.
         """
-        return jax.vmap(self.init_state, in_axes=(self.in_axes_env_properties, 0, 0))(
-            self.env_properties, rng, jnp.ones(self.batch_size)
-        )
+        self._assert_batched()
+        return jax.vmap(lambda e, k: e.init_state(k))(self, rng)
 
-    @partial(jax.jit, static_argnums=0)
-    def vmap_reset(self, rng: chex.PRNGKey = None, initial_qpos_qvel: jdc.pytree_dataclass = None):
+    @eqx.filter_jit
+    def vmap_reset(self, rng: chex.PRNGKey = None, initial_qpos_qvel: jax.Array = None):
         """
         Resets environment (all batches) to default, random or passed initial state.
 
@@ -352,14 +339,12 @@ class MujucoWrapper(ABC):
             obs: Observation of initial state for all batches.
             state: The initial state for all batches.
         """
-        obs, state = jax.vmap(
-            self.reset,
-            in_axes=(self.in_axes_env_properties, 0, 0, 0),
-        )(self.env_properties, rng, initial_qpos_qvel, jnp.ones(self.batch_size))
+        self._assert_batched()
+        obs, state = jax.vmap(lambda e, k, s: e.reset(k, s))(self, rng, initial_qpos_qvel)
 
         return obs, state
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def vmap_generate_state_from_observation(self, obs, key=None):
         """
         Generates state for each batch from a given observation.
@@ -371,7 +356,20 @@ class MujucoWrapper(ABC):
         Returns:
             state: Computed state for each batch.
         """
-        state = jax.vmap(self.generate_state_from_observation, in_axes=(0, self.in_axes_env_properties, 0))(
-            obs, self.env_properties, key
-        )
+        self._assert_batched()
+        state = jax.vmap(lambda e, o, k: e.generate_state_from_observation(o, k))(self, obs, key)
         return state
+
+    def _assert_batched(self):
+        """Checks if the environment is batched by looking at the dummy leaf."""
+        if jnp.ndim(self._batch_tracer) == 0:
+            raise RuntimeError(
+                "Calling a vmap method on a single-environment instance. Please use the 'make' function with a batch_size to create a batched environment or create it manually."
+            )
+
+    @property
+    def batch_size(self):
+        """Returns batch_size if environment is batched, else None."""
+        if jnp.ndim(self._batch_tracer) > 0:
+            return self._batch_tracer.shape[0]
+        return None

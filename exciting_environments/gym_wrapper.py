@@ -1,10 +1,11 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-import jax_dataclasses as jdc
+
 from jax.tree_util import tree_flatten, tree_unflatten, tree_structure
 from functools import partial
 import chex
+import equinox as eqx
 from abc import ABC
 from exciting_environments import spaces, EnvironmentRegistry
 
@@ -27,15 +28,15 @@ class GymWrapper(ABC):
 
         if control_state is None:
             print(f"No chosen control state in the GymWrapper. Control state is set to {self.env.control_state}.")
-            self.control_state = self.env.control_state
+            control_state = self.env.control_state
         else:
-            assert type(control_state) == list, f"Control state has to be a list."
-            for i in control_state:
-                assert i in list(
-                    self.env.PhysicalState.__match_args__
-                ), f"Given control state {i} is no valid physical state {list(self.env.PhysicalState.__match_args__)}."
-            self.control_state = control_state
-            self.env.control_state = control_state
+            if control_state != self.env.control_state:
+                raise ValueError(
+                    f"Inconsistent control_state definition: Wrapper has got '{control_state}', "
+                    f"but underlying environment has got '{self.env.control_state}'."
+                )
+
+        self.control_state = control_state
 
         self.ref_gen = False
 
@@ -52,16 +53,16 @@ class GymWrapper(ABC):
         self.state_tree_struct = tree_structure(init_state)
 
         if not generate_reward:
-            self.generate_reward = self.env.generate_reward
+            self.generate_reward = jax.vmap(lambda e, s, a: e.generate_reward(s, a))
         if not generate_truncated:
-            self.generate_truncated = self.env.generate_truncated
+            self.generate_truncated = jax.vmap(lambda e, s: e.generate_truncated(s))
         if not generate_terminated:
-            self.generate_terminated = self.env.generate_terminated
+            self.generate_terminated = jax.vmap(lambda e, s, r: e.generate_terminated(s, r))
 
     @classmethod
-    def from_env(cls, env_type: EnvironmentRegistry, **env_kwargs):
-        """Creates GymWrapper with environment from EnvironmentRegistry."""
-        env = env_type.make(**env_kwargs)
+    def from_name(cls, env_type: EnvironmentRegistry, batch_size: int = 1, **env_kwargs):
+        """Creates GymWrapper with environment based on passed env_id."""
+        env = env_type.make(batch_size=batch_size, **env_kwargs)
         return cls(env)
 
     def step(self, action):
@@ -85,7 +86,7 @@ class GymWrapper(ABC):
 
         return obs, reward, terminated, truncated
 
-    @partial(jax.jit, static_argnums=0)
+    @eqx.filter_jit
     def gym_step(self, action, state, reference_hold_steps):
         """Jax Jit compiled simulation step using the step function provided by the environment.
 
@@ -103,35 +104,24 @@ class GymWrapper(ABC):
             state: New state for the next step.
         """
 
-        # transform array to dataclass defined in environment
         state = tree_unflatten(self.state_tree_struct, state)
 
         obs, state = self.env.vmap_step(state, action)
 
         # update reference
         if len(self.control_state) and self.ref_gen:
-            state, reference_hold_steps = jax.vmap(self.update_ref, in_axes=(0, self.env.in_axes_env_properties, 0))(
-                state, self.env.env_properties, reference_hold_steps
-            )
+            state, reference_hold_steps = jax.vmap(self.update_ref)(state, self.env, reference_hold_steps)
 
-        reward = jax.vmap(self.generate_reward, in_axes=(0, 0, self.env.in_axes_env_properties))(
-            state, action, self.env.env_properties
-        )
+        reward = self.generate_reward(self.env, state, action)
 
-        terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0, self.env.in_axes_env_properties))(
-            state, reward, self.env.env_properties
-        )
-        truncated = jax.vmap(self.generate_truncated, in_axes=(0, self.env.in_axes_env_properties))(
-            state, self.env.env_properties
-        )
+        terminated = self.generate_terminated(self.env, state, reward)
+        truncated = self.generate_truncated(self.env, state)
         # transform dataclass to array
         state = tree_flatten(state)[0]
 
         return obs, reward, terminated, truncated, state, reference_hold_steps
 
-    def reset(
-        self, rng_env: chex.PRNGKey = None, rng_ref: chex.PRNGKey = None, initial_state: jdc.pytree_dataclass = None
-    ):
+    def reset(self, rng_env: chex.PRNGKey = None, rng_ref: chex.PRNGKey = None, initial_state: eqx.Module = None):
         """Resets environment to random or passed initial state and can reset reference generator."""
 
         if initial_state is not None:
@@ -150,45 +140,46 @@ class GymWrapper(ABC):
                 key = rng_ref
                 assert rng_ref.shape[0] == self.env.batch_size
 
-            with jdc.copy_and_mutate(state, validate=False) as state:
-                state.PRNGKey = key
+            state = eqx.tree_at(lambda s: s.prng_key, state, key)
 
             self.ref_gen = True
-            state, self.reference_hold_steps = jax.vmap(
-                self.generate_new_ref, in_axes=(0, self.env.in_axes_env_properties, 0)
-            )(state, self.env.env_properties, jnp.zeros(self.env.batch_size))
+            state, self.reference_hold_steps = jax.vmap(self.generate_new_ref)(
+                state, self.env, jnp.zeros(self.env.batch_size)
+            )
         else:
             self.ref_gen = False
             print("Since no PRNGKey for reference was provided, reference generation is deactivated.")
 
         self.state = tree_flatten(state)[0]
-        obs = jax.vmap(self.env.generate_observation, in_axes=(0, self.env.in_axes_env_properties))(
-            state, self.env.env_properties
-        )
+        obs = jax.vmap(lambda e, s: e.generate_observation(s))(self.env, state)
+
         return obs, {}
 
-    def update_ref(self, state, env_properties, hold_steps):
-        state, hold_steps = jax.lax.cond(
-            hold_steps[0] == 0, self.generate_new_ref, lambda a, b, c: (a, c), state, env_properties, hold_steps
-        )
-        hold_steps += -1
+    def update_ref(self, state, env, hold_steps):
+        def true_fun(s, e, h):
+            new_state, new_hold = self.generate_new_ref(s, e, h)
+            new_hold = new_hold.astype(h.dtype)
+            return new_state, new_hold
+
+        def false_fun(s, e, h):
+            return s, h
+
+        state, hold_steps = jax.lax.cond(hold_steps[0] == 0, true_fun, false_fun, state, env, hold_steps)
+
+        hold_steps = hold_steps - 1
         return state, hold_steps
 
-    def generate_new_ref(self, state, env_properties, hold_steps):
-        with jdc.copy_and_mutate(state, validate=False) as new_state:
-            init = self.env.init_state(env_properties, state.PRNGKey)
-            for name in self.control_state:
-                setattr(new_state.reference, name, getattr(init.physical_state, name))
+    def generate_new_ref(self, state, env, hold_steps):  # TODO
+        init = env.init_state(state.prng_key)
+        new_reference = state.reference
+        for name in self.control_state:
+            new_reference = eqx.tree_at(lambda r: getattr(r, name), new_reference, getattr(init.physical_state, name))
 
-            key, subkey = jax.random.split(init.PRNGKey)
-
-            hold_steps = jax.random.randint(
-                subkey,
-                minval=self.ref_params["hold_steps_min"],
-                maxval=self.ref_params["hold_steps_max"],
-                shape=(1,),
-            )
-            new_state.PRNGKey = key
+        key, subkey = jax.random.split(init.prng_key)
+        hold_steps = jax.random.randint(
+            subkey, minval=self.ref_params["hold_steps_min"], maxval=self.ref_params["hold_steps_max"], shape=(1,)
+        )
+        new_state = eqx.tree_at(lambda s: (s.reference, s.prng_key), state, (new_reference, key))
         return new_state, hold_steps
 
     def render(self, *_, **__):

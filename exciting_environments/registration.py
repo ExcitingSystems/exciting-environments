@@ -6,6 +6,8 @@ from exciting_environments import (
     PMSM,
     Acrobot,
 )
+import jax
+import jax.numpy as jnp
 from enum import Enum
 
 
@@ -17,7 +19,7 @@ class EnvironmentRegistry(Enum):
     PMSM = "PMSM-v0"
     ACROBOT = "Acrobot-v0"
 
-    def make(self, **env_kwargs):
+    def make(self, batch_size: int = None, **env_kwargs):
         env_map = {
             EnvironmentRegistry.CART_POLE: CartPole,
             EnvironmentRegistry.MASS_SPRING_DAMPER: MassSpringDamper,
@@ -29,4 +31,12 @@ class EnvironmentRegistry(Enum):
         cls = env_map.get(self)
         if cls is None:
             raise ValueError(f"Unknown environment: {self}")
-        return cls(**env_kwargs)
+        if batch_size is not None:
+            envs_list = [cls(**env_kwargs) for _ in range(batch_size)]
+            batched_envs = jax.tree.map(lambda *args: jnp.stack(args), *envs_list)
+            return batched_envs
+        else:
+            return cls(**env_kwargs)
+
+    def batch_envs(envs: list):
+        return jax.tree.map(lambda *args: jnp.stack(args), *envs)

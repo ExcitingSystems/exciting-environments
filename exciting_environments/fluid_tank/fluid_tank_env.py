@@ -5,16 +5,29 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_structure, tree_map
-import jax_dataclasses as jdc
+
 import chex
 import diffrax
+import equinox as eqx
 from dataclasses import fields
 
 from exciting_environments import CoreEnvironment
 from exciting_environments.utils import MinMaxNormalization
 
 
+def fluidtank_soft_constraints(instance, state, action_norm):
+    state_norm = instance.normalize(state)
+    physical_state_norm = state_norm.physical_state
+    phys_soft_const = jax.tree.map(lambda _: jnp.nan, physical_state_norm)
+    phys_soft_const = eqx.tree_at(lambda s: s.height, phys_soft_const, jax.nn.relu(physical_state_norm.height - 1.0))
+    # define soft constraints for action
+    act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+    return phys_soft_const, act_soft_constr
+
+
 class FluidTank(CoreEnvironment):
+    control_state: list = eqx.field(static=True)
+    soft_constraints_logic: Callable = eqx.field(static=True)
     """Fluid tank based on torricelli's principle.
 
     Based on ex. 7.3.2 on p. 355 of "System Dynamics" from Palm, William III.
@@ -22,7 +35,6 @@ class FluidTank(CoreEnvironment):
 
     def __init__(
         self,
-        batch_size: float = 1,
         physical_normalizations: dict = None,
         action_normalizations: dict = None,
         soft_constraints: Callable = None,
@@ -32,28 +44,26 @@ class FluidTank(CoreEnvironment):
         tau: float = 1e-3,
     ):
         if not physical_normalizations:
-            physical_normalizations = {"height": MinMaxNormalization(min=0, max=3)}
+            physical_normalizations = {"height": MinMaxNormalization(min=jnp.array(0), max=jnp.array(3))}
 
         if not action_normalizations:
-            action_normalizations = {"inflow": MinMaxNormalization(min=0, max=0.2)}
-
-        if not soft_constraints:
-            soft_constraints = self.default_soft_constraints
+            action_normalizations = {"inflow": MinMaxNormalization(min=jnp.array(0), max=jnp.array(0.2))}
 
         if not static_params:
             # c_d = 0.6 typical value for water [Palm2010]
             static_params = {
-                "base_area": jnp.pi,
-                "orifice_area": jnp.pi * 0.1**2,
-                "c_d": 0.6,
-                "g": 9.81,
+                "base_area": jnp.array(jnp.pi),
+                "orifice_area": jnp.array(jnp.pi * 0.1**2),
+                "c_d": jnp.array(0.6),
+                "g": jnp.array(9.81),
             }
 
         if not control_state:
             control_state = []
 
+        logic = soft_constraints if soft_constraints else fluidtank_soft_constraints
+        self.soft_constraints_logic = logic
         self.control_state = control_state
-        self.soft_constraints = soft_constraints
 
         physical_normalizations = self.PhysicalState(**physical_normalizations)
         action_normalizations = self.Action(**action_normalizations)
@@ -64,32 +74,28 @@ class FluidTank(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(batch_size, env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(env_properties=env_properties, tau=tau, solver=solver)
 
-    @jdc.pytree_dataclass
-    class PhysicalState:
+    class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
 
         height: jax.Array
 
-    @jdc.pytree_dataclass
-    class Additions:
+    class Additions(eqx.Module):
         """Dataclass containing additional information for simulation."""
 
         solver_state: tuple
         active_solver_state: bool
 
-    @jdc.pytree_dataclass
-    class StaticParams:
+    class StaticParams(eqx.Module):
         """Dataclass containing the static parameters of the environment."""
 
-        base_area: jax.Array
-        orifice_area: jax.Array
-        c_d: jax.Array
-        g: jax.Array
+        base_area: jax.Array = eqx.field(converter=jnp.asarray)
+        orifice_area: jax.Array = eqx.field(converter=jnp.asarray)
+        c_d: jax.Array = eqx.field(converter=jnp.asarray)
+        g: jax.Array = eqx.field(converter=jnp.asarray)
 
-    @jdc.pytree_dataclass
-    class Action:
+    class Action(eqx.Module):
         """Dataclass containing the action, that can be applied to the environment."""
 
         inflow: jax.Array
@@ -105,18 +111,18 @@ class FluidTank(CoreEnvironment):
         )
         return (dh_dt,)
 
-    @partial(jax.jit, static_argnums=0)
-    def _ode_solver_step(self, state, action, static_params):
+    @eqx.filter_jit
+    def _ode_solver_step(self, state, action):
         """Computes the next state by simulating one step.
 
         Args:
             state: The state from which to calculate state for the next step.
             action: The action to apply to the environment.
-            static_params: Parameter of the environment, that do not change over time.
 
         Returns:
             next_state: The computed next state after the one step simulation.
         """
+        static_params = self.env_properties.static_params
         physical_state = state.physical_state
 
         args = static_params
@@ -145,29 +151,32 @@ class FluidTank(CoreEnvironment):
         # necessary because of ODE solver approximation
         h_k1 = jnp.clip(h_k1, 0)
 
-        with jdc.copy_and_mutate(state, validate=True) as new_state:
-            new_state.physical_state = self.PhysicalState(height=h_k1)
-
-        new_state = jdc.replace(
-            new_state, additions=self.Additions(solver_state=solver_state_k1, active_solver_state=True)
-        )
+        new_physical_state = self.PhysicalState(height=h_k1)
+        new_additions = self.Additions(solver_state=solver_state_k1, active_solver_state=True)
+        new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
-    @partial(jax.jit, static_argnums=[0, 4, 5])
-    def _ode_solver_simulate_ahead(self, init_state, actions, static_params, obs_stepsize, action_stepsize):
+    @eqx.filter_jit
+    def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple simulation steps for one batch.
 
         Args:
             init_state: The initial state of the simulation.
             actions: A set of actions to be applied to the environment, the value changes every.
             action_stepsize (shape=(n_action_steps, action_dim)).
-            static_params: The constant properties of the simulation.
             obs_stepsize: The sampling time for the observations.
             action_stepsize: The time between changes in the input/action.
 
         Returns:
             next_states: The computed states during the multiple step simulation.
         """
+        if not obs_stepsize:
+            obs_stepsize = self.tau
+
+        if not action_stepsize:
+            action_stepsize = self.tau
+
+        static_params = self.env_properties.static_params
         init_physical_state = init_state.physical_state
         args = static_params
 
@@ -204,25 +213,28 @@ class FluidTank(CoreEnvironment):
         additions = self.Additions(
             solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
         )
-        PRNGKey = jnp.full(obs_len, init_state.PRNGKey)
+        prng_key = jnp.broadcast_to(
+            jnp.asarray(init_state.prng_key), (obs_len,) + jnp.asarray(init_state.prng_key).shape
+        )
         ref = self.PhysicalState(
             height=jnp.full(obs_len, init_state.reference.height),
         )
         return self.State(
             physical_state=physical_states,
-            PRNGKey=PRNGKey,
+            prng_key=prng_key,
             additions=additions,
             reference=ref,
         )
 
-    @partial(jax.jit, static_argnums=0)
-    def init_state(self, env_properties, rng: chex.PRNGKey = None, vmap_helper=None):
+    @eqx.filter_jit
+    def init_state(self, rng: chex.PRNGKey = None):
         """Returns default or random initial state for one batch."""
+        env_properties = self.env_properties
         if rng is None:
             phys = self.PhysicalState(
-                height=0.0,
+                height=jnp.array(0.0),
             )
-            subkey = jnp.nan
+            subkey = jnp.array(jnp.nan)
         else:
             state_norm = jax.random.uniform(rng, minval=0, maxval=1, shape=(1,))
             phys = self.PhysicalState(
@@ -242,26 +254,28 @@ class FluidTank(CoreEnvironment):
         y0 = tuple([phys.height])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
         ref = self.PhysicalState(height=jnp.nan)
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=ref)
-        return self.denormalize_state(norm_state, env_properties)
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=ref)
+        return self.denormalize_state(norm_state)
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_reward(self, state, action, env_properties):
+    @eqx.filter_jit
+    def generate_reward(self, state, action):
         """Returns reward for one batch."""
         reward = 0
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         for name in self.control_state:
             reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
         return jnp.array([reward])
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_observation(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_observation(self, state):
         """Returns observation for one batch."""
-        norm_state = self.normalize_state(state, env_properties)
+        norm_state = self.normalize_state(state)
         norm_state_phys = norm_state.physical_state
         obs = (norm_state_phys.height)[None]
         for name in self.control_state:
@@ -273,9 +287,10 @@ class FluidTank(CoreEnvironment):
             )
         return obs
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_state_from_observation(self, obs, env_properties, key=None):
+    @eqx.filter_jit
+    def generate_state_from_observation(self, obs, key=None):
         """Generates state from observation for one batch."""
+        env_properties = self.env_properties
         phys = self.PhysicalState(
             height=obs[0],
         )
@@ -296,37 +311,26 @@ class FluidTank(CoreEnvironment):
         y0 = tuple([phys.height])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
-        dummy_solver_state = tree_map(lambda x: x * jnp.nan, solver_state)
+        dummy_solver_state = jax.tree.map(
+            lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
+        )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
 
         ref = self.PhysicalState(height=jnp.nan)
-        with jdc.copy_and_mutate(ref, validate=False) as new_ref:
-            for name, pos in zip(self.control_state, range(len(self.control_state))):
-                value = obs[1 + pos]
-                setattr(new_ref, name, value)
-        norm_state = self.State(physical_state=phys, PRNGKey=subkey, additions=additions, reference=new_ref)
-        return self.denormalize_state(norm_state, env_properties)
+        new_ref = ref
+        for i, name in enumerate(self.control_state):
+            new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[1 + i])
+        norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=new_ref)
+        return self.denormalize_state(norm_state)
 
-    def default_soft_constraints(self, state, action_norm, env_properties):
-        state_norm = self.normalize_state(state, env_properties)
-        physical_state_norm = state_norm.physical_state
-        with jdc.copy_and_mutate(physical_state_norm, validate=False) as phys_soft_const:
-            for field in fields(phys_soft_const):
-                name = field.name
-                setattr(phys_soft_const, name, jnp.nan)
-
-        # define soft constraints for action
-        act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
-        return phys_soft_const, act_soft_constr
-
-    @partial(jax.jit, static_argnums=0)
-    def generate_truncated(self, state, env_properties):
+    @eqx.filter_jit
+    def generate_truncated(self, state):
         """Returns truncated information for one batch."""
         return jnp.array([0])
 
-    @partial(jax.jit, static_argnums=0)
-    def generate_terminated(self, state, reward, env_properties):
+    @eqx.filter_jit
+    def generate_terminated(self, state, reward):
         """Returns terminated information for one batch."""
         return jnp.array([False])
 
