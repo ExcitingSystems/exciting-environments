@@ -113,18 +113,37 @@ def clip_in_abc_coordinates(u_dq, u_dc, omega_el, eps, tau):
     return u_dq
 
 
+# def lut_interpolate(grid_x, grid_y, values, i_d, i_q):
+#     ix = jnp.searchsorted(grid_x, i_d) - 1
+#     iy = jnp.searchsorted(grid_y, i_q) - 1
+#     ix = jnp.clip(ix, 0, grid_x.shape[0] - 2)
+#     iy = jnp.clip(iy, 0, grid_y.shape[0] - 2)
+#     tx = (i_d - grid_x[ix]) / (grid_x[ix + 1] - grid_x[ix])
+#     ty = (i_q - grid_y[iy]) / (grid_y[iy + 1] - grid_y[iy])
+#     return (
+#         values[ix, iy] * (1 - tx) * (1 - ty)
+#         + values[ix + 1, iy] * tx * (1 - ty)
+#         + values[ix, iy + 1] * (1 - tx) * ty
+#         + values[ix + 1, iy + 1] * tx * ty
+#     )
+
 def lut_interpolate(grid_x, grid_y, values, i_d, i_q):
-    ix = jnp.searchsorted(grid_x, i_d) - 1
-    iy = jnp.searchsorted(grid_y, i_q) - 1
-    ix = jnp.clip(ix, 0, grid_x.shape[0] - 2)
-    iy = jnp.clip(iy, 0, grid_y.shape[0] - 2)
-    tx = (i_d - grid_x[ix]) / (grid_x[ix + 1] - grid_x[ix])
-    ty = (i_q - grid_y[iy]) / (grid_y[iy + 1] - grid_y[iy])
+    nx, ny = grid_x.shape[0], grid_y.shape[0]
+
+    fx = (i_d - grid_x[0]) / ((grid_x[-1] - grid_x[0]) / (nx - 1))
+    fy = (i_q - grid_y[0]) / ((grid_y[-1] - grid_y[0]) / (ny - 1))
+
+    ix = jnp.clip(jnp.floor(fx).astype(int), 0, nx - 2)
+    iy = jnp.clip(jnp.floor(fy).astype(int), 0, ny - 2)
+
+    tx = fx - ix
+    ty = fy - iy
+
     return (
-        values[ix, iy] * (1 - tx) * (1 - ty)
-        + values[ix + 1, iy] * tx * (1 - ty)
-        + values[ix, iy + 1] * (1 - tx) * ty
-        + values[ix + 1, iy + 1] * tx * ty
+          values[ix,   iy  ] * (1 - tx) * (1 - ty)
+        + values[ix+1, iy  ] * tx        * (1 - ty)
+        + values[ix,   iy+1] * (1 - tx)  * ty
+        + values[ix+1, iy+1] * tx         * ty
     )
 
 
