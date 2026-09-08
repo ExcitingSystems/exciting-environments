@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "exciting_environments"
@@ -19,22 +19,24 @@ classifiers = [
 ]
 
 dependencies = [
-    "matplotlib==3.10.8",
-    "jax==0.9.0",
-    "chex==0.1.91",
-    "pytest==7.0.0",
-    "pytest-cov==5.0.0",
-    "diffrax==0.7.0",
-    "mujoco==3.4.0",
-    "mujoco-mjx==3.4.0",
+    "matplotlib>=3.10.8",
+    "jax>=0.9.0",
+    "chex>=0.1.91",
+    "diffrax>=0.7.0",
+    "mujoco>=3.12.0",
+    "mujoco-mjx>=3.12.0",
 ]
 
 [project.optional-dependencies]
 cuda12 = [
-    "jax[cuda12]==0.9.0"
+    "jax[cuda12]>=0.9.0"
 ]
 cuda13 = [
-    "jax[cuda13]==0.9.0"
+    "jax[cuda13]>=0.9.0"
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=5.0.0",
 ]
 
 [tool.pytest.ini_options]
@@ -42,19 +44,12 @@ pythonpath = [
     "."
 ]
 
-
 [project.urls]
 "Homepage" = "https://excitingsystems.github.io/exciting-environments/"
 
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.packages.find]
-where = ["."]  # list of folders that contain the packages (["."] by default)
-include = ["exciting_environments*"]  # package names should match these glob patterns (["*"] by default)
-
-[tool.setuptools.package-data]
-exciting_environments = ["exciting_environments/pmsm/*.mat"]
+[tool.hatch.build.targets.wheel]
+packages = ["exciting_environments"]
+artifacts = ["*.mat"]
 
 [tool.black]
 line-length = 120

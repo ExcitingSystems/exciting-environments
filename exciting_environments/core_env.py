@@ -316,7 +316,7 @@ class CoreEnvironment(eqx.Module):
         """
         env_properties = self.env_properties
         normalizations = env_properties.action_normalizations
-        norm_objects = [getattr(normalizations, name) for name in normalizations.__annotations__]
+        norm_objects = [getattr(normalizations, name) for name in type(normalizations).__annotations__]
 
         denorm_values = jnp.array([norm.denormalize(val) for norm, val in zip(norm_objects, action_norm)])
 
