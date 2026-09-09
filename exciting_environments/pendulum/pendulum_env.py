@@ -71,7 +71,7 @@ class Pendulum(CoreEnvironment):
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
-        tau: float = 1e-4,
+        tau: float = 2e-2,
     ):
         """
         Args:
