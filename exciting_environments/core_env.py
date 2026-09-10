@@ -349,6 +349,10 @@ class CoreEnvironment(eqx.Module):
 
         return obs, state
 
+    @property
+    def obs_dim(self):
+        return self.reset()[0].shape[0]
+
     @eqx.filter_jit
     def step(self, state, action_norm):
         """Computes one JAX-JIT compiled simulation step for one batch.
