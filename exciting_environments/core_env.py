@@ -343,11 +343,17 @@ class CoreEnvironment(eqx.Module):
             state = self.init_state(rng, deterministic_state)
         obs = self.generate_observation(state)
 
+        if self.process_noise_variance > 0.0:
+            assert not jnp.isnan(
+                state.prng_key
+            ).any(), "No valid prng_key is available in the state to support the specified process noise."
+
         return obs, state
 
     @property
     def obs_dim(self):
-        return self.reset()[0].shape[0]
+        state = self.init_state(None, deterministic_state=True)
+        return self.generate_observation(state).shape[0]
 
     def noise_state(self, state):
 
