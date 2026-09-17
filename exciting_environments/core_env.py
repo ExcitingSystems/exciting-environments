@@ -358,7 +358,7 @@ class CoreEnvironment(eqx.Module):
     def noise_state(self, state):
 
         key, subkey = jax.random.split(state.prng_key)
-        noise = jax.random.normal(subkey, shape=self.physical_state_dim) * self.process_noise_variance
+        noise = jax.random.normal(subkey, shape=self.physical_state_dim) * jnp.sqrt(self.process_noise_variance)
         noise = self.PhysicalState(*noise)
 
         noisy_physical_state = jax.tree.map(lambda x, y: x + y, state.physical_state, noise)
