@@ -659,7 +659,7 @@ class PMSM(CoreEnvironment):
         return actions
 
     def sim_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
-        """Computes multiple JAX-JIT compiled simulation steps for one batch.
+        """Computes multiple  simulation steps for one batch.
 
         The length of the set of inputs together with the action_stepsize determine the
         overall length of the simulation -> overall_time = actions.shape[0] * action_stepsize

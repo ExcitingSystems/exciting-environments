@@ -353,7 +353,7 @@ class CoreEnvironment(eqx.Module):
         return state
 
     def step(self, state, action_norm):
-        """Computes one JAX-JIT compiled simulation step for one batch.
+        """Computes one  simulation step for one batch.
 
         Args:
             state: The current state of the simulation from which to calculate the next state.
@@ -396,7 +396,7 @@ class CoreEnvironment(eqx.Module):
         obs_stepsize=None,
         action_stepsize=None,
     ):
-        """Computes multiple JAX-JIT compiled simulation steps for one batch.
+        """Computes multiple  simulation steps for one batch.
 
         The length of the set of inputs together with the action_stepsize determine the
         overall length of the simulation -> overall_time = actions.shape[0] * action_stepsize
@@ -482,7 +482,7 @@ class CoreEnvironment(eqx.Module):
         return self.soft_constraints_logic(self, state, action_norm)
 
     def vmap_step(self, state, action):
-        """Computes one JAX-JIT compiled simulation step for multiple (batch_size) batches.
+        """Computes one  simulation step for multiple (batch_size) batches.
 
         Args:
             state: The current state of the simulation from which to calculate the next
@@ -499,7 +499,7 @@ class CoreEnvironment(eqx.Module):
         return next_obs, next_state
 
     def vmap_sim_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
-        """Computes multiple JAX-JIT compiled simulation steps for multiple (batch_size) batches.
+        """Computes multiple  simulation steps for multiple (batch_size) batches.
 
         The length of the set of inputs together with the action_stepsize determine the
         overall length of the simulation -> overall_time = actions.shape[1] * action_stepsize

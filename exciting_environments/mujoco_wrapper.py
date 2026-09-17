@@ -295,7 +295,7 @@ class MujucoWrapper(eqx.Module):
         return obs, data
 
     def vmap_step(self, mjx_data, action):
-        """Computes one JAX-JIT compiled simulation step for multiple (batch_size) batches.
+        """Computes one  simulation step for multiple (batch_size) batches.
 
         Args:
             state: The current state of the simulation from which to calculate the next
