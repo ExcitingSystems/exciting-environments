@@ -337,14 +337,14 @@ class CartPole(CoreEnvironment):
             )
             subkey = jnp.array(jnp.nan)
         else:
-            state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(4,))
+            key, subkey = jax.random.split(rng)
+            state_norm = jax.random.uniform(key, minval=-1, maxval=1, shape=(4,))
             phys = self.PhysicalState(
                 deflection=state_norm[0],
                 velocity=state_norm[1],
                 theta=state_norm[2],
                 omega=state_norm[3],
             )
-            key, subkey = jax.random.split(rng)
 
         force = lambda t: jnp.array([0])
 

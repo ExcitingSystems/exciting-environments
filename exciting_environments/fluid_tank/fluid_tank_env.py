@@ -236,11 +236,11 @@ class FluidTank(CoreEnvironment):
             )
             subkey = jnp.array(jnp.nan)
         else:
-            state_norm = jax.random.uniform(rng, minval=0, maxval=1, shape=(1,))
+            key, subkey = jax.random.split(rng)
+            state_norm = jax.random.uniform(key, minval=0, maxval=1, shape=(1,))
             phys = self.PhysicalState(
                 height=state_norm[0],
             )
-            key, subkey = jax.random.split(rng)
 
         inflow = lambda t: jnp.array([0])
 

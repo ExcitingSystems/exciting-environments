@@ -204,7 +204,7 @@ class MujucoWrapper(eqx.Module):
         mjx_data = mjx.make_data(self.mjx_model)
         if rng is not None:
             key, subkey = jax.random.split(rng)
-            qpos_norm = jax.random.uniform(subkey, (self.qpos_dim,), minval=-1, maxval=1)
+            qpos_norm = jax.random.uniform(key, (self.qpos_dim,), minval=-1, maxval=1)
             qvel_norm = jax.random.uniform(subkey, (self.qvel_dim,), minval=-1, maxval=1)
             qpos = self.denormalize_components(qpos_norm, env_properties.physical_normalizations.qpos)
             qvel = self.denormalize_components(qvel_norm, env_properties.physical_normalizations.qvel)

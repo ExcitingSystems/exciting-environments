@@ -336,10 +336,10 @@ class PMSM(CoreEnvironment):
 
             rng = jnp.array(jnp.nan)
         else:
-            rng, subkey = jax.random.split(rng)
+            key, subkey = jax.random.split(rng)
             state_norm = jax.random.uniform(subkey, minval=-1, maxval=1, shape=(2,))
-            rng, subkey = jax.random.split(rng)
-            i_dq_norm = jax.random.ball(subkey, 2)
+            key, subkey = jax.random.split(key)
+            i_dq_norm = jax.random.ball(key, 2)
             i_max = jnp.max(
                 jnp.array(
                     [
@@ -420,7 +420,7 @@ class PMSM(CoreEnvironment):
             torque=jnp.nan,
             omega_el=jnp.nan,
         )
-        return self.State(physical_state=phys, prng_key=rng, additions=additions, reference=ref)
+        return self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=ref)
 
     def nonlinear_ode(self, t, y, args, action):
         i_d, i_q, eps = y

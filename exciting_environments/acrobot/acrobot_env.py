@@ -354,14 +354,14 @@ class Acrobot(CoreEnvironment):
             )
             subkey = jnp.array(jnp.nan)
         else:
-            state_norm = jax.random.uniform(rng, minval=-1, maxval=1, shape=(4,))
+            key, subkey = jax.random.split(rng)
+            state_norm = jax.random.uniform(key, minval=-1, maxval=1, shape=(4,))
             phys = self.PhysicalState(
                 theta_1=state_norm[0],
                 theta_2=state_norm[1],
                 omega_1=state_norm[2],
                 omega_2=state_norm[3],
             )
-            key, subkey = jax.random.split(rng)
 
         torque = lambda t: jnp.array([0])
 
