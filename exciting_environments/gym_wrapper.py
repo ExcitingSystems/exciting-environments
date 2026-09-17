@@ -86,7 +86,6 @@ class GymWrapper(ABC):
 
         return obs, reward, terminated, truncated
 
-    @eqx.filter_jit
     def gym_step(self, action, state, reference_hold_steps):
         """Jax Jit compiled simulation step using the step function provided by the environment.
 

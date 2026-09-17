@@ -201,7 +201,6 @@ class Acrobot(CoreEnvironment):
 
         return d_y
 
-    @eqx.filter_jit
     def _ode_solver_step(self, state, action):
         """Computes the next state by simulating one step.
 
@@ -262,7 +261,6 @@ class Acrobot(CoreEnvironment):
         new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
 
-    @eqx.filter_jit
     def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple simulation steps for one batch.
 
@@ -341,18 +339,18 @@ class Acrobot(CoreEnvironment):
             reference=ref,
         )
 
-    @eqx.filter_jit
-    def init_state(self, rng: chex.PRNGKey = None):
+    def init_state(self, rng: chex.PRNGKey = None, deterministic_state: bool = False):
         """Returns default or random initial state for one batch."""
         env_properties = self.env_properties
-        if rng is None:
+
+        if rng is None or deterministic_state:
             phys = self.PhysicalState(
                 theta_1=jnp.array(1.0),
                 theta_2=jnp.array(0.0),
                 omega_1=jnp.array(0.0),
                 omega_2=jnp.array(0.0),
             )
-            subkey = jnp.array(jnp.nan)
+            subkey = jnp.array(jnp.nan) if rng is None else rng
         else:
             key, subkey = jax.random.split(rng)
             state_norm = jax.random.uniform(key, minval=-1, maxval=1, shape=(4,))
@@ -384,7 +382,6 @@ class Acrobot(CoreEnvironment):
         norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=ref)
         return self.denormalize_state(norm_state)
 
-    @eqx.filter_jit
     def generate_reward(self, state, action):
         """Returns reward for one batch."""
         reward = 0
@@ -399,7 +396,6 @@ class Acrobot(CoreEnvironment):
                 reward += -((getattr(norm_state.physical_state, name) - getattr(norm_state.reference, name)) ** 2)
         return jnp.array([reward])
 
-    @eqx.filter_jit
     def generate_observation(self, state):
         """Returns observation for one batch."""
         norm_state = self.normalize_state(state)
@@ -421,7 +417,6 @@ class Acrobot(CoreEnvironment):
             )
         return obs
 
-    @eqx.filter_jit
     def generate_state_from_observation(self, obs, key=None):
         """Generates state from observation for one batch."""
         env_properties = self.env_properties
@@ -462,13 +457,11 @@ class Acrobot(CoreEnvironment):
         norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=new_ref)
         return self.denormalize_state(norm_state)
 
-    @eqx.filter_jit
     def generate_truncated(self, state):
         """Returns truncated information for one batch."""
         obs = self.generate_observation(state)
         return jnp.abs(obs) > 1
 
-    @eqx.filter_jit
     def generate_terminated(self, state, reward):
         """Returns terminated information for one batch."""
         return reward == 0

@@ -460,7 +460,6 @@ class PMSM(CoreEnvironment):
         d_y = i_d_diff, i_q_diff, eps_diff
         return d_y
 
-    @eqx.filter_jit
     def _ode_solver_step(self, state, u_dq):
         """Computes state by simulating one step.
 
@@ -545,7 +544,6 @@ class PMSM(CoreEnvironment):
         u_dq = u_dq_norm_clip[0] * (env_properties.static_params.u_dc / 2)
         return u_dq
 
-    @eqx.filter_jit
     def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
         """Computes multiple simulation steps.
 
@@ -660,7 +658,6 @@ class PMSM(CoreEnvironment):
         actions = jax.vmap(self.constraint_denormalization, in_axes=(0, 0))(actions, state)
         return actions
 
-    @eqx.filter_jit
     def sim_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple JAX-JIT compiled simulation steps for one batch.
 
@@ -756,7 +753,6 @@ class PMSM(CoreEnvironment):
         terminated = jax.vmap(self.generate_terminated, in_axes=(0, 0))(states_without_init_state, reward)
         return reward, truncated, terminated
 
-    @eqx.filter_jit
     def step(self, state, action):
         """Computes state by simulating one step taking the deadtime into account.
 
@@ -835,7 +831,6 @@ class PMSM(CoreEnvironment):
             obs = jnp.hstack((obs, getattr(norm_state.reference, name)))
         return obs
 
-    @eqx.filter_jit
     def generate_state_from_observation(self, obs, key=None):
         """Generates state from observation for one batch."""
         env_properties = self.env_properties
@@ -902,7 +897,6 @@ class PMSM(CoreEnvironment):
         """Returns terminated information for one batch."""
         return self.generate_truncated(system_state)
 
-    @eqx.filter_jit
     def generate_reward(self, state, action):
         """Returns reward for one batch."""
 

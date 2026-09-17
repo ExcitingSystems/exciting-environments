@@ -197,22 +197,25 @@ class MujucoWrapper(eqx.Module):
         action_normalizations: eqx.Module
         static_params: eqx.Module
 
-    @eqx.filter_jit
-    def init_state(self, rng: chex.PRNGKey = None):
+    def init_state(self, rng: chex.PRNGKey = None, deterministic_state: bool = False):
         # random qpos, qvel, act, external forces ...
         env_properties = self.env_properties
         mjx_data = mjx.make_data(self.mjx_model)
         if rng is not None:
-            key, subkey = jax.random.split(rng)
-            qpos_norm = jax.random.uniform(key, (self.qpos_dim,), minval=-1, maxval=1)
-            qvel_norm = jax.random.uniform(subkey, (self.qvel_dim,), minval=-1, maxval=1)
-            qpos = self.denormalize_components(qpos_norm, env_properties.physical_normalizations.qpos)
-            qvel = self.denormalize_components(qvel_norm, env_properties.physical_normalizations.qvel)
-            mjx_data = mjx_data.replace(qpos=qpos)
-            mjx_data = mjx_data.replace(qvel=qvel)
+            if deterministic_state:
+                raise NotImplementedError()
+            else:
+
+                key, subkey = jax.random.split(rng)
+                qpos_norm = jax.random.uniform(key, (self.qpos_dim,), minval=-1, maxval=1)
+                qvel_norm = jax.random.uniform(subkey, (self.qvel_dim,), minval=-1, maxval=1)
+                qpos = self.denormalize_components(qpos_norm, env_properties.physical_normalizations.qpos)
+                qvel = self.denormalize_components(qvel_norm, env_properties.physical_normalizations.qvel)
+                mjx_data = mjx_data.replace(qpos=qpos)
+                mjx_data = mjx_data.replace(qvel=qvel)
+
         return mjx_data
 
-    @eqx.filter_jit
     def generate_observation(self, state):
         # how to normalize has to be determined
         env_properties = self.env_properties
@@ -225,7 +228,6 @@ class MujucoWrapper(eqx.Module):
     def transform_angle(self, theta):
         return (theta + jnp.pi) % (2 * jnp.pi) - jnp.pi
 
-    @eqx.filter_jit
     def normalize_components(self, array, normalizations):
         for i, field in enumerate(fields(normalizations)):
             name = field.name
@@ -233,7 +235,6 @@ class MujucoWrapper(eqx.Module):
             array = array.at[i].set(norm_value)
         return array
 
-    @eqx.filter_jit
     def denormalize_components(self, array, normalizations):
         for i, field in enumerate(fields(normalizations)):
             name = field.name
@@ -241,7 +242,6 @@ class MujucoWrapper(eqx.Module):
             array = array.at[i].set(denorm_values)
         return array
 
-    @eqx.filter_jit
     def denormalize_action(self, action_norm):
         """
         Denormalizes a given normalized action.
@@ -284,7 +284,6 @@ class MujucoWrapper(eqx.Module):
         obs = self.generate_observation(data)
         return obs, data
 
-    @eqx.filter_jit
     def step(self, mjx_data, action_norm):
         action = self.denormalize_action(action_norm)
 
@@ -295,7 +294,6 @@ class MujucoWrapper(eqx.Module):
 
         return obs, data
 
-    @eqx.filter_jit
     def vmap_step(self, mjx_data, action):
         """Computes one JAX-JIT compiled simulation step for multiple (batch_size) batches.
 
@@ -312,7 +310,6 @@ class MujucoWrapper(eqx.Module):
         obs, mjx_data = jax.vmap(lambda e, s, a: e.step(s, a))(self, mjx_data, action)
         return obs, mjx_data
 
-    @eqx.filter_jit
     def vmap_init_state(self, rng: chex.PRNGKey = None):
         """
         Generates an initial state for all batches, either using default values or random initialization.
@@ -326,7 +323,6 @@ class MujucoWrapper(eqx.Module):
         self._assert_batched()
         return jax.vmap(lambda e, k: e.init_state(k))(self, rng)
 
-    @eqx.filter_jit
     def vmap_reset(self, rng: chex.PRNGKey = None, initial_qpos_qvel: jax.Array = None):
         """
         Resets environment (all batches) to default, random or passed initial state.
@@ -344,7 +340,6 @@ class MujucoWrapper(eqx.Module):
 
         return obs, state
 
-    @eqx.filter_jit
     def vmap_generate_state_from_observation(self, obs, key=None):
         """
         Generates state for each batch from a given observation.

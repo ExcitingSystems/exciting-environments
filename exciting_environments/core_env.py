@@ -19,6 +19,7 @@ class CoreEnvironment(eqx.Module):
     env_properties: eqx.Module
     action_dim: int = eqx.field(static=True)
     physical_state_dim: int = eqx.field(static=True)
+    noise_variance: float = eqx.field(static=True)
     _batch_tracer: jax.Array
     """
     Core Structure of provided Environments. Any new environments needs to inherit from this class
@@ -45,6 +46,7 @@ class CoreEnvironment(eqx.Module):
         env_properties: eqx.Module,
         tau: float = 1e-4,
         solver=diffrax.Euler(),
+        noise_variance: float = 0.0,
     ):
         """Initialization of an environment.
 
@@ -58,6 +60,7 @@ class CoreEnvironment(eqx.Module):
         self.env_properties = env_properties
         self.action_dim = len(fields(self.Action))
         self.physical_state_dim = len(fields(self.PhysicalState))
+        self.noise_variance = noise_variance
 
     @abstractmethod
     class PhysicalState(eqx.Module):
@@ -104,7 +107,6 @@ class CoreEnvironment(eqx.Module):
 
         pass
 
-    @eqx.filter_jit
     @abstractmethod
     def _ode_solver_step(self, state, action):
         """
@@ -119,7 +121,6 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @eqx.filter_jit
     @abstractmethod
     def _ode_solver_simulate_ahead(self, init_state, actions, obs_stepsize, action_stepsize):
         """
@@ -136,9 +137,8 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @eqx.filter_jit
     @abstractmethod
-    def init_state(self, rng: chex.PRNGKey = None, vmap_helper=None):
+    def init_state(self, rng: chex.PRNGKey = None, deterministic_state: bool = False):
         """
         Generates an initial state for the environment.
 
@@ -151,7 +151,6 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @eqx.filter_jit
     @abstractmethod
     def generate_observation(self, state):
         """
@@ -165,7 +164,6 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @eqx.filter_jit
     @abstractmethod
     def generate_state_from_observation(self, obs, key=None):
         """
@@ -180,7 +178,6 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @eqx.filter_jit
     @abstractmethod
     def generate_reward(self, state, action):
         """
@@ -195,7 +192,6 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @eqx.filter_jit
     @abstractmethod
     def generate_truncated(self, state):
         """
@@ -209,7 +205,6 @@ class CoreEnvironment(eqx.Module):
         """
         return
 
-    @eqx.filter_jit
     @abstractmethod
     def generate_terminated(self, state, reward):
         """
@@ -239,7 +234,6 @@ class CoreEnvironment(eqx.Module):
         action_normalizations: eqx.Module
         static_params: eqx.Module
 
-    @eqx.filter_jit
     def normalize_state(self, state):
         """
         Normalizes the state using predefined normalization parameters.
@@ -271,7 +265,6 @@ class CoreEnvironment(eqx.Module):
 
         return new_state
 
-    @eqx.filter_jit
     def denormalize_state(self, norm_state):
         """
         Denormalizes a given normalized state.
@@ -303,7 +296,6 @@ class CoreEnvironment(eqx.Module):
 
         return new_state
 
-    @eqx.filter_jit
     def denormalize_action(self, action_norm):
         """
         Denormalizes a given normalized action.
@@ -324,15 +316,19 @@ class CoreEnvironment(eqx.Module):
 
     def reset(
         self,
-        rng: chex.PRNGKey = None,
-        initial_state: eqx.Module = None,
+        rng: chex.PRNGKey | None = None,
+        initial_state: eqx.Module | None = None,
+        deterministic_state: bool = False,
     ):
         """
         Resets environment to default, random or passed initial state.
 
         Args:
-            rng (optional): Random key for random initialization.
+            rng (optional): Random key for random initialization and stochastic components of the
+                environment.
             initial_state (optional): The initial_state to which the environment will be reset.
+            deterministic_state (bool): Whether an initial state should be deterministic (only applies
+                when rng != None). Places the rng in the state for further use in the env.
 
         Returns:
             obs: Observation of initial state.
@@ -344,7 +340,7 @@ class CoreEnvironment(eqx.Module):
             ), f"initial_state should have the same dataclass structure as init_state()"
             state = initial_state
         else:
-            state = self.init_state(rng)
+            state = self.init_state(rng, deterministic_state)
         obs = self.generate_observation(state)
 
         return obs, state
@@ -353,7 +349,9 @@ class CoreEnvironment(eqx.Module):
     def obs_dim(self):
         return self.reset()[0].shape[0]
 
-    @eqx.filter_jit
+    def noise_state(self, state):
+        return state
+
     def step(self, state, action_norm):
         """Computes one JAX-JIT compiled simulation step for one batch.
 
@@ -370,6 +368,10 @@ class CoreEnvironment(eqx.Module):
         action = self.denormalize_action(action_norm)
 
         state = self._ode_solver_step(state, action)
+
+        if self.noise_variance > 0.0:
+            state = self.noise_state(state)
+
         obs = self.generate_observation(state)
 
         return obs, state
@@ -387,7 +389,6 @@ class CoreEnvironment(eqx.Module):
         else:
             raise ValueError(f"State needs to consist of jnp.array, tuple, float or bool, but {type(x)} is given.")
 
-    @eqx.filter_jit
     def sim_ahead(
         self,
         init_state,
@@ -443,7 +444,6 @@ class CoreEnvironment(eqx.Module):
 
         return observations, states, last_state
 
-    @eqx.filter_jit
     def generate_rew_trunc_term_ahead(self, states, actions):
         """
         Computes rewards, truncated flags and terminated flags for data generated by `sim_ahead`.
@@ -481,7 +481,6 @@ class CoreEnvironment(eqx.Module):
     def soft_constraints(self, state, action_norm):
         return self.soft_constraints_logic(self, state, action_norm)
 
-    @eqx.filter_jit
     def vmap_step(self, state, action):
         """Computes one JAX-JIT compiled simulation step for multiple (batch_size) batches.
 
@@ -499,7 +498,6 @@ class CoreEnvironment(eqx.Module):
 
         return next_obs, next_state
 
-    @eqx.filter_jit
     def vmap_sim_ahead(self, init_state, actions, obs_stepsize=None, action_stepsize=None):
         """Computes multiple JAX-JIT compiled simulation steps for multiple (batch_size) batches.
 
@@ -528,7 +526,6 @@ class CoreEnvironment(eqx.Module):
         next_obs, next_states, last_state = jax.vmap(lambda e, s, a: e.sim_ahead(s, a))(self, init_state, actions)
         return next_obs, next_states, last_state
 
-    @eqx.filter_jit
     def vmap_generate_rew_trunc_term_ahead(self, states, actions):
         """
          Computes reward, truncated, and terminated flags for multiple batches
@@ -551,7 +548,6 @@ class CoreEnvironment(eqx.Module):
 
         return reward, truncated, terminated
 
-    @eqx.filter_jit
     def vmap_init_state(self, rng: chex.PRNGKey = None):
         """
         Generates an initial state for all batches, either using default values or random initialization.
@@ -565,7 +561,6 @@ class CoreEnvironment(eqx.Module):
         self._assert_batched()
         return jax.vmap(lambda e, k: e.init_state(k))(self, rng)
 
-    @eqx.filter_jit
     def vmap_reset(self, rng: chex.PRNGKey = None, initial_state: eqx.Module = None):
         """
         Resets environment (all batches) to default, random or passed initial state.
@@ -587,7 +582,6 @@ class CoreEnvironment(eqx.Module):
         obs, state = jax.vmap(lambda e, k, s: e.reset(k, s))(self, rng, initial_state)
         return obs, state
 
-    @eqx.filter_jit
     def vmap_generate_state_from_observation(self, obs, key=None):
         """
         Generates state for each batch from a given observation.
