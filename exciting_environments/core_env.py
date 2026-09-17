@@ -19,7 +19,7 @@ class CoreEnvironment(eqx.Module):
     env_properties: eqx.Module
     action_dim: int = eqx.field(static=True)
     physical_state_dim: int = eqx.field(static=True)
-    noise_variance: float = eqx.field(static=True)
+    process_noise_variance: float = eqx.field(static=True)
     _batch_tracer: jax.Array
     """
     Core Structure of provided Environments. Any new environments needs to inherit from this class
@@ -46,7 +46,7 @@ class CoreEnvironment(eqx.Module):
         env_properties: eqx.Module,
         tau: float = 1e-4,
         solver=diffrax.Euler(),
-        noise_variance: float = 0.0,
+        process_noise_variance: float = 0.0,
     ):
         """Initialization of an environment.
 
@@ -60,7 +60,7 @@ class CoreEnvironment(eqx.Module):
         self.env_properties = env_properties
         self.action_dim = len(fields(self.Action))
         self.physical_state_dim = len(fields(self.PhysicalState))
-        self.noise_variance = noise_variance
+        self.process_noise_variance = process_noise_variance
 
     @abstractmethod
     class PhysicalState(eqx.Module):
@@ -350,7 +350,14 @@ class CoreEnvironment(eqx.Module):
         return self.reset()[0].shape[0]
 
     def noise_state(self, state):
-        return state
+
+        key, subkey = jax.random.split(state.prng_key)
+        noise = jax.random.normal(subkey, shape=self.physical_state_dim) * self.process_noise_variance
+        noise = self.PhysicalState(*noise)
+
+        noisy_physical_state = jax.tree.map(lambda x, y: x + y, state.physical_state, noise)
+        noisy_state = eqx.tree_at(lambda s: (s.physical_state, s.prng_key), state, (noisy_physical_state, key))
+        return noisy_state
 
     def step(self, state, action_norm):
         """Computes one  simulation step for one batch.
@@ -368,8 +375,7 @@ class CoreEnvironment(eqx.Module):
         action = self.denormalize_action(action_norm)
 
         state = self._ode_solver_step(state, action)
-
-        if self.noise_variance > 0.0:
+        if self.process_noise_variance > 0.0:
             state = self.noise_state(state)
 
         obs = self.generate_observation(state)

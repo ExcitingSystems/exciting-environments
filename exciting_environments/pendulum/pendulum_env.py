@@ -72,6 +72,7 @@ class Pendulum(CoreEnvironment):
         control_state: list = None,
         solver=diffrax.Euler(),
         tau: float = 2e-2,
+        process_noise_variance: float = 0.0,
     ):
         """
         Args:
@@ -122,7 +123,9 @@ class Pendulum(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(
+            env_properties=env_properties, tau=tau, solver=solver, process_noise_variance=process_noise_variance
+        )
 
     class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
