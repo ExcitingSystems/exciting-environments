@@ -42,6 +42,7 @@ class FluidTank(CoreEnvironment):
         control_state: list = None,
         solver=diffrax.Euler(),
         tau: float = 1e-3,
+        process_noise_variance: float = 0.0,
     ):
         if not physical_normalizations:
             physical_normalizations = {"height": MinMaxNormalization(min=jnp.array(0), max=jnp.array(3))}
@@ -74,7 +75,9 @@ class FluidTank(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(
+            env_properties=env_properties, tau=tau, solver=solver, process_noise_variance=process_noise_variance
+        )
 
     class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""

@@ -6,56 +6,60 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten, tree_structure, tree_map
 
+import chex
 import diffrax
 import equinox as eqx
-import chex
 from dataclasses import fields
-from exciting_environments.utils import MinMaxNormalization
 
 from exciting_environments import CoreEnvironment
+from exciting_environments.utils import MinMaxNormalization
 
 
-def acrobot_soft_constraints(instance, state, action_norm):
+def cartpole_soft_constraints(instance, state, action_norm):
     state_norm = instance.normalize(state)
-    phys = state_norm.physical_state
-    phys_soft_const = jax.tree.map(lambda _: jnp.nan, phys)
-    phys_soft_const = eqx.tree_at(lambda s: s.omega, phys_soft_const, jax.nn.relu(jnp.abs(phys.omega) - 1.0))
-    act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
+    physical_state_norm = state_norm.physical_state
+    constrained_states = ["deflection", "velocity", "omega"]
+    names = [f.name for f in fields(type(physical_state_norm))]
+    values = [
+        jax.nn.relu(jnp.abs(getattr(physical_state_norm, n)) - 1.0) if n in constrained_states else jnp.nan
+        for n in names
+    ]
 
+    phys_soft_const = eqx.tree_unflatten(eqx.tree_structure(physical_state_norm), values)
+    act_soft_constr = jax.nn.relu(jnp.abs(action_norm) - 1.0)
     return phys_soft_const, act_soft_constr
 
 
-class Acrobot(CoreEnvironment):
+class CartPole(CoreEnvironment):
     control_state: list = eqx.field(static=True)
     soft_constraints_logic: Callable = eqx.field(static=True)
     """
-    State Variables:
-        ``['theta_1', 'theta_2', 'omega_1', 'omega_2']``
+    State Variables
+        ``['deflection', 'velocity', 'theta', 'omega']``
 
     Action Variable:
-        ``['torque']``
+        ``['force']``
 
     Initial State:
-        Unless chosen otherwise, theta_1=pi, theta_2=0 and omega_1=omega_2=0
+        Unless chosen otherwise, deflection, omega and velocity is set to zero and theta is set to pi.
 
     Example:
         >>> import jax
         >>> import jax.numpy as jnp
-        >>>
         >>> import exciting_environments as excenvs
         >>> from exciting_environments import GymWrapper
         >>>
         >>> # Create the environment
-        >>> acrobot=excenvs.Acrobot(batch_size=4)
+        >>> cartpole= excenv.CartPole(batch_size=5)
         >>>
         >>> # Use GymWrapper for Simulation (optional)
-        >>> gym_acrobot=GymWrapper(env=acrobot)
+        >>> gym_cartpole=GymWrapper(env=cartpole)
         >>>
         >>> # Reset the environment with default initial values
-        >>> gym_acrobot.reset()
+        >>> gym_cartpole.reset()
         >>>
         >>> # Perform step
-        >>> obs, reward, terminated,  truncated = gym_acrobot.step(action=jnp.ones(4).reshape(-1,1))
+        >>> obs,reward,terminated,truncated = gym_cartpole.step(action=jnp.ones(5).reshape(-1,1))
         >>>
 
     """
@@ -68,33 +72,29 @@ class Acrobot(CoreEnvironment):
         static_params: dict = None,
         control_state: list = None,
         solver=diffrax.Euler(),
-        tau: float = 1e-3,
+        tau: float = 2e-2,
         process_noise_variance: float = 0.0,
     ):
         """
         Args:
-            physical_normalizations (dict): Min and max values of the physical state of the environment for normalization.
-                theta1 (MinMaxNormalization): Rotation angle of the first/inner joint. Default: min=-jnp.pi, max=jnp.pi
-                theta2 (MinMaxNormalization): Rotation angle relative to theta1 of second/outer joint. Default: min=-jnp.pi, max=jnp.pi
-                omega_1 (MinMaxNormalization): Angular velocity of first joint. Default: min=-10, max=10
-                omega_2 (MinMaxNormalization): Angular velocity of second joint. Default: min=-10, max=10
-            action_normalizations (dict): Min and max values of the input/action for normalization.
-                torque (MinMaxNormalization): Maximum torque that can be applied to the second joint as an action. Default: min=-20, max=20
+            physical_normalizations(dict): min-max normalization values of the physical state of the environment.
+                deflection(MinMaxNormalization): Deflection of the cart. Default: min=-10, max=10
+                velocity(MinMaxNormalization): Velocity of the cart. Default: min=-10, max=10
+                theta(MinMaxNormalization): Rotation angle of the pole. Default: min=-jnp.pi, max=jnp.pi
+                omega(MinMaxNormalization): Angular velocity. Default: min=-10, max=10
+            action_normalizations(dict): min-max normalization values of the input/action.
+                force(MinMaxNormalization): Maximum torque that can be applied to the system as action. Default: min=-20, max=20
             soft_constraints (Callable): Function that returns soft constraints values for state and/or action.
-            static_params (dict): Parameters of environment which do not change during simulation.
-                g (float): Gravitational acceleration. Default: 9.81
-                l_1 (float): Length of the first link. Default: 2
-                l_2 (float): Length of the second link. Default: 2
-                m_1 (float): Mass of the first link. Default: 1
-                m_2 (float): Mass of the second link. Default: 1
-                l_c1 (float): Distance from the base to the center of mass of the first link. Default: 1
-                l_c2 (float): Distance from the first joint to the center of mass of the second link. Default: 1
-                I_1 (float): Moment of inertia of the first link about its center of mass. Default: 1.3
-                I_2 (float): Moment of inertia of the first link about its center of mass. Default: 1.3
-
+            static_params(dict): Parameters of environment which do not change during simulation.
+                mu_p(float): Coefficient of friction of pole on cart. Default: 0.000002
+                mu_c(float): Coefficient of friction of cart on track. Default: 0.0005
+                l(float): Half-pole length. Default: 0.5
+                m_p(float): Mass of the pole. Default: 0.1
+                m_c(float): Mass of the cart. Default: 1
+                g(float): Gravitational acceleration. Default: 9.81
             control_state (list): Components of the physical state that are considered in reference tracking.
-            solver (diffrax.solver): Solver used to compute state for next step.
-            tau (float): Duration of one control step in seconds. Default: 1e-3.
+            solver(diffrax.solver): Solver used to compute state for next step.
+            tau(float): Duration of one control step in seconds. Default: 1e-4.
 
         Note: Attributes of MinMaxNormalization of physical_normalizations and action_normalizations as well as static_params can also be
             passed as jnp.Array with the length of the batch_size to set different values per batch.
@@ -102,32 +102,28 @@ class Acrobot(CoreEnvironment):
 
         if not physical_normalizations:
             physical_normalizations = {
-                "theta_1": MinMaxNormalization(min=jnp.array(-jnp.pi), max=jnp.array(jnp.pi)),
-                "theta_2": MinMaxNormalization(min=jnp.array(-jnp.pi), max=jnp.array(jnp.pi)),
-                "omega_1": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
-                "omega_2": MinMaxNormalization(min=jnp.array(-10), max=jnp.array(10)),
+                "deflection": MinMaxNormalization(min=jnp.array(-2.4), max=jnp.array(2.4)),
+                "velocity": MinMaxNormalization(min=jnp.array(-8), max=jnp.array(8)),
+                "theta": MinMaxNormalization(min=jnp.array(-jnp.pi), max=jnp.array(jnp.pi)),
+                "omega": MinMaxNormalization(min=jnp.array(-8), max=jnp.array(8)),
             }
-
         if not action_normalizations:
-            action_normalizations = {"torque": MinMaxNormalization(min=jnp.array(-20), max=jnp.array(20))}
+            action_normalizations = {"force": MinMaxNormalization(min=jnp.array(-20), max=jnp.array(20))}
 
         if not static_params:
-            static_params = {
+            static_params = {  # typical values from Source with DOI: 10.1109/TSMC.1983.6313077
+                "mu_p": jnp.array(0.000002),
+                "mu_c": jnp.array(0.0005),
+                "l": jnp.array(0.5),
+                "m_p": jnp.array(0.1),
+                "m_c": jnp.array(1),
                 "g": jnp.array(9.81),
-                "l_1": jnp.array(2),
-                "l_2": jnp.array(2),
-                "m_1": jnp.array(1),
-                "m_2": jnp.array(1),
-                "l_c1": jnp.array(1),
-                "l_c2": jnp.array(1),
-                "I_1": jnp.array(1.3),
-                "I_2": jnp.array(1.3),
             }
 
         if not control_state:
             control_state = []
 
-        logic = soft_constraints if soft_constraints else acrobot_soft_constraints
+        logic = soft_constraints if soft_constraints else cartpole_soft_constraints
         self.soft_constraints_logic = logic
         self.control_state = control_state
 
@@ -141,16 +137,19 @@ class Acrobot(CoreEnvironment):
             static_params=static_params,
         )
         super().__init__(
-            env_properties=env_properties, tau=tau, solver=solver, process_noise_variance=process_noise_variance
+            env_properties=env_properties,
+            tau=tau,
+            solver=solver,
+            process_noise_variance=process_noise_variance,
         )
 
     class PhysicalState(eqx.Module):
         """Dataclass containing the physical state of the environment."""
 
-        theta_1: jax.Array
-        theta_2: jax.Array
-        omega_1: jax.Array
-        omega_2: jax.Array
+        deflection: jax.Array
+        velocity: jax.Array
+        theta: jax.Array
+        omega: jax.Array
 
     class Additions(eqx.Module):
         """Dataclass containing additional information for simulation."""
@@ -161,84 +160,75 @@ class Acrobot(CoreEnvironment):
     class StaticParams(eqx.Module):
         """Dataclass containing the static parameters of the environment."""
 
+        mu_p: jax.Array = eqx.field(converter=jnp.asarray)
+        mu_c: jax.Array = eqx.field(converter=jnp.asarray)
+        l: jax.Array = eqx.field(converter=jnp.asarray)
+        m_p: jax.Array = eqx.field(converter=jnp.asarray)
+        m_c: jax.Array = eqx.field(converter=jnp.asarray)
         g: jax.Array = eqx.field(converter=jnp.asarray)
-        l_1: jax.Array = eqx.field(converter=jnp.asarray)
-        l_2: jax.Array = eqx.field(converter=jnp.asarray)
-        m_1: jax.Array = eqx.field(converter=jnp.asarray)
-        m_2: jax.Array = eqx.field(converter=jnp.asarray)
-        l_c1: jax.Array = eqx.field(converter=jnp.asarray)
-        l_c2: jax.Array = eqx.field(converter=jnp.asarray)
-        I_1: jax.Array = eqx.field(converter=jnp.asarray)
-        I_2: jax.Array = eqx.field(converter=jnp.asarray)
 
     class Action(eqx.Module):
-        """Dataclass containing the action, that can be applied to the environment."""
+        """Dataclass containing the action that can be applied to the environment."""
 
-        torque: jax.Array
+        force: jax.Array
 
     def _ode(self, t, y, args, action):
-        theta_1, theta_2, omega_1, omega_2 = y
+        deflection, velocity, theta, omega = y
         params = args
-        d_11 = (
-            params.m_1 * params.l_c1**2
-            + params.m_2 * (params.l_1**2 + params.l_c2**2 + 2 * params.l_1 * params.l_c2 * jnp.cos(theta_2))
-            + params.I_1
-            + params.I_2
-        )
-        d_12 = params.m_2 * (params.l_c2**2 + params.l_1 * params.l_c2 * jnp.cos(theta_2)) + params.I_2
-        d_22 = params.m_2 * params.l_c2**2 + params.I_2
-        h_1 = (
-            -params.m_2 * params.l_1 * params.l_c2 * jnp.sin(theta_2) * omega_2**2
-            - 2 * params.m_2 * params.l_1 * params.l_c2 * jnp.sin(theta_2) * omega_1 * omega_2
-        )
-        h_2 = params.m_2 * params.l_1 * params.l_c2 * jnp.sin(theta_2) * omega_1**2
-        phi_1 = (params.m_1 * params.l_c1 + params.m_2 * params.l_1) * params.g * jnp.cos(
-            theta_1 + jnp.pi / 2
-        ) + params.m_2 * params.l_c2 * params.g * jnp.cos(theta_1 + theta_2 + jnp.pi / 2)
-        phi_2 = params.m_2 * params.l_c2 * params.g * jnp.cos(theta_1 + theta_2 + jnp.pi / 2)
-        d_omega_1 = 1 / (d_12 - d_22 / d_12 * d_11) * (action(t)[0] + d_22 / d_12 * (h_1 + phi_1) - h_2 - phi_2)
-        d_omega_2 = (-d_11 * d_omega_1 - h_1 - phi_1) / d_12
-        d_theta_1 = omega_1
-        d_theta_2 = omega_2
-        d_y = d_theta_1, d_theta_2, d_omega_1, d_omega_2
+        d_omega = (
+            params.g * jnp.sin(theta)
+            + jnp.cos(theta)
+            * (
+                (-action(t)[0] - params.m_p * params.l * (omega**2) * jnp.sin(theta) + params.mu_c * jnp.sign(velocity))
+                / (params.m_c + params.m_p)
+            )
+            - (params.mu_p * omega) / (params.m_p * params.l)
+        ) / (params.l * (4 / 3 - (params.m_p * (jnp.cos(theta)) ** 2) / (params.m_c + params.m_p)))
 
+        d_velocity = (
+            action(t)[0]
+            + params.m_p * params.l * ((omega**2) * jnp.sin(theta) - d_omega * jnp.cos(theta))
+            - params.mu_c * jnp.sign(velocity)
+        ) / (params.m_c + params.m_p)
+        d_theta = omega
+        d_deflection = velocity
+        d_y = d_deflection, d_velocity, d_theta, d_omega
         return d_y
 
     def _ode_solver_step(self, state, action):
-        """Computes the next state by simulating one step.
+        """Computes state by simulating one step.
+
+        Source DOI: 10.1109/TSMC.1983.6313077
 
         Args:
             state: The state from which to calculate state for the next step.
             action: The action to apply to the environment.
 
         Returns:
-            next_state: The computed next state after the one step simulation.
+            state: The computed state after the one step simulation.
         """
         static_params = self.env_properties.static_params
         physical_state = state.physical_state
         args = static_params
 
-        torque = lambda t: action
+        force = lambda t: action
 
-        vector_field = partial(self._ode, action=torque)
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
         y0 = tuple(
             [
-                physical_state.theta_1,
-                physical_state.theta_2,
-                physical_state.omega_1,
-                physical_state.omega_2,
+                physical_state.deflection,
+                physical_state.velocity,
+                physical_state.theta,
+                physical_state.omega,
             ]
         )
 
         def false_fn(_):
-            return self.Additions(
-                solver_state=self._solver.init(term, t0, t1, y0, args),
-                active_solver_state=True,
-            )
+            return self.Additions(solver_state=self._solver.init(term, t0, t1, y0, args), active_solver_state=True)
 
         def true_fn(_):
             return state.additions
@@ -246,20 +236,18 @@ class Acrobot(CoreEnvironment):
         additions = jax.lax.cond(state.additions.active_solver_state, false_fn, true_fn, operand=None)
         y, _, _, solver_state_k1, _ = self._solver.step(term, t0, t1, y0, args, additions.solver_state, made_jump=False)
 
-        theta_1_k1 = y[0]
-        theta_2_k1 = y[1]
-        omega_1_k1 = y[2]
-        omega_2_k1 = y[3]
-        theta_1_k1 = ((theta_1_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
-        theta_2_k1 = ((theta_2_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
+        deflection_k1 = y[0]
+        velocity_k1 = y[1]
+        theta_k1 = y[2]
+        omega_k1 = y[3]
+        theta_k1 = ((theta_k1 + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
         new_physical_state = self.PhysicalState(
-            theta_1=theta_1_k1,
-            theta_2=theta_2_k1,
-            omega_1=omega_1_k1,
-            omega_2=omega_2_k1,
+            deflection=deflection_k1,
+            velocity=velocity_k1,
+            theta=theta_k1,
+            omega=omega_k1,
         )
-
         new_additions = self.Additions(solver_state=solver_state_k1, active_solver_state=True)
         new_state = eqx.tree_at(lambda s: (s.physical_state, s.additions), state, (new_physical_state, new_additions))
         return new_state
@@ -287,10 +275,10 @@ class Acrobot(CoreEnvironment):
         init_physical_state = init_state.physical_state
         args = static_params
 
-        def torque(t):
+        def force(t):
             return actions[jnp.array(t / action_stepsize, int)]
 
-        vector_field = partial(self._ode, action=torque)
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
@@ -309,31 +297,29 @@ class Acrobot(CoreEnvironment):
             saveat=saveat,
         )
 
-        theta_1_t = sol.ys[0]
-        theta_2_t = sol.ys[1]
-        omega_1_t = sol.ys[2]
-        omega_2_t = sol.ys[3]
+        deflection_t = sol.ys[0]
+        velocity_t = sol.ys[1]
+        theta_t = sol.ys[2]
+        omega_t = sol.ys[3]
+        obs_len = omega_t.shape[0]
 
-        obs_len = theta_1_t.shape[0]
-        # keep thetas between -pi and pi
-        theta_1_t = ((theta_1_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
-        theta_2_t = ((theta_2_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
+        # keep theta between -pi and pi
+        theta_t = ((theta_t + jnp.pi) % (2 * jnp.pi)) - jnp.pi
 
-        physical_states = self.PhysicalState(theta_1=theta_1_t, theta_2=theta_2_t, omega_1=omega_1_t, omega_2=omega_2_t)
-        ref = self.PhysicalState(
-            theta_1=jnp.full(obs_len, init_state.reference.theta_1),
-            theta_2=jnp.full(obs_len, init_state.reference.theta_2),
-            omega_1=jnp.full(obs_len, init_state.reference.omega_1),
-            omega_2=jnp.full(obs_len, init_state.reference.omega_2),
-        )
-        y0 = tuple([theta_1_t[-1], theta_2_t[-1], omega_1_t[-1], omega_2_t[-1]])
+        physical_states = self.PhysicalState(deflection=deflection_t, velocity=velocity_t, theta=theta_t, omega=omega_t)
+        y0 = tuple([deflection_t[-1], velocity_t[-1], theta_t[-1], omega_t[-1]])
         solver_state = self._solver.init(term, t1, t1 + self.tau, y0, args)
         additions = self.Additions(
-            solver_state=self.repeat_values(solver_state, obs_len),
-            active_solver_state=jnp.full(obs_len, True),
+            solver_state=self.repeat_values(solver_state, obs_len), active_solver_state=jnp.full(obs_len, True)
         )
         prng_key = jnp.broadcast_to(
             jnp.asarray(init_state.prng_key), (obs_len,) + jnp.asarray(init_state.prng_key).shape
+        )
+        ref = self.PhysicalState(
+            deflection=jnp.full(obs_len, init_state.reference.deflection),
+            velocity=jnp.full(obs_len, init_state.reference.velocity),
+            theta=jnp.full(obs_len, init_state.reference.theta),
+            omega=jnp.full(obs_len, init_state.reference.omega),
         )
         return self.State(
             physical_state=physical_states,
@@ -342,38 +328,37 @@ class Acrobot(CoreEnvironment):
             reference=ref,
         )
 
-    def init_state(self, rng: chex.PRNGKey = None, deterministic_state: bool = False):
+    def init_state(self, rng: chex.PRNGKey = None):
         """Returns default or random initial state for one batch."""
         env_properties = self.env_properties
-
-        if rng is None or deterministic_state:
+        if rng is None:
             phys = self.PhysicalState(
-                theta_1=jnp.array(1.0),
-                theta_2=jnp.array(0.0),
-                omega_1=jnp.array(0.0),
-                omega_2=jnp.array(0.0),
+                deflection=jnp.array(0.0),
+                velocity=jnp.array(0.0),
+                theta=jnp.array(1.0),
+                omega=jnp.array(0.0),
             )
-            subkey = jnp.array(jnp.nan) if rng is None else rng
+            subkey = jnp.array(jnp.nan)
         else:
             key, subkey = jax.random.split(rng)
             state_norm = jax.random.uniform(key, minval=-1, maxval=1, shape=(4,))
             phys = self.PhysicalState(
-                theta_1=state_norm[0],
-                theta_2=state_norm[1],
-                omega_1=state_norm[2],
-                omega_2=state_norm[3],
+                deflection=state_norm[0],
+                velocity=state_norm[1],
+                theta=state_norm[2],
+                omega=state_norm[3],
             )
 
-        torque = lambda t: jnp.array([0])
+        force = lambda t: jnp.array([0])
 
         args = env_properties.static_params
 
-        vector_field = partial(self._ode, action=torque)
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([phys.theta_1, phys.theta_2, phys.omega_1, phys.omega_2])
+        y0 = tuple([phys.deflection, phys.velocity, phys.theta, phys.omega])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
         dummy_solver_state = jax.tree.map(
@@ -381,7 +366,7 @@ class Acrobot(CoreEnvironment):
         )
 
         additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
-        ref = self.PhysicalState(theta_1=jnp.nan, theta_2=jnp.nan, omega_1=jnp.nan, omega_2=jnp.nan)
+        ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
         norm_state = self.State(physical_state=phys, prng_key=subkey, additions=additions, reference=ref)
         return self.denormalize_state(norm_state)
 
@@ -390,8 +375,7 @@ class Acrobot(CoreEnvironment):
         reward = 0
         norm_state = self.normalize_state(state)
         for name in self.control_state:
-            if name == "theta_1" or name == "theta_2":
-                # For theta, we use the sine and cosine to avoid discontinuities at pi
+            if name == "theta":
                 theta = getattr(state.physical_state, name)
                 theta_ref = getattr(state.reference, name)
                 reward += -((jnp.sin(theta) - jnp.sin(theta_ref)) ** 2 + (jnp.cos(theta) - jnp.cos(theta_ref)) ** 2)
@@ -405,10 +389,10 @@ class Acrobot(CoreEnvironment):
         norm_state_phys = norm_state.physical_state
         obs = jnp.hstack(
             (
-                norm_state_phys.theta_1,
-                norm_state_phys.theta_2,
-                norm_state_phys.omega_1,
-                norm_state_phys.omega_2,
+                norm_state_phys.deflection,
+                norm_state_phys.velocity,
+                norm_state_phys.theta,
+                norm_state_phys.omega,
             )
         )
         for name in self.control_state:
@@ -424,27 +408,26 @@ class Acrobot(CoreEnvironment):
         """Generates state from observation for one batch."""
         env_properties = self.env_properties
         phys = self.PhysicalState(
-            theta_1=obs[0],
-            theta_2=obs[1],
-            omega_1=obs[2],
-            omega_2=obs[3],
+            deflection=obs[0],
+            velocity=obs[1],
+            theta=obs[2],
+            omega=obs[3],
         )
-
         if key is not None:
             subkey = key
         else:
             subkey = jnp.nan
 
-        torque = lambda t: jnp.array([0])
+        force = lambda t: jnp.array([0])
 
         args = env_properties.static_params
 
-        vector_field = partial(self._ode, action=torque)
+        vector_field = partial(self._ode, action=force)
 
         term = diffrax.ODETerm(vector_field)
         t0 = 0
         t1 = self.tau
-        y0 = tuple([phys.theta_1, phys.theta_2, phys.omega_1, phys.omega_2])
+        y0 = tuple([phys.deflection, phys.velocity, phys.theta, phys.omega])
 
         solver_state = self._solver.init(term, t0, t1, y0, args)
 
@@ -452,8 +435,8 @@ class Acrobot(CoreEnvironment):
             lambda x: jnp.full_like(x, jnp.nan) if jnp.issubdtype(x.dtype, jnp.floating) else x, solver_state
         )
 
-        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)  # None
-        ref = self.PhysicalState(theta_1=jnp.nan, theta_2=jnp.nan, omega_1=jnp.nan, omega_2=jnp.nan)
+        additions = self.Additions(solver_state=dummy_solver_state, active_solver_state=False)
+        ref = self.PhysicalState(deflection=jnp.nan, velocity=jnp.nan, theta=jnp.nan, omega=jnp.nan)
         new_ref = ref
         for i, name in enumerate(self.control_state):
             new_ref = eqx.tree_at(lambda r: getattr(r, name), new_ref, obs[4 + i])
@@ -470,14 +453,14 @@ class Acrobot(CoreEnvironment):
         return reward == 0
 
     @property
+    def action_description(self):
+        return np.array(["force"])
+
+    @property
     def obs_description(self):
         return np.hstack(
             [
-                np.array(["theta_1", "theta_2", "omega_1", "omega_2"]),
+                np.array(["deflection", "velocity", "theta", "omega"]),
                 np.array([name + "_ref" for name in self.control_state]),
             ]
         )
-
-    @property
-    def action_description(self):
-        return np.array(["torque"])

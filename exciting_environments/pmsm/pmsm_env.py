@@ -145,6 +145,7 @@ class PMSM(CoreEnvironment):
         control_state: list = None,
         solver=diffrax.Euler(),
         tau: float = 1e-4,
+        process_noise_variance: float = 0.0,
     ):
         """
         Args:
@@ -245,7 +246,9 @@ class PMSM(CoreEnvironment):
             action_normalizations=action_normalizations,
             static_params=static_params,
         )
-        super().__init__(env_properties=env_properties, tau=tau, solver=solver)
+        super().__init__(
+            env_properties=env_properties, tau=tau, solver=solver, process_noise_variance=process_noise_variance
+        )
 
     class StaticParams(eqx.Module):
         """Dataclass containing the physical parameters of the environment."""
