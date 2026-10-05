@@ -325,17 +325,17 @@ class CartPole(CoreEnvironment):
             reference=ref,
         )
 
-    def init_state(self, rng: chex.PRNGKey = None):
+    def init_state(self, rng: chex.PRNGKey = None, deterministic_state: bool = False):
         """Returns default or random initial state for one batch."""
         env_properties = self.env_properties
-        if rng is None:
+        if rng is None or deterministic_state:
             phys = self.PhysicalState(
                 deflection=jnp.array(0.0),
                 velocity=jnp.array(0.0),
                 theta=jnp.array(1.0),
                 omega=jnp.array(0.0),
             )
-            subkey = jnp.array(jnp.nan)
+            subkey = jnp.array(jnp.nan) if rng is None else rng
         else:
             key, subkey = jax.random.split(rng)
             state_norm = jax.random.uniform(key, minval=-1, maxval=1, shape=(4,))
