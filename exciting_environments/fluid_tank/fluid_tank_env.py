@@ -227,14 +227,15 @@ class FluidTank(CoreEnvironment):
             reference=ref,
         )
 
-    def init_state(self, rng: chex.PRNGKey = None):
+    def init_state(self, rng: chex.PRNGKey = None, deterministic_state: bool = False):
         """Returns default or random initial state for one batch."""
         env_properties = self.env_properties
-        if rng is None:
+
+        if rng is None or deterministic_state:
             phys = self.PhysicalState(
                 height=jnp.array(0.0),
             )
-            subkey = jnp.array(jnp.nan)
+            subkey = jnp.array(jnp.nan) if rng is None else rng
         else:
             key, subkey = jax.random.split(rng)
             state_norm = jax.random.uniform(key, minval=0, maxval=1, shape=(1,))
