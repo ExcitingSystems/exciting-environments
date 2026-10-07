@@ -19,7 +19,7 @@ class CoreEnvironment(eqx.Module):
     env_properties: eqx.Module
     action_dim: int = eqx.field(static=True)
     physical_state_dim: int = eqx.field(static=True)
-    process_noise_variance: float = eqx.field(static=True)
+    process_noise_variance: float
     _batch_tracer: jax.Array
     """
     Core Structure of provided Environments. Any new environments needs to inherit from this class
